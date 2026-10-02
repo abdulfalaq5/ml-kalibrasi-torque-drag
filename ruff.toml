@@ -1,0 +1,7 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008", "E501"]  # panjang baris diurus ruff format
+exclude = ["backend/alembic/versions"]

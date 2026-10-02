@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=2000]
+      - id: detect-private-key
+  - repo: local
+    hooks:
+      - id: no-client-data
+        name: Tolak file data client (data/, uploads/, models/, .env)
+        entry: "File data atau rahasia tidak boleh di-commit"
+        language: fail
+        files: '^(data/|uploads/|models/|backups/|\.env$)'
+      - id: no-excel-outside-fixtures
+        name: Tolak file Excel di luar backend/tests/fixtures
+        entry: "File Excel hanya boleh di backend/tests/fixtures (data sintetis)"
+        language: fail
+        files: '\.(xlsx|xlsm|xls)$'
+        exclude: '^backend/tests/fixtures/'
