@@ -179,3 +179,5 @@ code { font-size: 12px; background: var(--surface-0); padding: 1px 4px; border-r
   display: grid; place-items: center; font-weight: 700; font-size: 13px; }
 .step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .predict-result { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: #fff; }
+.raw-note { margin-top: 6px; padding: 8px 12px; border-left: 3px solid var(--accent); background: #eef4fc; border-radius: 4px; }
+.raw-note ul { margin: 4px 0 0; padding-left: 18px; }

@@ -29,10 +29,29 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
+function RawFileNote() {
+  return (
+    <div className="raw-note small">
+      <b>Punya file asli dari WellPlan?</b> Tidak perlu template, langsung unggah di langkah 3. Sistem mengenali formatnya
+      otomatis:
+      <ul>
+        <li>
+          <b>Laporan WellPlan (.xlsm)</b>: nama sumur, section, dan tipe sumur terbaca dari isi file dan nama file.
+        </li>
+        <li>
+          <b>Roadmap (.xlsx, sheet Drag/Torque)</b>: file ini tidak memuat survey, jadi <b>pilih Tipe sumur</b> di "Isian
+          manual". Pastikan section ada di nama file (mis. <code>_8.5in</code>, <code>12.25 HS</code>); bila tidak, pilih juga
+          Section.
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 function Overrides({ value, onChange }: { value: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
   return (
     <details className="small">
-      <summary>Isian manual (hanya bila file bukan template dan tidak memuat nama/section/tipe)</summary>
+      <summary>Isian manual: nama sumur / section / tipe sumur (wajib pilih tipe untuk file roadmap .xlsx asli)</summary>
       <div className="row gap wrap" style={{ marginTop: 6 }}>
         <label className="inline">
           Nama sumur
@@ -132,6 +151,7 @@ export function ImportPanel() {
             ⬇ Template data latih (.xlsx)
           </a>{" "}
           <span className="muted small">Sheet: Petunjuk, Info Sumur, Drag, Torque, T&amp;D Actual Reading, Survey (opsional), Contoh.</span>
+          <RawFileNote />
         </Step>
         <Step n={2} title="Isi data sesuai template">
           <span className="small">
@@ -274,6 +294,7 @@ export function PredictPanel() {
             ⬇ Template sumur baru (.xlsx)
           </a>{" "}
           <span className="muted small">Sheet: Petunjuk, Info Sumur, Drag, Torque, Survey (opsional), Contoh.</span>
+          <RawFileNote />
         </Step>
         <Step n={2} title="Isi data sesuai template">
           <span className="small">
