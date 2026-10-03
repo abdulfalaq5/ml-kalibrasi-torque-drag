@@ -8,7 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api import auth, files, health, models, wells
+from app.api import (
+    auth,
+    datasets,
+    evaluations,
+    files,
+    health,
+    inbox,
+    limits,
+    models,
+    quality,
+    wells,
+)
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.security import hash_password, require_admin
@@ -79,6 +90,8 @@ def create_app() -> FastAPI:
     app.include_router(files.router, dependencies=protected)
     app.include_router(wells.router, dependencies=protected)
     app.include_router(models.router, dependencies=protected)
+    for r in (inbox.router, quality.router, datasets.router, limits.router, evaluations.router):
+        app.include_router(r, dependencies=protected)
 
     @app.api_route(
         "/api/{rest:path}",

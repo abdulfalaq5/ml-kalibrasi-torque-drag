@@ -1,4 +1,4 @@
-"""Buat file Excel SINTETIS (anonim) yang meniru struktur laporan WellPlan + data aktual.
+"""Buat file Excel SINTETIS (anonim) yang meniru DUA format file client: roadmap (A) dan laporan WellPlan (B).
 
 Bukan data client. Dipakai untuk pengembangan, tes, dan demo sebelum data asli
 tersedia / disetujui untuk dipakai dengan alat AI (Pasal 11).
@@ -9,6 +9,8 @@ ditambah offset rig dan noise pengukuran, supaya ada pola yang bisa dipelajari M
 
 Contoh:
     python scripts/make_sample_data.py --out data/sample --wells 15
+
+Struktur keluaran sama dengan folder Training client: <tipe>/<sumur>/<file per section>.
 """
 
 import argparse
@@ -147,25 +149,7 @@ def build_well(spec: WellSpec) -> dict:
     tvd, dls = survey_tvd_dls(sv)
     hole = spec.section
     bit_torque = SECTION_PLAN[spec.section][2]
-
-    plan_depths = sv[1:, 0]
-    plan = {"md": plan_depths, "pu": {}, "so": {}, "toff": {}, "ton": {}}
-    rot = []
-    for ff in FFS:
-        pu, so, toff = [], [], []
-        for k in range(1, len(sv)):
-            a, b, c, t = soft_string(sv, k, ff, hole)
-            pu.append(a)
-            so.append(b)
-            toff.append(t)
-            if ff == FFS[0]:
-                rot.append(c)
-        plan["pu"][ff] = np.array(pu)
-        plan["so"][ff] = np.array(so)
-        plan["toff"][ff] = np.array(toff)
-        plan["ton"][ff] = np.array(toff) + bit_torque
-    plan["rot"] = np.array(rot)
-
+    # kurva WellPlan dihitung terpisah per set FF (_compute_plan)
     # Data aktual: tiap ~93 ft (satu stand) di interval section
     rng = spec.rng
     well_offset = rng.normal(0, 0.025)
@@ -205,168 +189,397 @@ def build_well(spec: WellSpec) -> dict:
         "sv": sv,
         "tvd": tvd,
         "dls": dls,
-        "plan": plan,
+        "plan": None,
         "actual": actual,
         "interval": (top, bottom),
         "mu": mu,
     }
 
 
-def _title(ws, text: str) -> None:
-    ws.append([text])
-    ws.append(["Data sintetis - bukan data client"])
-    ws.append([])
+def _plan_at(plan: dict, key: str, ff: float) -> np.ndarray:
+    """Kurva WellPlan untuk FF sembarang (interpolasi linear antar FF sintetis)."""
+    ffs = sorted(plan[key])
+    arr = np.vstack([plan[key][f] for f in ffs])
+    return np.array([np.interp(ff, ffs, arr[:, k]) for k in range(arr.shape[1])])
 
 
-def write_wellplan(data: dict, path: Path, include_actual: bool = True) -> None:
-    spec: WellSpec = data["spec"]
-    sv, tvd, dls, plan = data["sv"], data["tvd"], data["dls"], data["plan"]
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Summary"
-    _title(ws, "Torque and Drag Analysis Report")
-    ws.append(["Company:", "ANON"])
-    ws.append(["Well Name:", spec.name])
-    ws.append(["Field:", "FLD-X"])
-    ws.append(["Hole Size (in):", spec.section])
-    ws.append(["Casing Shoe (ft):", data["interval"][0]])
-    ws.append(["Mud Weight (ppg):", MUD_PPG])
-
-    ws = wb.create_sheet("Survey Outputs")
-    _title(ws, "Survey Outputs")
-    ws.append(["MD (ft)", "Inc (°)", "Azi (°)", "TVD (ft)", "DLS (°/100ft)"])
-    for i in range(len(sv)):
-        ws.append(
-            [
-                round(sv[i, 0], 1),
-                round(sv[i, 1], 2),
-                round(sv[i, 2], 2),
-                round(tvd[i], 1),
-                round(dls[i], 2),
-            ]
-        )
-
-    ws = wb.create_sheet("Tripping Load Analysis")
-    _title(ws, "Tripping Load Analysis")
-    head = ["Measured Depth (ft)"]
-    head += [f"Pick Up FF {ff:.2f} (kip)" for ff in FFS]
-    head += [f"Slack Off FF {ff:.2f} (kip)" for ff in FFS]
-    head += ["Rotating Off Bottom (kip)"]
-    ws.append(head)
-    for i, d in enumerate(plan["md"]):
-        ws.append(
-            [d]
-            + [round(plan["pu"][ff][i], 2) for ff in FFS]
-            + [round(plan["so"][ff][i], 2) for ff in FFS]
-            + [round(plan["rot"][i], 2)]
-        )
-
-    ws = wb.create_sheet("Off Bottom Torque")
-    _title(ws, "Torque Analysis")
-    head = ["Measured Depth (ft)"]
-    head += [f"Off Bottom Torque FF {ff:.2f} (ft-lbf)" for ff in FFS]
-    head += [f"On Bottom Torque FF {ff:.2f} (ft-lbf)" for ff in FFS]
-    ws.append(head)
-    for i, d in enumerate(plan["md"]):
-        ws.append(
-            [d]
-            + [round(plan["toff"][ff][i], 0) for ff in FFS]
-            + [round(plan["ton"][ff][i], 0) for ff in FFS]
-        )
-
-    ws = wb.create_sheet("BHA")
-    _title(ws, "Bottom Hole Assembly")
-    ws.append(["No", "Description", "OD (in)", "ID (in)", "Length (ft)"])
-    ws.append([1, "Bit PDC", spec.section, None, 1.5])
-    ws.append([2, "Mud Motor", 6.75, 4.5, 30])
-    ws.append([3, "MWD", 6.75, 3.25, 60])
-    ws.append([4, "Drill Collar", 6.5, 2.81, 270])
-    ws.append([5, "HWDP", 5.0, 3.0, 240])
-
-    if include_actual:
-        write_actual_sheets(wb, data)
-    wb.save(path)
+def _compute_plan(data: dict, ffs: list[float]) -> None:
+    """Hitung ulang kurva WellPlan untuk set FF yang diminta (tiap 100 ft)."""
+    spec, sv = data["spec"], data["sv"]
+    plan = {"md": sv[1:, 0], "pu": {}, "so": {}, "toff": {}, "ton": {}}
+    bit_torque = SECTION_PLAN[spec.section][2]
+    rot = []
+    for ff in ffs:
+        pu, so, toff = [], [], []
+        for k in range(1, len(sv)):
+            a, b, c, t = soft_string(sv, k, ff, spec.section)
+            pu.append(a)
+            so.append(b)
+            toff.append(t)
+            if ff == ffs[0]:
+                rot.append(c)
+        plan["pu"][ff], plan["so"][ff] = np.array(pu), np.array(so)
+        plan["toff"][ff] = np.array(toff)
+        plan["ton"][ff] = np.array(toff) + bit_torque
+    plan["rot"] = np.array(rot)
+    data["plan"] = plan
 
 
-def write_actual_sheets(wb: Workbook, data: dict) -> None:
-    ws = wb.create_sheet("T&D Actual Reading")
-    _title(ws, "T&D Actual Reading")
-    ws.append(
-        [
-            "Depth (ft)",
-            "Pick Up (kip)",
-            "Slack Off (kip)",
-            "Rotating Weight (kip)",
-            "Torque Off Bottom (ft-lbf)",
-            "Torque On Bottom (ft-lbf)",
-        ]
-    )
-    for r in data["actual"]:
-        ws.append(
-            [r["depth"]]
-            + [
-                None if r[k] is None else round(r[k], 2 if k in ("pu", "so", "rot") else 0)
-                for k in ("pu", "so", "rot", "toff", "ton")
-            ]
-        )
-
-    rng = data["spec"].rng
-    ws = wb.create_sheet("Drilling Data")
-    _title(ws, "Drilling Data")
-    ws.append(["Depth (ft)", "WOB (kip)", "RPM", "Torque (ft-lbf)"])
-    for r in data["actual"][::2]:
-        if r["ton"] is not None:
-            ws.append(
-                [
-                    r["depth"] + 10,
-                    round(rng.uniform(15, 30), 1),
-                    int(rng.uniform(80, 140)),
-                    round(r["ton"] * rng.uniform(0.95, 1.05)),
-                ]
-            )
-
-    ws = wb.create_sheet("Tripping Data")
-    _title(ws, "Tripping Data")
-    ws.append(["Depth (ft)", "Hookload (kip)", "Direction"])
-    for r in data["actual"][::3]:
-        if r["pu"] is not None:
-            ws.append([r["depth"], round(r["pu"], 1), "POOH"])
-        if r["so"] is not None:
-            ws.append([r["depth"], round(r["so"], 1), "RIH"])
-
-
-def write_roadmap(data: dict, path: Path) -> None:
-    plan = data["plan"]
+def write_roadmap_file(
+    data: dict, path: Path, ffs: list[float], include_actual: bool = True
+) -> None:
+    """Format A: Drag, Torque, T&D Actual Reading, Casing Shoe (tata letak file client)."""
+    spec, plan = data["spec"], data["plan"]
+    top, bottom = data["interval"]
+    # roadmap client: hanya beberapa kedalaman (~ tiap 1000 ft) di interval section
+    md = plan["md"]
+    pick = [i for i, d in enumerate(md) if d >= top and (d - top) % 1000 < 100 or d == md[-1]]
+    pick = sorted(set(pick))
     wb = Workbook()
     ws = wb.active
     ws.title = "Drag"
-    _title(ws, f"Drag Roadmap - {data['spec'].name}")
-    ws.append(
-        ["Depth (ft)"]
-        + [f"Pick Up FF {ff:.1f} (kip)" for ff in FFS]
-        + [f"Slack Off FF {ff:.1f} (kip)" for ff in FFS]
-        + ["Rotating (kip)"]
-    )
-    for i, d in enumerate(plan["md"]):
-        ws.append(
-            [d]
-            + [round(plan["pu"][ff][i], 2) for ff in FFS]
-            + [round(plan["so"][ff][i], 2) for ff in FFS]
-            + [round(plan["rot"][i], 2)]
-        )
+    ws.append(["Calibrate", None, "PICK UP", "SLACK OFF", "ROTATE"])
+    ws.append([None, None, 10, 2, 2.5])
+    ws.append(["WellPlan Result"])
+    ops = [
+        "Run Measured Depth using:",
+        "Tripping In using:",
+        "Tripping Out using:",
+        "Rotating Off Bottom using:",
+    ]
+    head, ffrow, unitrow = [], [], []
+    for ff in ffs:
+        head += ops + [None]
+        ffrow += [f"open hole friction factor: {ff:.2f}"] * len(ops) + [None]
+        unitrow += ["(ft)", "(kip)", "(kip)", "(kip)", None]
+    head += ["Graph reference", "Tripping Out using:"]
+    ws.append(head)
+    ws.append(ffrow + [None, f"open hole friction factor: {ffs[0]:.2f}"])
+    ws.append(unitrow + [None, "(kip)"])
+    for i in pick:
+        row = []
+        for ff in ffs:
+            row += [
+                float(md[i]),
+                round(float(_plan_at(plan, "so", ff)[i]), 1),
+                str(round(float(_plan_at(plan, "pu", ff)[i]), 1)),  # angka sebagai teks
+                round(float(plan["rot"][i]), 1),
+                None,
+            ]
+        row += [None, round(float(_plan_at(plan, "pu", ffs[0])[i]) + 10, 1)]
+        ws.append(row)
+
     ws = wb.create_sheet("Torque")
-    _title(ws, f"Torque Roadmap - {data['spec'].name}")
+    ws.append(["WellPlan Result"])
+    ws.append(["Calibrate On Bot Torque", None, 530])
+    ws.append(["Calibrate Off Bot Torque", None, 930])
+    ops = ["Run Measured Depth using:", "Rotating On Bottom using:", "Rotating Off Bottom using:"]
+    head, ffrow, unitrow = [], [], []
+    for ff in ffs:
+        head += ops + [None]
+        ffrow += [f"open hole friction factor: {ff:.2f}"] * len(ops) + [None]
+        unitrow += ["(ft)", "(ft-lbf)", "(ft-lbf)", None]
+    ws.append([None] * len(head) + ["Graph Reference"])
+    ws.append(head[:-1] + [None, "Rotating On Bottom using:"])
+    ws.append(ffrow[:-1] + [None, f"open hole friction factor: {ffs[0]:.2f}"])
+    ws.append(unitrow[:-1] + [None, "(ft-kip)"])
+    for i in pick:
+        row = []
+        for ff in ffs:
+            row += [
+                float(md[i]),
+                round(float(_plan_at(plan, "ton", ff)[i]), 1),
+                round(float(_plan_at(plan, "toff", ff)[i]), 1),
+                None,
+            ]
+        ws.append(row[:-1] + [None, round(float(_plan_at(plan, "ton", ffs[0])[i]) + 530, 1)])
+
+    ws = wb.create_sheet("T&D Actual Reading")
+    ws.append([None, f"Well: {spec.name}"])
+    ws.append([None, "Actual Block Weight (Klbs):", None, 20, "Section:", _frac(spec.section)])
+    ws.append([None, None, None, None, "Run:", "#200"])
     ws.append(
-        ["Depth (ft)"]
-        + [f"Off Bottom FF {ff:.1f} (ft-lbf)" for ff in FFS]
-        + [f"On Bottom FF {ff:.1f} (ft-lbf)" for ff in FFS]
+        [
+            None,
+            "Depth (ft)",
+            "Actual Pick Up Weight (Klbs)",
+            "Actual Slack Off Weight (Klbs)",
+            "Actual Rotating Weight Run (Klbs)",
+            "Actual torque off bottom Run (Lbs-ft)",
+            "Actual torque on bottom Run (Lbs-ft)",
+        ]
     )
-    for i, d in enumerate(plan["md"]):
+    if include_actual:
+        for r in data["actual"]:
+            ws.append(
+                [None, round(r["depth"])]
+                + [
+                    None if r[k] is None else round(r[k], 0 if k in ("toff", "ton") else 1)
+                    for k in ("pu", "so", "rot", "toff", "ton")
+                ]
+            )
+
+    ws = wb.create_sheet("Casing Shoe")
+    ws.append([])
+    ws.append([None, "Depth", "Value", None, "Depth", "Value"])
+    for v in range(-200, 400, 50):
+        ws.append([None, 35, v, None, 35, v * 100 if v > 0 else v])
+    wb.save(path)
+
+
+def _frac(sec: float) -> str:
+    return {17.5: '17-1/2"', 12.25: '12-1/4"', 8.5: '8-1/2"', 6.125: '6-1/8"'}.get(sec, f'{sec}"')
+
+
+def write_wellplan_file(data: dict, path: Path, include_actual: bool = True) -> None:
+    """Format B: laporan WellPlan (Summary, Tripping Load Analysis, Off Bottom Torque
+    analysis, Rotary Drill Buckling Outputs, Survey Outputs, Drilling Data, Tripping  Data)."""
+    spec, sv, dls, plan = data["spec"], data["sv"], data["dls"], data["plan"]
+    top, bottom = data["interval"]
+    ffs = [0.2, 0.3, 0.4, 0.5]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Summary"
+    ws.append([])
+    ws.append([])
+    ws.append([None, "Torque and Drag Load Cases"])
+    ws.append([])
+    ws.append([None, None, "Client:", None, "ANON"])
+    ws.append([None, None, "Field:", None, "FLD-X"])
+    ws.append([None, None, "Rig:", None, "RIG-1"])
+    ws.append([None, None, "Well:", None, spec.name])
+    ws.append([])
+    ws.append([None, "BHA & WELLBORE DATA"])
+    ws.append(
+        [
+            None,
+            "Drilling Bit Depth Range:",
+            f"{top} - {bottom} (ft)",
+            None,
+            None,
+            "Bit Depth (single-point):",
+            None,
+            None,
+            f"{bottom} (ft)",
+        ]
+    )
+    ws.append(
+        [
+            None,
+            "Tripping Range:",
+            f"0 - {bottom} (ft)",
+            None,
+            None,
+            "Block Weight:",
+            None,
+            None,
+            "21 (1000 lbf)",
+        ]
+    )
+    ws.append(
+        [
+            None,
+            "Depth Increment:",
+            "100 (ft)",
+            None,
+            None,
+            "Single Depth Analysis \nMud Weight:",
+            None,
+            None,
+            f"{MUD_PPG} (lbm/gal)",
+        ]
+    )
+    ws.append([])
+    ws.append([None, "BHA DESCRIPTION"])
+    ws.append(
+        [
+            None,
+            "Component Name",
+            "Steel Grade",
+            "Length",
+            "Cum Length",
+            "ID",
+            "OD",
+            "Max OD",
+            "Lin Weight",
+        ]
+    )
+    ws.append([None, None, None, "ft", "ft", "in", "in", "in", "lbm/ft"])
+    comps = [
+        (f'{spec.section}" PDC Bit', 1.0, 2.25, 5.75, spec.section, 128.0),
+        ("Motor", 24.0, 5.5, 6.75, spec.section - 0.1, 89.7),
+        ("NMDC", 30.5, 2.75, 6.5, 6.75, 90.1),
+        ("MWD", 37.4, 2.8, 6.5, 6.5, 91.3),
+        ('30 x 5" HWDP', 900.0, 3.0, 5.0, 6.5, 49.3),
+        ('5" 19.50 DP To Surface', max(bottom - 993, 100), 4.276, 4.855, 6.625, 19.5),
+    ]
+    cum = 0.0
+    for name, ln, i_d, od, mod, lw in comps:
+        cum += ln
+        ws.append([None, name, "G-105", ln, round(cum, 2), i_d, od, mod, lw])
+    ws.append([])
+    ws.append([None, "WELLBORE DESCRIPTION"])
+    ws.append([None, "Section Name", "Length", "Cum Length", "Diameter"])
+    ws.append([None, None, "ft", "ft", "in"])
+    if top > 0:
+        ws.append([None, "Casing Run", top, top, spec.section + 0.2])
+    ws.append([None, f'{spec.section}" BHA Run', bottom - top, bottom, spec.section])
+    ws.append([])
+    ws.append([None, "FRICTION FACTORS"])
+    ws.append(
+        [
+            None,
+            None,
+            "Cased Hole Translational (Slide)",
+            "Open Hole Translational (Slide)",
+            "Cased Hole Rotational",
+            "Open Hole Rotational",
+        ]
+    )
+    ws.append([None, "Base Set", 0.3, 0.4, 0.3, 0.4])
+    for k, ff in enumerate(ffs, start=1):
+        ws.append([None, f"Set {k}", ff, ff, ff, ff])
+
+    md = plan["md"]
+    ws = wb.create_sheet("Tripping Load Analysis")
+    for _ in range(3):
+        ws.append([])
+    ws.append([None, "Tripping Load Analysis Output"])
+    ws.append(
+        [None, "Bit Depth"]
+        + [f"CSG {f} OPH {f} Trip IN" for f in ffs[::-1]]
+        + ["Rotate Off Bottom"]
+        + [f"CSG {f} OPH {f} Trip Out" for f in ffs]
+    )
+    ws.append([None, "ft"] + ["1000 lbf"] * 9)
+    for i, d in enumerate(md):
         ws.append(
-            [d]
-            + [round(plan["toff"][ff][i]) for ff in FFS]
-            + [round(plan["ton"][ff][i]) for ff in FFS]
+            [None, str(int(d))]
+            + [round(float(_plan_at(plan, "so", f)[i]), 3) for f in ffs[::-1]]
+            + [round(float(plan["rot"][i]), 3)]
+            + [round(float(_plan_at(plan, "pu", f)[i]), 3) for f in ffs]
         )
+
+    ws = wb.create_sheet("Off Bottom Torque analysis")
+    for _ in range(3):
+        ws.append([])
+    ws.append([None, "Off Bottom Torque Output"])
+    ws.append([None, "Bit Depth"] + [f"CSG {f} OPH {f}" for f in ffs] + ["Solution Converged"])
+    ws.append([None, "ft"] + ["1000 ft.lbf"] * 4)
+    for i, d in enumerate(md):
+        ws.append(
+            [None, str(int(d))]
+            + [round(float(_plan_at(plan, "toff", f)[i]) / 1000, 3) for f in ffs]
+            + ["YES"]
+        )
+
+    ws = wb.create_sheet("Rotary Drill Buckling Outputs")
+    for _ in range(4):
+        ws.append([])
+    ws.append([None, "Rotary Drilling Buckling Outputs"])
+    ws.append([])
+    ws.append([])
+    ws.append(
+        [
+            None,
+            "Measured Depth",
+            "Buckling (Yes/No)",
+            "Sinusoidal Buckling Margin",
+            "Helical Buckling Margin",
+            "Buckling Point from the bit",
+            "Hookload",
+            "Surface Torque",
+        ]
+    )
+    ws.append([None, "ft", None, "1000 lbf", "1000 lbf", "ft", "1000 lbf", "1000 ft.lbf"])
+    for i, d in enumerate(md):
+        if d >= top:
+            ws.append(
+                [
+                    None,
+                    float(d),
+                    "NO",
+                    70.0,
+                    90.0,
+                    500.0,
+                    round(float(plan["rot"][i]) - 15, 3),
+                    round(float(_plan_at(plan, "ton", 0.4)[i]) / 1000, 3),
+                ]
+            )
+
+    ws = wb.create_sheet("Survey Outputs")
+    for _ in range(4):
+        ws.append([])
+    ws.append([None, None, "DETAIL SURVEY OUTPUTS"])
+    ws.append([])
+    ws.append([None, "Tortuosity Model:", "RANDOM_DEPENDENT_INC_AZM"])
+    ws.append([None, "Start Depth", "End Depth", "Magnitude", "Period"])
+    ws.append([None, "ft", "ft", "deg", "ft"])
+    ws.append([None, 0, top, 1, 100])
+    ws.append([])
+    ws.append([])
+    ws.append([None, "Measured Depth", "Inclination", "Azimuth", "Dog-Leg\nSeverity"])
+    ws.append([None, "ft", "deg", "deg", "deg/100ft"])
+    for i in range(len(sv)):
+        ws.append(
+            [
+                None,
+                round(float(sv[i, 0]), 2),
+                round(float(sv[i, 1]), 3),
+                round(float(sv[i, 2]), 3),
+                round(float(dls[i]), 3),
+            ]
+        )
+
+    ws = wb.create_sheet("Drilling Data")
+    ws.append(["Drilling Parameter Record Sheet"])
+    ws.append(["*data will be plotted in Drilling Loads Plot"])
+    ws.append(
+        [
+            "Depth",
+            "Slack Off Weight",
+            "Rotating Weight",
+            "Pick/Up Weight",
+            "Rotary RPM",
+            "Off-btm Torque",
+            "Break Off Torque",
+            "On-btm Torque",
+        ]
+    )
+    if include_actual:
+        for r in data["actual"]:
+            ws.append(
+                [
+                    str(round(r["depth"])),
+                    None if r["so"] is None else str(round(r["so"])),
+                    None if r["rot"] is None else str(round(r["rot"])),
+                    None if r["pu"] is None else str(round(r["pu"])),
+                    "70",
+                    None if r["toff"] is None else round(r["toff"] / 1000, 1),
+                    None,
+                    None if r["ton"] is None else round(r["ton"] / 1000, 1),
+                ]
+            )
+
+    ws = wb.create_sheet("Tripping  Data")
+    ws.append(["Tripping Hookload Record Sheet"])
+    ws.append(["*data will be plotted in Tripping Loads Plot"])
+    ws.append([None, "TRIP #1", None, None, "TRIP #2", None, None, "TRIP #3"])
+    ws.append(
+        [
+            "Trip Depth",
+            "Trip#1 Slack off",
+            "Trip#1 Pick Up",
+            "Trip Depth",
+            "Trip#2 Slack off",
+            "Trip#2 Pick Up",
+            "Trip Depth",
+            "Trip#3 Slack off",
+            "Trip#3 Pick Up",
+        ]
+    )
+    for name in ("Drilling Loads Plot", "Torque Plot", "Plots"):
+        wb.create_sheet(name)
     wb.save(path)
 
 
@@ -404,6 +617,21 @@ def well_specs(n: int, seed: int) -> list[WellSpec]:
     return specs
 
 
+SECTIONS_BY_TYPE = {"J": [12.25, 8.5], "S": [12.25, 8.5], "Horizontal": [17.5, 12.25, 8.5]}
+
+
+def section_spec(spec: WellSpec, section: float) -> WellSpec:
+    return WellSpec(
+        spec.name,
+        spec.well_type,
+        section,
+        spec.td_ft,
+        spec.kop_ft,
+        spec.hold_inc,
+        np.random.default_rng(spec.rng.integers(1 << 30)),
+    )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", type=Path, default=Path("data/sample"))
@@ -419,16 +647,25 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     specs = well_specs(args.wells + args.new_wells, args.seed)
     for i, spec in enumerate(specs):
-        data = build_well(spec)
         is_new = i >= args.wells
-        name = f"{spec.name}_{spec.section:g}in_{'baru_' if is_new else ''}wellplan.xlsx"
-        write_wellplan(data, args.out / name, include_actual=not is_new)
-        if i < 2:
-            write_roadmap(data, args.out / f"{spec.name}_{spec.section:g}in_roadmap.xlsx")
-        print(
-            f"{name}: tipe={spec.well_type} section={spec.section} td={spec.td_ft:.0f} ft "
-            f"aktual={0 if is_new else len(data['actual'])} titik"
-        )
+        fmt = "B" if spec.well_type == "Horizontal" or i % 2 else "A"
+        folder = args.out / spec.well_type / f"{spec.name}{' BARU' if is_new else ''}"
+        folder.mkdir(parents=True, exist_ok=True)
+        for sec in SECTIONS_BY_TYPE[spec.well_type]:
+            sspec = section_spec(spec, sec)
+            data = build_well(sspec)
+            if fmt == "A":
+                ffs = [0.1, 0.3, 0.5] if i % 3 else [0.3, 0.4, 0.5]
+                _compute_plan(data, ffs)
+                name = f"P_{spec.name}_{sec:g}in TnD Roadmap.xlsx"
+                write_roadmap_file(data, folder / name, ffs, include_actual=not is_new)
+            else:
+                _compute_plan(data, [0.2, 0.3, 0.4, 0.5])
+                name = f"P_{spec.name}_BHA_{sec:g}in_TnD.xlsm"
+                write_wellplan_file(data, folder / name, include_actual=not is_new)
+            print(
+                f"{spec.well_type}/{folder.name}/{name}: aktual={0 if is_new else len(data['actual'])}"
+            )
 
 
 if __name__ == "__main__":

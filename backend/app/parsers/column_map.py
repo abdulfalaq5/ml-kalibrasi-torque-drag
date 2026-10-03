@@ -1,102 +1,83 @@
-"""Pola nama sheet dan kolom (regex, huruf kecil).
+"""Pola nama sheet dan kolom (regex, huruf kecil) untuk dua format file client.
 
-ASUMSI awal berdasarkan nama sheet di dokumen proyek. Sesuaikan setelah audit
-data (scripts/audit_files.py) dan catat perubahan di docs/keputusan.md.
+Diturunkan dari audit 94 file di folder Training (Okt 2026), lihat docs/keputusan.md K-17.
+
+Format A, "roadmap" (.xlsx): Drag, Torque, T&D Actual Reading, Casing Shoe
+Format B, "laporan WellPlan" (.xlsm): Summary, Tripping Load Analysis,
+    Off Bottom Torque analysis, Rotary Drill Buckling Outputs, Survey Outputs,
+    Drilling Data, Tripping  Data (+ sheet plot yang diabaikan)
 """
 
-SHEET_ROLES: dict[str, list[str]] = {
-    # Laporan WellPlan
-    "summary": [r"^summary$", r"^ringkasan"],
-    "tripping": [r"tripping load", r"^tripping analysis"],
-    "off_bottom_torque": [r"off[ -]?bottom torque", r"^torque analysis"],
-    "survey": [r"survey output", r"^survey$", r"^surveys?$"],
-    "bha": [r"^bha", r"bottom hole assembly"],
-    # Roadmap
-    "roadmap_drag": [r"^drag$", r"^drag roadmap", r"^hookload roadmap"],
-    "roadmap_torque": [r"^torque$", r"^torque roadmap"],
-    # Data aktual
-    "actual_td": [r"t\s*&\s*d actual", r"t&d actual", r"actual reading", r"td actual"],
-    "actual_drilling": [r"^drilling data"],
-    "actual_tripping": [r"^tripping data"],
+# ---------------------------------------------------------------- deteksi format
+ROADMAP_SHEETS = {"drag", "torque"}
+WELLPLAN_SHEETS = {"summary", "tripping load analysis"}
+
+# ---------------------------------------------------------------- Format A
+# Sheet Drag: header operasi di baris yang memuat "Run Measured Depth", baris di bawahnya
+# "open hole friction factor: 0.30". Blok "Graph reference" (kurva + offset kalibrasi)
+# diabaikan.
+ROADMAP_DEPTH_HEADER = r"^run measured depth"
+ROADMAP_GRAPH_REF = r"graph reference"
+ROADMAP_DRAG_OPS = {
+    "pick_up": [r"^tripping out"],
+    "slack_off": [r"^tripping in"],
+    "rotating_weight": [r"^rotating off bottom"],
+}
+ROADMAP_TORQUE_OPS = {
+    "torque_on_bottom": [r"^rotating on bottom"],
+    "torque_off_bottom": [r"^rotating off bottom"],
+}
+FF_OPEN_HOLE = r"open hole friction factor\s*:?\s*(\d*[.,]\d+|\d+)"
+FF_CASED_HOLE = r"cased hole friction factor\s*:?\s*(\d*[.,]\d+|\d+)"
+
+ACTUAL_SHEET = r"t\s*&\s*d actual reading"
+ACTUAL_COLS = {
+    "pick_up": [r"pick ?up"],
+    "slack_off": [r"slack ?off"],
+    "rotating_weight": [r"rotating weight"],
+    "torque_off_bottom": [r"torque off bottom", r"off[ -]?b(o)?tt?o?m torque"],
+    "torque_on_bottom": [r"torque on bottom", r"on[ -]?b(o)?tt?o?m torque"],
+}
+ACTUAL_IGNORE = [r"differential", r"\bho\b", r"delta"]
+ACTUAL_META = {
+    "well_name": r"^well\s*:?\s*(.*)$",
+    "block_weight": r"block weight",
+    "section_meta": r"^section\s*:?$",
+    "run": r"^run\s*:?$",
 }
 
-PLAN_ROLES = {"tripping", "off_bottom_torque", "roadmap_drag", "roadmap_torque"}
-ACTUAL_ROLES = {"actual_td", "actual_drilling", "actual_tripping"}
-WELLPLAN_ROLES = {"summary", "tripping", "off_bottom_torque", "survey", "bha"}
-ROADMAP_ROLES = {"roadmap_drag", "roadmap_torque"}
+# ---------------------------------------------------------------- Format B
+WP_TRIPPING = r"^tripping load analysis"
+WP_OFFBTM = r"^off bottom torque"
+WP_ROTARY = r"^rotary drill buckling"
+WP_SURVEY = r"^survey outputs?"
+WP_DRILLING = r"^drilling data"
+WP_TRIPDATA = r"^tripping\s+data"
+WP_FF_SET = r"csg\s*(\d*[.,]?\d+)\s*oph\s*(\d*[.,]?\d+)"
 
-# Satuan bawaan bila header kolom tidak mencantumkan satuan (memunculkan peringatan)
-SHEET_DEFAULT_UNIT = {
-    "tripping": "klbf",
-    "roadmap_drag": "klbf",
-    "off_bottom_torque": "ft-lbf",
-    "roadmap_torque": "ft-lbf",
-}
-# Operasi torsi bawaan bila header tidak menyebut on/off bottom
-SHEET_DEFAULT_TORQUE_OP = {
-    "off_bottom_torque": "torque_off_bottom",
-    "roadmap_torque": "torque_off_bottom",
-    "actual_drilling": "torque_on_bottom",
+DRILLING_COLS = {
+    "slack_off": [r"^slack ?off"],
+    "rotating_weight": [r"^rotating weight"],
+    "pick_up": [r"^pick ?/?\s*up"],
+    "torque_off_bottom": [r"^off[ -]?btm torque", r"^off[ -]?bottom torque"],
+    "torque_on_bottom": [r"^on[ -]?btm torque", r"^on[ -]?bottom torque"],
 }
 
-DEPTH_PATTERNS = [
-    r"^measured depth",
-    r"^md\b",
-    r"^depth\b",
-    r"^bit depth",
-    r"^kedalaman",
-    r"^hole depth",
-]
-
-FF_PATTERNS = [
-    r"\bff\s*[=:]?\s*(\d*[.,]\d+)",
-    r"\bcof\s*[=:]?\s*(\d*[.,]\d+)",
-    r"friction factor\s*[=:]?\s*(\d*[.,]\d+)",
-    r"\bfriction\s*[=:]?\s*(\d*[.,]\d+)",
-]
-
-HOOKLOAD_OP_PATTERNS = {
-    "pick_up": [r"pick[ -]?up", r"tripping out", r"trip out", r"\bpooh\b", r"\bp/u\b", r"\bpuw?\b"],
-    "slack_off": [
-        r"slack[ -]?off",
-        r"tripping in",
-        r"trip in",
-        r"\brih\b",
-        r"\bs/o\b",
-        r"\bsow?\b",
-    ],
-    "rotating_weight": [r"rotating", r"\brot\.?\s*w", r"\brob\b", r"\brotw\b", r"free rotating"],
-}
-
-TORQUE_OP_PATTERNS = {
-    "torque_on_bottom": [r"on[ -]?bottom", r"\bdrilling torque\b", r"\btob\b"],
-    "torque_off_bottom": [r"off[ -]?bottom", r"\btorque off\b", r"\btoffb\b"],
-}
-
-# Kolom survey
-SURVEY_COLUMNS = {
-    "md": [r"^measured depth", r"^md\b", r"^depth\b"],
-    "inc": [r"^inc", r"inclination", r"^inklinasi"],
-    "azi": [r"^azi", r"azimuth"],
-    "tvd": [r"^tvd\b", r"true vertical"],
-    "dls": [r"^dls\b", r"dog ?leg", r"^dogleg"],
-}
-
-# Kunci di sheet Summary (kolom label -> nilai di sel sebelah kanan)
 SUMMARY_KEYS = {
-    "well_name": [r"^well( name)?\s*:?$", r"^nama sumur", r"^wellbore( name)?\s*:?$"],
-    "field": [r"^field\s*:?$", r"^lapangan"],
-    "hole_size": [r"^hole (size|diameter)", r"^open hole (size|diameter)", r"^ukuran lubang"],
-    "bit_size": [r"^bit size", r"^bit diameter"],
-    "section": [r"^section\s*:?$", r"^hole section"],
-    "well_type": [r"^well (type|profile)", r"^tipe sumur"],
-    "casing_shoe": [r"^casing shoe", r"^shoe depth", r"^previous casing"],
+    "well_name": r"^well\s*:$",
+    "field": r"^field\s*:$",
+    "client": r"^client\s*:$",
+    "rig": r"^rig\s*:$",
+    "block_weight": r"^block weight\s*:$",
+    "mud_weight": r"mud weight\s*:$",
+    "bit_depth_range": r"^drilling bit depth range\s*:$",
 }
 
-# Kolom arah pada sheet Tripping Data aktual (bila satu kolom hookload + kolom arah)
-DIRECTION_PATTERNS = [r"^direction", r"^arah", r"^trip direction", r"^operation"]
-DIRECTION_VALUES = {
-    "pick_up": [r"pooh", r"out", r"pick", r"cabut", r"\bpu\b"],
-    "slack_off": [r"rih", r"\bin\b", r"slack", r"masuk", r"\bso\b"],
+# Folder tipe sumur pada impor massal (Training/<tipe>/<sumur>/file)
+TYPE_FOLDERS = {
+    "j": "J",
+    "s": "S",
+    "horizontal": "Horizontal",
+    "hz": "Horizontal",
+    "hw": "Horizontal",
 }
-HOOKLOAD_GENERIC = [r"hook ?load", r"\bhkld\b", r"\bweight\b"]

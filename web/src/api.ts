@@ -51,6 +51,9 @@ export type FileItem = {
 export type WellItem = {
   id: number;
   name: string;
+  quality: QStatus;
+  quality_score: number | null;
+  plan_format: string | null;
   section_in: number | null;
   well_type: string | null;
   section_source: string;
@@ -61,7 +64,81 @@ export type WellItem = {
   actual_points: number;
   ff_scenarios: number[];
   prediction: "oof" | "full" | null;
-  files: { id: number; filename: string; status: string }[];
+  files: { id: number; filename: string; status: string; version: number }[];
+};
+export type QStatus = "A" | "B" | "C" | "X";
+export const Q_LABEL: Record<QStatus, string> = {
+  A: "Layak",
+  B: "Layak + peringatan",
+  C: "Ditahan",
+  X: "Dikecualikan",
+};
+export type Check = { code: string; level: "kritis" | "peringatan" | "lolos"; message: string };
+export type QualityRow = {
+  well_id: number;
+  well: string;
+  section_in: number | null;
+  well_type: string | null;
+  auto_status: QStatus | null;
+  status: QStatus;
+  status_label: string;
+  score: number | null;
+  checks: Check[];
+  stats: Record<string, number>;
+  reviews: { decision: string; reason: string; reviewer: string; created_at: string }[];
+};
+export type ScanRun = {
+  id: number;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  counts: Record<string, number> | null;
+  quality: Record<string, number> | null;
+  error?: string | null;
+  files?: { file: string; well: string | null; section: number | null; status: string; message: string; version?: number }[];
+  wells?: { well: string; section: number; type: string; quality: QStatus; reasons: string[] }[];
+};
+export type InboxStatus = {
+  inbox_dir: string;
+  exists: boolean;
+  pending: number;
+  too_new: number;
+  wells: number;
+  move_after_import: boolean;
+};
+export type DatasetItem = {
+  id: number;
+  version: number;
+  created_at: string;
+  hash: string;
+  n_rows: number;
+  n_wells: number;
+  n_excluded: number;
+  n_blind: number;
+  wells?: { well_id: number; name: string; section: string; type: string; blind: boolean; rows: number }[];
+  excluded?: { name: string; section: number; status: string }[];
+};
+export type BlindSet = { id: number; wells: string[]; note: string; created_at: string } | null;
+export type LimitItem = {
+  id: number;
+  well_id: number | null;
+  section_in: number | null;
+  operation: string;
+  kind: "max" | "min";
+  value: number;
+  unit: string;
+  note: string | null;
+  scope: string;
+};
+export type EvaluationItem = {
+  id: number;
+  well_id: number;
+  well: string;
+  section_in: number;
+  model_id: number;
+  predicted_at: string;
+  evaluated_at: string;
+  metrics: { operations: Record<string, { ml: Metric; wellplan: Metric | null; ml_better_frac: number | null }> };
 };
 export type Metric = { rmse: number | null; mape: number | null; r2: number | null; n: number };
 export type GroupRow = {
@@ -74,8 +151,15 @@ export type GroupRow = {
 };
 export type OpMetrics = {
   chosen: string;
+  chosen_label?: string;
+  strategy?: { combo: string; n_wells: number; rmse_single: number; rmse_combo?: number; dipakai: string }[];
+  by_depth?: { depth_from_m: number; depth_to_m: number; wellplan: Metric; ml: Metric; ml_better_frac: number }[];
+  worst_points?: { well_name: string; section: string; depth_m: number; actual: number; wellplan: number; ml: number }[];
+  learning_curve?: { label: string; n_wells: number; rmse_ml: number; rmse_wp: number }[];
+  explain?: { method: string; features: { feature: string; importance: number; direction: number }[]; note: string; physics_ok: boolean };
+  algo_best?: Record<string, Metric & { candidate: string }>;
   candidates: Record<string, Metric>;
-  overall: { wellplan: Metric; ml: Metric; n_wells: number };
+  overall: { wellplan: Metric; ml: Metric; n_wells: number; ml_better_frac?: number };
   by_section: GroupRow[];
   by_type: GroupRow[];
   by_section_type: GroupRow[];
@@ -86,11 +170,26 @@ export type ModelItem = {
   algorithm: string;
   status: string;
   active: boolean;
+  dataset_version?: number;
+  skill?: number | null;
+  comparison?: { decision?: string; new_skill?: number; active_skill?: number; active_id?: number };
+  blind_done?: boolean;
+  blind_result?: {
+    wells: string[];
+    run_at: string;
+    operations: Record<string, { wellplan: Metric; ml: Metric; ml_better_frac: number }>;
+  } | null;
   message: string | null;
   created_at: string;
   finished_at: string | null;
   summary?: Record<string, { chosen: string; wellplan_rmse: number; ml_rmse: number; n_wells: number }>;
-  metrics?: { operations: Record<string, OpMetrics>; notes: string[]; dataset?: { rows: number; wells: number } };
+  metrics?: {
+    operations: Record<string, OpMetrics>;
+    notes: string[];
+    skill?: number;
+    feature_selection?: { grup: string; skor: number; dipakai: boolean; keterangan: string }[];
+    dataset?: { version: number; hash: string; rows_train: number; wells_train: number; rows_blind: number; wells_blind: number };
+  };
 };
 export type Series = { depth: number[]; value: number[] };
 export type DiffSeries = { depth: number[]; abs: number[]; pct: number[] };
@@ -99,8 +198,19 @@ export type OpProfile = {
   unit: string;
   wellplan: { ff: number | null; depth: number[]; value: number[] }[];
   wellplan_baseline_ff: number | null;
-  ml: Series;
+  ml: Series & { lo: number[]; hi: number[] };
   actual: Series;
+  limits: {
+    id: number;
+    kind: "max" | "min";
+    scope: string;
+    value: number;
+    note: string | null;
+    cross_ml: number | null;
+    cross_ml_band: number | null;
+    cross_wellplan: number | null;
+    margin_ml: number | null;
+  }[];
   diff: { wp_minus_actual: DiffSeries; ml_minus_actual: DiffSeries; ml_minus_wp: DiffSeries };
   metrics: { wellplan: Metric | null; ml: Metric | null } | null;
 };
@@ -110,6 +220,8 @@ export type Profile = {
   depth_unit: string;
   has_actual: boolean;
   prediction: { id: number; kind: "oof" | "full"; model_id: number } | null;
+  model: { id: number; active: boolean; dataset_version: number | null } | null;
+  quality: { status: QStatus; auto_status: QStatus | null; score: number | null; issues: Check[]; review: { decision: string; reason: string } | null };
   warnings: string[];
   sign_convention: string;
   operations: Record<string, OpProfile>;

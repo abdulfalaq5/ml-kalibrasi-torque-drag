@@ -14,6 +14,7 @@ export type ChartOptions = {
   diffMode: "abs" | "pct";
   flagSeries: DiffKey;
   threshold: number;
+  showBand: boolean;
 };
 
 export type Interval = { from: number; to: number; peak: number };
@@ -153,6 +154,30 @@ export default function ThreeProfileChart({
             hovertemplate: `%{x:,.1f} ${o.unit}<extra>${name}</extra>`,
           });
         }
+        if (o.ml.depth.length && options.showBand && o.ml.lo?.length) {
+          // pita ketidakpastian 10-90%: dua kurva, area di antaranya diarsir
+          out.push({
+            type: "scatter",
+            mode: "lines",
+            x: o.ml.lo,
+            y: o.ml.depth,
+            line: { width: 0 },
+            hoverinfo: "skip",
+            showlegend: false,
+            name: `ML ${label} 10%`,
+          });
+          out.push({
+            type: "scatter",
+            mode: "lines",
+            x: o.ml.hi,
+            y: o.ml.depth,
+            line: { width: 0 },
+            fill: "tonextx",
+            fillcolor: "rgba(235, 104, 52, 0.13)",
+            hoverinfo: "skip",
+            name: `Pita ML ${label} (10–90%)`,
+          });
+        }
         if (o.ml.depth.length) {
           out.push({
             type: "scatter",
@@ -240,6 +265,48 @@ export default function ThreeProfileChart({
   }, [traces]);
 
   const makeLayout = (key: PanelKey, xTitle: string): Partial<Plotly.Layout> => {
+    const limitOps = key === "hookload" ? HOOKLOAD_OPS : key === "torque" ? TORQUE_OPS : [];
+    const limitShapes: Partial<Plotly.Shape>[] = [];
+    const limitNotes: Partial<Plotly.Annotations>[] = [];
+    for (const op of limitOps) {
+      if (!options.ops[op]) continue;
+      for (const lim of profile.operations[op].limits ?? []) {
+        limitShapes.push({
+          type: "line",
+          xref: "x",
+          yref: "paper",
+          x0: lim.value,
+          x1: lim.value,
+          y0: 0,
+          y1: 1,
+          line: { color: COLOR.limit, width: 2, dash: "dashdot" },
+        });
+        limitNotes.push({
+          x: lim.value,
+          xref: "x",
+          yref: "paper",
+          y: 1,
+          yanchor: "bottom",
+          showarrow: false,
+          text: `${lim.kind === "max" ? "maks" : "min"} ${OP_LABEL[op]}`,
+          font: { size: 10, color: COLOR.limit },
+        });
+        if (lim.cross_ml !== null) {
+          limitShapes.push({
+            type: "rect",
+            xref: "paper",
+            yref: "y",
+            x0: 0,
+            x1: 1,
+            y0: lim.cross_ml,
+            y1: (fullRange ?? [lim.cross_ml + 1, 0])[0],
+            fillcolor: "rgba(227, 73, 72, 0.06)",
+            line: { width: 0 },
+            layer: "below",
+          });
+        }
+      }
+    }
     const shapes: Partial<Plotly.Shape>[] = intervals.map((iv) => ({
       type: "rect",
       xref: "paper",
@@ -272,7 +339,8 @@ export default function ThreeProfileChart({
       uirevision: `${key}-${zoomRev}-${options.diffTarget}-${options.diffMode}`,
       showlegend: !narrow,
       legend: { orientation: "v", x: 1.02, y: 1, font: { size: 11, color: COLOR.textMuted } },
-      shapes: shapes as Plotly.Shape[],
+      shapes: [...shapes, ...limitShapes] as Plotly.Shape[],
+      annotations: limitNotes as Plotly.Annotations[],
       xaxis: {
         ...axisBase,
         title: { text: xTitle, font: { color: COLOR.textMuted, size: 12 } },

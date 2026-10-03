@@ -9,6 +9,7 @@ folder --out; isi data tidak dicetak ke layar (aturan data client, Pasal 11).
 
 import argparse
 import csv
+import re
 import sys
 from collections import Counter, defaultdict
 from datetime import date
@@ -16,44 +17,70 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from app.parsers import column_map as cm  # noqa: E402
 from app.parsers.workbook import parse_workbook  # noqa: E402
 from app.services.classify import classify_section, classify_well_type  # noqa: E402
 
+KNOWN_IGNORED = re.compile(r"plot|buckling|backreaming|casing shoe")
+
 EXPECTED = {
-    "wellplan": ["summary", "tripping", "off_bottom_torque", "survey", "bha"],
-    "actual": ["actual_td", "actual_drilling", "actual_tripping"],
-    "roadmap": ["roadmap_drag", "roadmap_torque"],
+    "roadmap": ["roadmap_drag", "roadmap_torque", "actual_td"],
+    "wellplan": [
+        "summary",
+        "tripping",
+        "off_bottom_torque",
+        "rotary_drill",
+        "survey",
+        "actual_drilling",
+    ],
 }
 
 
-def audit_file(path: Path) -> dict:
-    pw = parse_workbook(path)
+def audit_file(path: Path, root: Path) -> dict:
+    rel = str(path.relative_to(root))
+    pw = parse_workbook(path, path.name, rel)
     roles = {s.role for s in pw.sheets if s.role}
-    missing = []
-    for kind in sorted(pw.kinds):
-        missing += [r for r in EXPECTED[kind] if r not in roles]
+    missing = [r for r in EXPECTED.get(pw.fmt or "", []) if r not in roles]
     ignored = [s.name for s in pw.sheets if s.role is None]
-    hole = pw.meta.get("hole_size") or pw.meta.get("bit_size")
-    wtype, type_warn = (None, None)
+    hole = pw.meta.get("section_from_filename") or pw.meta.get("hole_size_in")
+    wtype = pw.meta.get("well_type_folder")
+    type_note = ""
     if pw.survey:
-        wtype, type_warn = classify_well_type([s.md for s in pw.survey], [s.inc for s in pw.survey])
-    ffs = sorted({r.ff for r in pw.plan if r.ff is not None})
-    act_ops = Counter(r.operation for r in pw.actual)
-    units = sorted({u for s in pw.sheets for u in s.units})
+        t, warn = classify_well_type([s.md for s in pw.survey], [s.inc for s in pw.survey])
+        wtype = wtype or t
+        if t and pw.meta.get("well_type_folder") and t != pw.meta["well_type_folder"]:
+            type_note = f"survey menunjukkan {t}"
+        type_note = type_note or (warn or "")
+    sec_meta = classify_section(pw.meta.get("section_meta_in"))
+    if sec_meta and classify_section(hole) and sec_meta != classify_section(hole):
+        pw.warn(
+            f'Section di sheet aktual ({pw.meta.get("section_meta")}) berbeda dengan nama file ({hole:g}")'
+        )
+    if (
+        type_note.startswith("survey menunjukkan")
+        and classify_section(hole)
+        and classify_section(hole) >= 17.5
+    ):
+        type_note += " (wajar: section atas masih vertikal)"
+    pr, ar = pw.meta.get("plan_depth_m"), pw.meta.get("actual_depth_m")
+    overlap = None
+    if pr and ar:
+        overlap = max(0.0, min(pr[1], ar[1]) - max(pr[0], ar[0])) / max(ar[1] - ar[0], 1e-6)
     return {
-        "file": path.name,
-        "kinds": "+".join(sorted(pw.kinds)) or "-",
-        "well": pw.meta.get("well_name") or "-",
+        "file": rel,
+        "kinds": pw.fmt or "-",
+        "well": pw.meta.get("well_folder") or pw.meta.get("well_name") or "-",
         "section": classify_section(hole),
         "type": wtype or "-",
-        "type_note": type_warn or "",
+        "type_note": type_note,
         "survey_points": len(pw.survey),
         "plan_points": len(pw.plan),
         "actual_points": len(pw.actual),
-        "actual_by_op": dict(act_ops),
-        "ff_scenarios": ffs,
-        "units": units,
+        "actual_depths": len({r.depth for r in pw.actual}),
+        "actual_by_op": dict(Counter(r.operation for r in pw.actual)),
+        "ff_scenarios": pw.meta.get("ff_scenarios", []),
+        "units": sorted({r.unit for r in pw.plan + pw.actual} | ({"ft"} if pw.plan else set())),
+        "overlap": overlap,
+        "block_weight": pw.meta.get("block_weight_klbf"),
         "sheets": [(s.name, s.role or "diabaikan", s.rows) for s in pw.sheets],
         "missing_roles": missing,
         "ignored_sheets": ignored,
@@ -106,7 +133,7 @@ def write_report(rows: list[dict], out: Path) -> None:
 
     matrix: dict[tuple, set] = defaultdict(set)
     for r in rows:
-        if r["actual_points"]:
+        if r["actual_depths"] >= 8:
             matrix[(r["section"], r["type"])].add(r["well"])
     sections = sorted({k[0] for k in matrix if k[0] is not None}, reverse=True)
     types = ["J", "S", "Horizontal"]
@@ -122,7 +149,12 @@ def write_report(rows: list[dict], out: Path) -> None:
         f"- Satuan yang ditemukan: {', '.join(sorted({u for r in rows for u in r['units']})) or '-'}",
         f"- Skenario FF: {', '.join(sorted({str(f) for r in rows for f in r['ff_scenarios']})) or '-'}",
         "",
-        "## Matriks sumur x section x tipe (sumur dengan data aktual)",
+        f"- Format: {sum(r['kinds'] == 'roadmap' for r in rows)} roadmap (A), "
+        f"{sum(r['kinds'] == 'wellplan' for r in rows)} laporan WellPlan (B)",
+        f"- File tanpa data aktual: {sum(r['actual_points'] == 0 for r in rows)}; "
+        f"dengan < 8 kedalaman aktual: {sum(0 < r['actual_depths'] < 8 for r in rows)}",
+        "",
+        "## Matriks sumur x section x tipe (sumur dengan >= 8 kedalaman aktual)",
         "",
         "| Section | " + " | ".join(types) + " |",
         "|---|" + "---|" * len(types),
@@ -138,8 +170,9 @@ def write_report(rows: list[dict], out: Path) -> None:
     L += [
         "## Tabel per file",
         "",
-        "| File | Jenis | Sumur | Section | Tipe | Survey | WellPlan | Aktual | FF | Status |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| File | Format | Sumur | Section | Tipe | Survey | Titik WellPlan | Kedalaman aktual "
+        "| Tumpang | FF | Status |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         status = (
@@ -147,22 +180,33 @@ def write_report(rows: list[dict], out: Path) -> None:
             if r["errors"]
             else ("peringatan" if r["warnings"] or r["missing_roles"] else "ok")
         )
+        ov = "-" if r["overlap"] is None else format(r["overlap"], ".0%")
         L.append(
             f"| {r['file']} | {r['kinds']} | {r['well']} | {r['section'] or '-'} | {r['type']} | "
-            f"{r['survey_points']} | {r['plan_points']} | {r['actual_points']} | "
+            f"{r['survey_points']} | {r['plan_points']} | {r['actual_depths']} | {ov} | "
             f"{'/'.join(map(str, r['ff_scenarios'])) or '-'} | {status} |"
         )
 
     L += ["", "## Penyimpangan format per file", ""]
+    L += [
+        "Sheet plot/buckling/backreaming dan 'Casing Shoe' (data bantu grafik) sengaja diabaikan "
+        "dan tidak dicantumkan di bawah.",
+        "",
+    ]
     any_issue = False
     for r in rows:
         items = [f"Error: {e}" for e in r["errors"]]
         items += [f"Sheet yang diharapkan tidak ada: {m}" for m in r["missing_roles"]]
         items += [f"Peringatan: {w}" for w in r["warnings"]]
+        if r["actual_points"] == 0:
+            items.append("Tidak ada data aktual: tidak bisa dipakai melatih model")
+        elif r["actual_depths"] < 8:
+            items.append(f"Hanya {r['actual_depths']} kedalaman aktual (< 8)")
         if r["type_note"]:
             items.append(f"Catatan tipe: {r['type_note']}")
-        if r["ignored_sheets"]:
-            items.append(f"Sheet diabaikan: {', '.join(r['ignored_sheets'])}")
+        extra = [s for s in r["ignored_sheets"] if not KNOWN_IGNORED.search(s.lower())]
+        if extra:
+            items.append(f"Sheet tambahan diabaikan: {', '.join(extra)}")
         if items:
             any_issue = True
             L += [f"### {r['file']}", ""] + [f"- {i}" for i in items] + [""]
@@ -199,11 +243,14 @@ def main() -> int:
     if not files:
         print(f"Tidak ada file .xlsx/.xlsm di {args.folder}", file=sys.stderr)
         return 1
-    rows = [audit_file(p) for p in files]
+    rows = [audit_file(p, args.folder) for p in files]
     write_report(rows, args.out)
     bad = sum(1 for r in rows if r["errors"])
     print(f"{len(rows)} file diaudit, {bad} bermasalah. Laporan: {args.out / 'laporan_audit.md'}")
-    print(f"Peran sheet yang dikenali: {', '.join(cm.SHEET_ROLES)}")
+    print(
+        f"Format: {sum(r['kinds'] == 'roadmap' for r in rows)} roadmap, "
+        f"{sum(r['kinds'] == 'wellplan' for r in rows)} laporan WellPlan"
+    )
     return 0
 
 

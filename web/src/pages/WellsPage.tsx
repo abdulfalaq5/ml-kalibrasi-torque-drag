@@ -3,9 +3,11 @@ import { useDropzone } from "react-dropzone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { api, FileItem, WellItem } from "../api";
+import InboxPanel from "../components/InboxPanel";
+import QualityBadge from "../components/QualityBadge";
 
 const TYPES = ["J", "S", "Horizontal"];
-const SECTIONS = [17.5, 12.25, 8.5, 6.125];
+const SECTIONS = [26, 22, 17.5, 12.25, 8.5, 6.125];
 
 type UploadResult = { name: string; result?: FileItem; error?: string };
 
@@ -149,14 +151,16 @@ export default function WellsPage() {
   const matrix = new Map<string, number>();
   for (const w of list) {
     const k = `${w.section_in ?? "?"}|${w.well_type ?? "?"}`;
-    matrix.set(k, (matrix.get(k) ?? 0) + (w.actual_points > 0 ? 1 : 0));
+    matrix.set(k, (matrix.get(k) ?? 0) + (w.actual_points > 0 && (w.quality === "A" || w.quality === "B") ? 1 : 0));
   }
-  const sections = [...new Set(list.map((w) => w.section_in ?? "?"))];
+  const sections = [...new Set(list.map((w) => w.section_in ?? "?"))].sort((a, b) => Number(b) - Number(a));
 
   return (
     <div className="page">
+      <InboxPanel />
+
       <section className="card">
-        <h2>Impor file Excel</h2>
+        <h2>Unggah file Excel</h2>
         <Uploader />
       </section>
 
@@ -178,6 +182,8 @@ export default function WellsPage() {
                 <th>Sumur</th>
                 <th>Section</th>
                 <th>Tipe</th>
+                <th>Kualitas</th>
+                <th>Format</th>
                 <th className="num">Survey</th>
                 <th className="num">Titik WellPlan</th>
                 <th className="num">Titik aktual</th>
@@ -219,6 +225,10 @@ export default function WellsPage() {
                     </select>{" "}
                     <span className="muted small">{w.type_source}</span>
                   </td>
+                  <td>
+                    <QualityBadge s={w.quality} />
+                  </td>
+                  <td className="small">{w.plan_format ?? "–"}</td>
                   <td className="num">{w.survey_points}</td>
                   <td className="num">{w.plan_points}</td>
                   <td className="num">{w.actual_points}</td>
@@ -246,8 +256,11 @@ export default function WellsPage() {
       </section>
 
       <section className="card">
-        <h2>Matriks sumur dengan data aktual (section × tipe)</h2>
-        <p className="muted small">Sel dengan kurang dari 3 sumur ditandai: hasil model untuk kombinasi itu kurang andal.</p>
+        <h2>Matriks sumur layak training (section × tipe)</h2>
+        <p className="muted small">
+          Jumlah sumur-section berstatus kualitas A/B dengan data aktual. Sel dengan kurang dari 3 sumur ditandai: hasil model untuk
+          kombinasi itu kurang andal.
+        </p>
         <table className="matrix">
           <thead>
             <tr>

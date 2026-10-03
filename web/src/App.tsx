@@ -6,6 +6,8 @@ import LoginPage from "./pages/LoginPage";
 import WellsPage from "./pages/WellsPage";
 import DashboardPage from "./pages/DashboardPage";
 import ModelsPage from "./pages/ModelsPage";
+import QualityPage from "./pages/QualityPage";
+import EvaluationsPage from "./pages/EvaluationsPage";
 
 export default function App() {
   const qc = useQueryClient();
@@ -40,8 +42,10 @@ export default function App() {
         <div className="brand">Kalibrasi Torque &amp; Drag ML</div>
         <nav>
           <NavLink to="/sumur">Data sumur</NavLink>
+          <NavLink to="/kualitas">Kualitas data</NavLink>
           <NavLink to="/model">Model</NavLink>
           <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/evaluasi">Evaluasi</NavLink>
         </nav>
         <div className="user">
           <span className="muted">{me.data.username}</span>
@@ -54,7 +58,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/sumur" replace />} />
           <Route path="/sumur" element={<WellsPage />} />
+          <Route path="/kualitas" element={<QualityPage />} />
           <Route path="/model" element={<ModelsPage />} />
+          <Route path="/evaluasi" element={<EvaluationsPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/dashboard/:wellId" element={<DashboardPage />} />
           <Route path="*" element={<Navigate to="/sumur" replace />} />

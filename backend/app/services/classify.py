@@ -14,7 +14,7 @@ S_MIN_DROP = 10.0
 NEAR_VERTICAL_INC = 5.0
 
 
-def classify_section(hole_in: float | None, tolerance: float = 0.5) -> float | None:
+def classify_section(hole_in: float | None, tolerance: float = 0.4) -> float | None:
     if hole_in is None:
         return None
     best = min(SECTIONS_IN, key=lambda s: abs(s - hole_in))

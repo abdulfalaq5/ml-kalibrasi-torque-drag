@@ -5,13 +5,17 @@ from fastapi.responses import Response
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.db.models import MLModel
+from app.db.models import Dataset, MLModel
 from app.db.session import get_db
 from app.services.dataset import build_dataset
 from app.services.export import export_model_report
-from app.services.training import run_training_job
+from app.services.pdf import model_pdf
+from app.services.quality import eligible_well_ids
+from app.services.training import run_blind_test, run_training_job
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def model_out(m: MLModel, full: bool = False) -> dict:
@@ -24,14 +28,21 @@ def model_out(m: MLModel, full: bool = False) -> dict:
         "created_at": m.created_at,
         "finished_at": m.finished_at,
         "params": m.params,
+        "dataset_id": m.dataset_id,
+        "dataset_version": (m.params or {}).get("dataset_version"),
+        "comparison": m.comparison,
+        "blind_done": bool(m.blind_result),
     }
     metrics = m.metrics or {}
+    out["skill"] = metrics.get("skill")
     if full:
         out["metrics"] = metrics
+        out["blind_result"] = m.blind_result
     else:
         out["summary"] = {
             op: {
                 "chosen": d["chosen"],
+                "chosen_label": d.get("chosen_label"),
                 "wellplan_rmse": d["overall"]["wellplan"]["rmse"],
                 "ml_rmse": d["overall"]["ml"]["rmse"],
                 "n_wells": d["overall"]["n_wells"],
@@ -49,16 +60,20 @@ def list_models(db: Session = Depends(get_db)):
 @router.post("/train")
 def train(
     background: BackgroundTasks,
-    algorithm: str = Query("terbaik", pattern="^(terbaik|xgboost|ridge)$"),
+    algorithm: str = Query("semua", pattern="^(semua|ridge|xgboost|random_forest|svr|mlp)$"),
+    include_mlp: bool = False,
+    dataset_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     running = db.scalar(select(MLModel).where(MLModel.status.in_(["antri", "berjalan"])))
     if running:
         raise HTTPException(409, f"Model #{running.id} masih dilatih")
-    m = MLModel(algorithm=algorithm, status="antri")
+    if dataset_id is not None and db.get(Dataset, dataset_id) is None:
+        raise HTTPException(404, "Dataset tidak ditemukan")
+    m = MLModel(algorithm=algorithm, status="antri", dataset_id=dataset_id)
     db.add(m)
     db.commit()
-    background.add_task(run_training_job, m.id, algorithm)
+    background.add_task(run_training_job, m.id, algorithm, include_mlp, dataset_id)
     return model_out(m)
 
 
@@ -71,8 +86,9 @@ def _get(db: Session, model_id: int) -> MLModel:
 
 @router.get("/dataset.csv")
 def dataset_csv(db: Session = Depends(get_db)):
-    """Dataset latih untuk pemeriksaan manual (satuan SI)."""
-    ds, notes = build_dataset(db)
+    """Dataset LIVE (belum beku) dari sumur berstatus A/B, untuk pemeriksaan manual (SI)."""
+    ids, _ = eligible_well_ids(db)
+    ds, notes = build_dataset(db, ids)
     buf = io.StringIO()
     for n in notes:
         buf.write(f"# {n}\n")
@@ -92,21 +108,46 @@ def get_model(model_id: int, db: Session = Depends(get_db)):
 @router.post("/{model_id}/activate")
 def activate(model_id: int, db: Session = Depends(get_db)):
     m = _get(db, model_id)
-    if m.status != "selesai":
+    if m.status not in ("selesai", "ditahan"):
         raise HTTPException(400, "Hanya model yang selesai dilatih yang bisa diaktifkan")
     db.execute(update(MLModel).values(active=False))
+    if m.status == "ditahan":
+        cmp = dict(m.comparison or {})
+        cmp["decision"] = (cmp.get("decision", "") + " | Diaktifkan manual oleh admin.").strip(" |")
+        m.comparison = cmp
+    m.status = "selesai"
     m.active = True
     db.commit()
     return model_out(m)
 
 
+@router.post("/{model_id}/blind-test")
+def blind_test(model_id: int, db: Session = Depends(get_db)):
+    try:
+        return run_blind_test(db, _get(db, model_id))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("/{model_id}/report.xlsx")
 def report(model_id: int, db: Session = Depends(get_db)):
     m = _get(db, model_id)
-    if m.status != "selesai":
+    if m.status not in ("selesai", "ditahan"):
         raise HTTPException(400, "Model belum selesai dilatih")
     return Response(
-        export_model_report(m),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        export_model_report(m, db.get(Dataset, m.dataset_id) if m.dataset_id else None),
+        media_type=XLSX,
         headers={"Content-Disposition": f'attachment; filename="laporan_model_{m.id}.xlsx"'},
+    )
+
+
+@router.get("/{model_id}/report.pdf")
+def report_pdf(model_id: int, db: Session = Depends(get_db)):
+    m = _get(db, model_id)
+    if m.status not in ("selesai", "ditahan"):
+        raise HTTPException(400, "Model belum selesai dilatih")
+    return Response(
+        model_pdf(db, m),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="ringkasan_model_{m.id}.pdf"'},
     )

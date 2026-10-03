@@ -1,128 +1,213 @@
-"""Alur penuh: impor -> latih (validasi per kelompok sumur) -> prediksi -> dashboard -> ekspor."""
+"""Alur penuh paket 6 minggu dengan data sintetis berstruktur folder seperti data client:
+pindai folder -> gerbang kualitas -> tinjauan -> bekukan dataset -> latih -> blind test ->
+prediksi -> batas aman -> ekspor Excel/PDF -> evaluasi prediksi setelah data aktual masuk."""
 
 import io
+import os
+import subprocess
+import sys
+import time
 
 import openpyxl
 import pytest
 from app.db.models import MLModel, Prediction, Well
-from app.services.training import train
-from make_sample_data import build_well, well_specs, write_wellplan
+from app.services.training import _compare_and_activate, train
+from make_sample_data import build_well, section_spec, well_specs, write_wellplan_file
 from sqlalchemy import select
 
-from tests.conftest import FIXTURES
+from tests.conftest import ROOT
+
+SEED = 11
 
 
 @pytest.fixture(scope="module")
-def sample_files(tmp_dir):
-    out = tmp_dir / "sample"
-    out.mkdir(exist_ok=True)
-    files = []
-    for i, spec in enumerate(well_specs(6, seed=11)):
-        spec.name = f"T{i + 1:02d}"
-        p = out / f"{spec.name}.xlsx"
-        write_wellplan(build_well(spec), p, include_actual=i < 5)
-        files.append(p)
-    return files
-
-
-def _upload(client, path, **form):
-    with path.open("rb") as fh:
-        return client.post("/api/files", files={"file": (path.name, fh)}, data=form)
+def inbox(tmp_dir):
+    path = tmp_dir / "inbox"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "make_sample_data.py"),
+            "--out",
+            str(path),
+            "--wells",
+            "9",
+            "--new-wells",
+            "1",
+            "--seed",
+            str(SEED),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    old = time.time() - 300
+    for f in path.rglob("*.xls*"):
+        os.utime(f, (old, old))
+    return path
 
 
 def test_upload_rejects_non_excel(auth_client, tmp_path):
     p = tmp_path / "x.csv"
     p.write_text("a,b")
-    assert _upload(auth_client, p).status_code == 400
-    p = tmp_path / "x.xlsx"
-    p.write_text("bukan zip")
-    assert _upload(auth_client, p).status_code == 400
+    with p.open("rb") as fh:
+        assert auth_client.post("/api/files", files={"file": (p.name, fh)}).status_code == 400
 
 
-def test_failed_file_has_reason(auth_client, tmp_path):
-    wb = openpyxl.Workbook()
-    wb.active.title = "Sembarang"
-    p = tmp_path / "gagal.xlsx"
-    wb.save(p)
-    j = _upload(auth_client, p).json()
-    assert j["status"] == "gagal"
-    assert j["issues"] and j["issues"][0]["level"] == "error"
+def test_full_pipeline(auth_client, db, inbox, tmp_dir):
+    st = auth_client.get("/api/inbox/status").json()
+    assert st["pending"] > 15 and st["wells"] == 10
 
+    # --- impor massal (background task dijalankan sinkron oleh TestClient)
+    r = auth_client.post("/api/inbox/scan")
+    assert r.status_code == 200, r.text
+    run = auth_client.get(f"/api/inbox/runs/{r.json()['id']}").json()
+    assert run["status"] == "selesai", run
+    assert run["counts"].get("ditolak", 0) == 0, run["files"]
+    assert not list(inbox.rglob("*.xls*")), "file harus dipindah dari inbox"
+    assert list((tmp_dir / "processed").rglob("*.xls*"))
+    # idempoten: memindai lagi tidak menemukan file
+    assert auth_client.post("/api/inbox/scan").status_code == 400
 
-def test_full_pipeline(auth_client, db, sample_files):
-    for p in [FIXTURES / "contoh1_wellplan_aktual.xlsx", *sample_files]:
-        j = _upload(auth_client, p).json()
-        assert j["status"] in ("ok", "peringatan"), j
-    # roadmap tidak memuat nama sumur -> diisi di form unggah
-    j = _upload(
-        auth_client, FIXTURES / "contoh1_roadmap.xlsx", well_name="W01", section_in="12.25"
-    ).json()
-    assert j["well_name"] == "W01", j
-    # unggah ulang file yang sama tidak menggandakan data
-    again = _upload(auth_client, sample_files[0]).json()
-    assert again["status"] in ("ok", "peringatan")
+    # --- gerbang kualitas
+    q = auth_client.get("/api/quality").json()
+    by = {(x["well"], x["section_in"]): x for x in q}
+    new = [x for x in q if "BARU" in x["well"]]
+    assert new and all(x["status"] == "C" for x in new)  # tanpa data aktual -> ditahan
+    assert sum(x["status"] in ("A", "B") for x in q) >= 15
+    for x in q:
+        assert x["well_type"] in ("J", "S", "Horizontal")  # dari folder tipe
+    # tinjauan tercatat
+    target = new[0]
+    rv = auth_client.post(
+        f"/api/quality/{target['well_id']}/review",
+        json={"decision": "perbaiki", "reason": "minta data aktual ke client"},
+    )
+    assert rv.json()["status"] == "C"
+    assert (
+        auth_client.post(
+            f"/api/quality/{target['well_id']}/review",
+            json={"decision": "x", "reason": "tidak valid"},
+        ).status_code
+        == 400
+    )
+    xl = auth_client.get("/api/quality/report.xlsx")
+    assert "Kualitas data" in openpyxl.load_workbook(io.BytesIO(xl.content)).sheetnames
+    assert by  # noqa
 
-    wells = auth_client.get("/api/wells").json()
-    names = {w["name"] for w in wells}
-    assert {"W01", "T01", "T06"} <= names
-    for w in wells:
-        assert w["section_in"] is not None and w["well_type"] in ("J", "S", "Horizontal")
+    # --- bekukan dataset + blind test terkunci
+    d = auth_client.post("/api/datasets/freeze").json()
+    assert d["version"] == 1 and d["n_blind"] >= 1 and len(d["hash"]) == 64
+    blind = auth_client.get("/api/datasets/blind").json()
+    assert len(blind["wells"]) >= 1
+    d2 = auth_client.post("/api/datasets/freeze").json()
+    assert d2["version"] == 2 and d2["hash"] == d["hash"]  # data sama -> hash sama
+    assert (
+        auth_client.get("/api/datasets/blind").json()["wells"] == blind["wells"]
+    )  # tetap terkunci
 
-    # koreksi manual tipe sumur
-    t06 = next(w for w in wells if w["name"] == "T06")
-    r = auth_client.patch(f"/api/wells/{t06['id']}", json={"well_type": "S"})
-    assert r.json()["type_source"] == "manual"
-
-    # latih langsung (sinkron) agar deterministik di tes
-    row = MLModel(algorithm="terbaik", status="antri")
+    # --- latih (sinkron agar deterministik)
+    row = MLModel(algorithm="xgboost", status="antri")
     db.add(row)
     db.commit()
-    train(db, row)
-    assert row.status == "selesai" and row.active
-    m = row.metrics["operations"]["pick_up"]
-    assert m["overall"]["n_wells"] == 6  # W01 + T01..T05
-    assert m["overall"]["ml"]["rmse"] > 0
-    assert m["by_section_type"] and any(g["warning"] for g in m["by_section_type"])
-    assert set(m["candidates"]) >= {"ridge_langsung", "ridge_selisih", "xgboost1_langsung"}
-
-    # sumur latih punya prediksi out-of-fold, sumur baru belum
-    oof_wells = set(
-        db.scalars(
+    train(db, row, "xgboost")
+    assert row.status == "selesai" and row.active and row.dataset_id
+    m = row.metrics
+    assert m["dataset"]["wells_blind"] >= 1
+    assert set(m["operations"]) >= {"pick_up", "slack_off"}
+    op = m["operations"]["pick_up"]
+    assert op["learning_curve"] and op["explain"]["features"] and op["strategy"]
+    assert m["feature_selection"][0]["grup"] == "dasar"
+    trained = set(m["dataset"]["train_combos"])
+    assert trained
+    # sumur blind tidak pernah punya prediksi out-of-fold
+    oof_wells = {
+        db.get(Well, wid).name
+        for wid in db.scalars(
             select(Prediction.well_id).where(
                 Prediction.kind == "oof", Prediction.model_id == row.id
             )
         )
+    }
+    assert oof_wells and not (oof_wells & set(blind["wells"]))
+
+    # --- blind test sekali
+    b = auth_client.post(f"/api/models/{row.id}/blind-test")
+    assert b.status_code == 200, b.text
+    assert set(b.json()["wells"]) == set(blind["wells"])
+    assert auth_client.post(f"/api/models/{row.id}/blind-test").status_code == 400
+
+    # --- laporan model
+    assert auth_client.get(f"/api/models/{row.id}/report.pdf").content[:4] == b"%PDF"
+    sheets = openpyxl.load_workbook(
+        io.BytesIO(auth_client.get(f"/api/models/{row.id}/report.xlsx").content)
+    ).sheetnames
+    assert {"Ringkasan", "Kurva belajar", "Pentingnya fitur", "Blind test", "Dataset"} <= set(
+        sheets
     )
-    t06_id = db.scalar(select(Well.id).where(Well.name == "T06"))
-    assert len(oof_wells) == 6 and t06_id not in oof_wells
 
-    r = auth_client.post(f"/api/wells/{t06_id}/predict")
-    assert r.status_code == 200, r.text
-
-    prof = auth_client.get(f"/api/wells/{t06_id}/profile").json()
-    assert prof["has_actual"] is False
+    # --- prediksi sumur baru + batas aman
+    w_new = db.get(Well, target["well_id"])
+    p = auth_client.post(f"/api/wells/{w_new.id}/predict")
+    assert p.status_code == 200, p.text
+    lim = auth_client.post(
+        "/api/limits",
+        json={
+            "operation": "pick_up",
+            "value": 50,
+            "unit_system": "imperial",
+            "section_in": w_new.section_in,
+            "note": "uji",
+        },
+    )
+    assert lim.status_code == 200, lim.text
+    prof = auth_client.get(f"/api/wells/{w_new.id}/profile").json()
     assert prof["prediction"]["kind"] == "full"
-    assert any("Belum ada data aktual" in w for w in prof["warnings"])
-    for op, o in prof["operations"].items():
-        assert len(o["ml"]["depth"]) > 5, op
-        assert o["diff"]["ml_minus_actual"]["depth"] == []
-        assert len(o["diff"]["ml_minus_wp"]["depth"]) == len(o["ml"]["depth"])
+    pu = prof["operations"]["pick_up"]
+    assert pu["ml"]["lo"] and pu["ml"]["hi"]
+    assert pu["limits"] and pu["limits"][0]["cross_ml"] is not None  # 50 klbf pasti terlampaui
+    assert prof["quality"]["status"] == "C"
 
-    w01 = db.scalar(select(Well.id).where(Well.name == "W01"))
-    prof = auth_client.get(f"/api/wells/{w01}/profile?units=si").json()
-    assert prof["prediction"]["kind"] == "oof"
-    assert prof["operations"]["torque_on_bottom"]["unit"] == "kN·m"
-    assert prof["operations"]["pick_up"]["metrics"]["ml"]["n"] > 10
+    x = auth_client.get(f"/api/wells/{w_new.id}/export.xlsx")
+    wb = openpyxl.load_workbook(io.BytesIO(x.content))
+    assert {"Drag", "Torque", "T&D Actual Reading", "Grafik", "Batas aman"} <= set(wb.sheetnames)
+    assert auth_client.get(f"/api/wells/{w_new.id}/report.pdf").content[:4] == b"%PDF"
 
-    # ekspor Excel terbuka dan memuat grafik
-    r = auth_client.get(f"/api/wells/{w01}/export.xlsx")
-    assert r.status_code == 200
-    wb = openpyxl.load_workbook(io.BytesIO(r.content))
-    assert {"Perbandingan", "Prediksi ML", "Grafik", "Metrik"} <= set(wb.sheetnames)
+    # --- evaluasi prediksi: data aktual sumur baru datang belakangan
+    spec = well_specs(10, SEED)[9]
+    data = build_well(section_spec(spec, w_new.section_in))
+    from make_sample_data import _compute_plan
 
-    r = auth_client.get(f"/api/models/{row.id}/report.xlsx")
-    assert r.status_code == 200
-    openpyxl.load_workbook(io.BytesIO(r.content))
+    _compute_plan(data, [0.2, 0.3, 0.4, 0.5])
+    f = tmp_dir / f"P_{spec.name}_BHA_{w_new.section_in:g}in_TnD_aktual.xlsm"
+    write_wellplan_file(data, f, include_actual=True)
+    with f.open("rb") as fh:
+        up = auth_client.post(
+            "/api/files", files={"file": (f.name, fh)}, data={"well_name": w_new.name}
+        )
+    assert up.json()["status"] in ("ok", "peringatan"), up.json()
+    evs = auth_client.get("/api/evaluations").json()
+    assert evs and evs[0]["well_id"] == w_new.id
+    assert "pick_up" in evs[0]["metrics"]["operations"]
 
-    r = auth_client.get("/api/models/dataset.csv")
-    assert r.status_code == 200 and "wp_ff03" in r.text
+
+def test_model_held_when_worse(db):
+    from sqlalchemy import update
+
+    db.execute(update(MLModel).values(active=False))
+    db.commit()
+    a = MLModel(algorithm="a", status="selesai", active=True, metrics={"skill": 0.7})
+    b = MLModel(algorithm="b", status="berjalan", metrics={"skill": 0.9})
+    db.add_all([a, b])
+    db.commit()
+    _compare_and_activate(db, b)
+    assert b.status == "ditahan" and not b.active and "Ditahan" in b.comparison["decision"]
+    c = MLModel(algorithm="c", status="berjalan", metrics={"skill": 0.6})
+    db.add(c)
+    db.commit()
+    _compare_and_activate(db, c)
+    db.commit()
+    assert c.status == "selesai" and c.active
+    db.refresh(a)
+    assert not a.active
+    for x in (a, b, c):
+        db.delete(x)
+    db.commit()

@@ -32,6 +32,8 @@ _UNITS: dict[str, tuple[str, float]] = {
     "deg/100ft": ("dogleg", 30.0 / (100 * FT_TO_M)),
     "deg/30m": ("dogleg", 1.0),
     "in": ("diameter", 1.0),  # diameter lubang dibiarkan dalam inci (konvensi industri)
+    "ppg": ("density", 1.0),  # berat lumpur dibiarkan dalam ppg (lbm/gal)
+    "lbm/ft": ("linweight", 1.0),
 }
 
 _ALIASES = {
@@ -74,6 +76,21 @@ _ALIASES = {
     '"': "in",
     "tonf": "ton",
     "mt": "ton",
+    # varian dari file WellPlan / roadmap client
+    "klbs": "klbf",
+    "1000ft.lbf": "kft-lbf",
+    "1000ft-lbf": "kft-lbf",
+    "1000ftlbf": "kft-lbf",
+    "ft-kip": "kft-lbf",
+    "ftkip": "kft-lbf",
+    "lbs-ft": "ft-lbf",
+    "lbsft": "ft-lbf",
+    "lbs.ft": "ft-lbf",
+    "lbm/gal": "ppg",
+    "ppg": "ppg",
+    "lb/gal": "ppg",
+    "lbm/ft": "lbm/ft",
+    "ft": "ft",
 }
 
 UNIT_PATTERN = re.compile(r"[\(\[]\s*([^\)\]]+?)\s*[\)\]]")

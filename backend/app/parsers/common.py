@@ -1,8 +1,4 @@
-"""Alat bantu baca Excel bersama: mencari baris header, klasifikasi kolom, angka.
-
-Semua pola nama kolom/sheet dikumpulkan di `column_map.py` supaya mudah
-disesuaikan setelah audit data tanpa mengubah logika parser.
-"""
+"""Struktur hasil parse dan alat bantu baca Excel bersama."""
 
 import re
 from dataclasses import dataclass, field
@@ -11,7 +7,6 @@ from typing import Any
 
 import openpyxl
 
-from app.parsers import column_map as cm
 from app.services import units
 
 
@@ -57,7 +52,8 @@ class SheetInfo:
 @dataclass
 class ParsedWorkbook:
     filename: str
-    kinds: set[str] = field(default_factory=set)
+    fmt: str | None = None  # "roadmap" (format A) | "wellplan" (format B)
+    kinds: set[str] = field(default_factory=set)  # "plan", "actual"
     meta: dict[str, Any] = field(default_factory=dict)
     survey: list[SurveyRow] = field(default_factory=list)
     survey_units: dict[str, str] = field(default_factory=dict)
@@ -87,12 +83,13 @@ def norm(text: Any) -> str:
 
 
 def to_float(v: Any) -> float | None:
+    """Angka dari sel; file client sering menyimpan angka sebagai teks ('141')."""
     if v is None or isinstance(v, bool):
         return None
     if isinstance(v, int | float):
         return float(v)
     s = str(v).strip().replace(" ", "")
-    if not s or s in {"-", "--", "n/a", "na", "#n/a", "#value!", "#div/0!"}:
+    if not s or s.lower() in {"-", "--", "n/a", "na", "#n/a", "#value!", "#div/0!", "#ref!"}:
         return None
     if "," in s and "." not in s:
         s = s.replace(",", ".")  # desimal koma
@@ -104,15 +101,20 @@ def to_float(v: Any) -> float | None:
         return None
 
 
-def sheet_role(sheet_name: str) -> str | None:
-    n = norm(sheet_name)
-    for role, patterns in cm.SHEET_ROLES.items():
-        if any(re.search(p, n) for p in patterns):
-            return role
-    return None
+def first_number(val: Any) -> float | None:
+    """Angka pertama dalam teks: '21 (1000 lbf)' -> 21, '8-1/2"' -> 8.5, '12 1/4' -> 12.25."""
+    num = to_float(val)
+    if num is not None:
+        return num
+    s = str(val or "")
+    m = re.search(r"(\d+)\s*[-\s]\s*(\d+)\s*/\s*(\d+)", s)
+    if m:
+        return int(m.group(1)) + int(m.group(2)) / int(m.group(3))
+    m = re.search(r"\d+(?:[.,]\d+)?", s)
+    return to_float(m.group(0)) if m else None
 
 
-def read_rows(ws, max_rows: int = 200_000) -> list[tuple]:
+def read_rows(ws, max_rows: int = 100_000) -> list[tuple]:
     rows = []
     for i, r in enumerate(ws.iter_rows(values_only=True)):
         if i >= max_rows:
@@ -121,65 +123,18 @@ def read_rows(ws, max_rows: int = 200_000) -> list[tuple]:
     return rows
 
 
-def find_header(rows: list[tuple], scan: int = 40) -> int | None:
-    """Baris header = baris pertama (dalam `scan` baris) yang memuat kolom kedalaman
-    dan minimal satu kolom lain yang tidak kosong."""
-    for i, r in enumerate(rows[:scan]):
-        cells = [norm(c) for c in r]
-        if any(is_depth_header(c) for c in cells) and sum(1 for c in cells if c) >= 2:
-            return i
-    return None
+def cell(r: tuple, j: int) -> Any:
+    return r[j] if j < len(r) else None
 
 
-def merge_header(rows: list[tuple], idx: int) -> list[str]:
-    """Gabungkan header dua baris (mis. label di baris idx, satuan di baris idx+1)."""
-    head = [str(c).strip() if c is not None else "" for c in rows[idx]]
-    if idx + 1 < len(rows):
-        nxt = rows[idx + 1]
-        # baris berikutnya dianggap baris satuan bila isinya teks satuan semua
-        texts = [str(c).strip() for c in nxt if c is not None and str(c).strip()]
-        if texts and all(units.normalize_unit(t.strip("()[]")) for t in texts):
-            for j, c in enumerate(nxt):
-                if j < len(head) and c is not None and str(c).strip():
-                    head[j] = f"{head[j]} ({str(c).strip().strip('()[]')})"
-    return head
+def match_any(text: str, patterns: list[str]) -> bool:
+    return any(re.search(p, text) for p in patterns)
 
 
-def header_has_unit_row(rows: list[tuple], idx: int) -> bool:
-    if idx + 1 >= len(rows):
-        return False
-    texts = [str(c).strip() for c in rows[idx + 1] if c is not None and str(c).strip()]
-    return bool(texts) and all(units.normalize_unit(t.strip("()[]")) for t in texts)
-
-
-def is_depth_header(h: str) -> bool:
-    return any(re.search(p, h) for p in cm.DEPTH_PATTERNS)
-
-
-def parse_ff(h: str) -> float | None:
-    for p in cm.FF_PATTERNS:
-        m = re.search(p, h)
-        if m:
-            val = to_float(m.group(1))
-            if val is not None and 0 <= val <= 1:
-                return round(val, 3)
-    return None
-
-
-def classify_operation(h: str, dim: str | None, sheet_default: str | None) -> str | None:
-    """Tentukan operasi dari teks header + dimensi satuan (beban vs torsi)."""
-    if dim == "torque" or (dim is None and "torque" in h):
-        for op, patterns in cm.TORQUE_OP_PATTERNS.items():
-            if any(re.search(p, h) for p in patterns):
-                return op
-        if "torque" in h or dim == "torque":
-            return (
-                sheet_default
-                if sheet_default in ("torque_off_bottom", "torque_on_bottom")
-                else None
-            )
-        return None
-    for op, patterns in cm.HOOKLOAD_OP_PATTERNS.items():
-        if any(re.search(p, h) for p in patterns):
-            return op
-    return None
+def unit_in(text: Any) -> str | None:
+    """Satuan dari teks berkurung '(Klbs)' atau teks satuan polos '1000 lbf'."""
+    t = str(text or "").strip()
+    u = units.unit_from_header(t)
+    if u:
+        return u
+    return units.normalize_unit(t.strip("()[] "))

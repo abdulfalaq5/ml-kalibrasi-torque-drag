@@ -1,16 +1,20 @@
-"""Pelatihan dan validasi model kalibrasi.
+"""Pelatihan, validasi, dan pencatatan model kalibrasi (paket 6 minggu).
 
-- Satu model per operasi (5 target). Lihat K-10.
-- Kandidat: Ridge dan XGBoost, masing-masing dengan target langsung (nilai aktual)
-  atau target selisih (aktual - WellPlan FF baseline).
-- Validasi per kelompok sumur: leave-one-well-out (atau GroupKFold bila sumur > 20).
-  Satu sumur tidak pernah ada di data latih dan uji sekaligus.
-- Pembanding: baseline WellPlan apa adanya (FF nominal 0.3).
-- Prediksi out-of-fold disimpan untuk dashboard (perbandingan jujur).
+Alur (lihat docs/keputusan.md K-10 .. K-26):
+1. Dataset BEKU (versi + hash) dimuat; sumur blind test disisihkan seluruhnya.
+2. Uji manfaat grup fitur (ablation) dengan XGBoost: grup dipertahankan bila RMSE turun >= 1%.
+3. Per operasi: Ridge, XGBoost, Random Forest, SVR (+ MLP opsional), target langsung atau
+   selisih terhadap WellPlan, beberapa setelan kecil. Validasi silang per kelompok SUMUR
+   (GroupKFold 5) - satu sumur tidak pernah ada di data latih dan uji sekaligus.
+4. Model tunggal vs model terpisah per kombinasi section x tipe (>= 10 sumur).
+5. Kurva belajar, analisis kesalahan, SHAP / pentingnya fitur, interval ketidakpastian.
+6. Banding dengan model aktif: model baru yang lebih buruk DITAHAN (tidak diaktifkan).
+7. Blind test dijalankan terpisah, SEKALI per model (run_blind_test).
 """
 
 import logging
 import traceback
+import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,31 +23,59 @@ import numpy as np
 import pandas as pd
 import sklearn
 import xgboost
-from sklearn.compose import ColumnTransformer
+from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
+from sklearn.inspection import permutation_importance
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import GroupKFold, LeaveOneGroupOut
+from sklearn.model_selection import GroupKFold
+from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.svm import SVR
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.models import MLModel, Prediction, PredictionPoint
+from app.db.models import Dataset, MLModel, Prediction, PredictionPoint, Well
 from app.services import dataset as dsm
-from app.services.metrics import all_metrics
+from app.services.metrics import all_metrics, rmse
 from app.services.operations import BASELINE_FF, OPERATIONS
 
 log = logging.getLogger(__name__)
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
-MIN_WELLS = 3  # minimum sumur untuk melatih
+MIN_WELLS = 5  # sumur latih minimum per operasi
 MIN_WELLS_PER_GROUP = 3  # kombinasi section x tipe dengan sumur < ini -> peringatan
-FEATURES = dsm.NUMERIC_FEATURES + dsm.CATEGORICAL_FEATURES
+COMBO_MIN_WELLS = 10  # model terpisah per kombinasi hanya bila sumurnya >= ini
+COMBO_MIN_GAIN = 0.02  # model kombinasi dipakai bila RMSE >= 2% lebih baik
+FEATURE_MIN_GAIN = 0.01  # grup fitur dipertahankan bila skor >= 1% lebih baik
+N_FOLDS = 5
+LEARNING_SIZES = [5, 10, 20, 30]
+LEARNING_REPEATS = 2
+HOLD_TOLERANCE = 0.01  # model baru ditahan bila skor > aktif x (1 + 1%)
+BAND_Q = (0.1, 0.9)
 
-XGB_GRID = [
-    {"max_depth": 2, "n_estimators": 300, "learning_rate": 0.05},
-    {"max_depth": 3, "n_estimators": 200, "learning_rate": 0.05},
-]
+ALGO_GRID: dict[str, list[dict]] = {
+    "ridge": [{"alpha": 1.0}, {"alpha": 10.0}],
+    "xgboost": [
+        {"max_depth": 2, "n_estimators": 300, "learning_rate": 0.05},
+        {"max_depth": 4, "n_estimators": 300, "learning_rate": 0.05},
+    ],
+    "random_forest": [
+        {"n_estimators": 200, "max_depth": None, "min_samples_leaf": 3},
+        {"n_estimators": 200, "max_depth": 8, "min_samples_leaf": 5},
+    ],
+    "svr": [{"C": 10.0, "epsilon": 0.05}, {"C": 100.0, "epsilon": 0.05}],
+    "mlp": [{"hidden_layer_sizes": (32, 16), "alpha": 1e-3}],
+}
+ALGO_LABEL = {
+    "ridge": "Ridge",
+    "xgboost": "XGBoost",
+    "random_forest": "Random Forest",
+    "svr": "SVR",
+    "mlp": "MLP",
+}
 XGB_FIXED = {
     "subsample": 0.8,
     "colsample_bytree": 0.8,
@@ -52,67 +84,132 @@ XGB_FIXED = {
     "n_jobs": 2,
     "random_state": 42,
 }
-RIDGE_ALPHA = 1.0
+ABLATION_SPEC = {"algo": "xgboost", "form": "selisih", "params": ALGO_GRID["xgboost"][0]}
 
 
-def _preprocess(scale: bool) -> ColumnTransformer:
-    num = [("impute", SimpleImputer(strategy="median"))]
+# ---------------------------------------------------------------- model
+
+
+def _preprocess(num: list[str], cat: list[str], scale: bool) -> ColumnTransformer:
+    steps = [
+        ("impute", SimpleImputer(strategy="median", add_indicator=True, keep_empty_features=True))
+    ]
     if scale:
-        num.append(("scale", StandardScaler()))
+        steps.append(("scale", StandardScaler()))
     return ColumnTransformer(
         [
-            ("num", Pipeline(num), dsm.NUMERIC_FEATURES),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), dsm.CATEGORICAL_FEATURES),
-        ]
+            ("num", Pipeline(steps), num),
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat),
+        ],
+        verbose_feature_names_out=True,
     )
 
 
-def candidates() -> dict[str, dict]:
-    out = {}
-    for form in ("langsung", "selisih"):
-        out[f"ridge_{form}"] = {"algo": "ridge", "form": form, "params": {"alpha": RIDGE_ALPHA}}
-        for k, g in enumerate(XGB_GRID):
-            out[f"xgboost{k + 1}_{form}"] = {"algo": "xgboost", "form": form, "params": g}
-    return out
-
-
-def make_pipeline(spec: dict) -> Pipeline:
-    if spec["algo"] == "ridge":
-        est = Ridge(alpha=spec["params"]["alpha"])
-        return Pipeline([("prep", _preprocess(scale=True)), ("model", est)])
-    est = xgboost.XGBRegressor(**spec["params"], **XGB_FIXED)
-    return Pipeline([("prep", _preprocess(scale=False)), ("model", est)])
+def make_pipeline(spec: dict, num: list[str], cat: list[str]) -> Pipeline:
+    algo, p = spec["algo"], spec["params"]
+    if algo == "ridge":
+        return Pipeline([("prep", _preprocess(num, cat, True)), ("model", Ridge(alpha=p["alpha"]))])
+    if algo == "xgboost":
+        return Pipeline(
+            [
+                ("prep", _preprocess(num, cat, False)),
+                ("model", xgboost.XGBRegressor(**p, **XGB_FIXED)),
+            ]
+        )
+    if algo == "random_forest":
+        return Pipeline(
+            [
+                ("prep", _preprocess(num, cat, False)),
+                ("model", RandomForestRegressor(**p, n_jobs=2, random_state=42)),
+            ]
+        )
+    if algo == "svr":
+        est = TransformedTargetRegressor(
+            regressor=SVR(C=p["C"], epsilon=p["epsilon"]), transformer=StandardScaler()
+        )
+        return Pipeline([("prep", _preprocess(num, cat, True)), ("model", est)])
+    if algo == "mlp":
+        est = TransformedTargetRegressor(
+            regressor=MLPRegressor(
+                hidden_layer_sizes=p["hidden_layer_sizes"],
+                alpha=p["alpha"],
+                max_iter=800,
+                early_stopping=True,
+                random_state=42,
+            ),
+            transformer=StandardScaler(),
+        )
+        return Pipeline([("prep", _preprocess(num, cat, True)), ("model", est)])
+    raise ValueError(f"Algoritma tidak dikenal: {algo}")
 
 
 class CalibrationModel:
-    """Model per operasi. Dipakai ulang oleh prediksi (disimpan dengan joblib)."""
+    """Model satu operasi. Disimpan dengan joblib, dipakai ulang oleh prediksi."""
 
-    def __init__(self, op: str, spec: dict, pipeline: Pipeline):
-        self.op, self.spec, self.pipeline = op, spec, pipeline
+    def __init__(self, op: str, spec: dict, num: list[str], cat: list[str]):
+        self.op, self.spec, self.num, self.cat = op, spec, num, cat
+        self.pipeline = make_pipeline(spec, num, cat)
+
+    @property
+    def features(self) -> list[str]:
+        return self.num + self.cat
 
     def fit(self, df: pd.DataFrame) -> "CalibrationModel":
         y = df.target - df.wp_base if self.spec["form"] == "selisih" else df.target
-        self.pipeline.fit(df[FEATURES], y)
+        self.pipeline.fit(df[self.features], y)
         return self
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
-        p = self.pipeline.predict(df[FEATURES])
+        p = np.asarray(self.pipeline.predict(df[self.features]), dtype=float)
         if self.spec["form"] == "selisih":
             p = p + df.wp_base.to_numpy()
-        return np.asarray(p, dtype=float)
+        return p
 
 
-def splitter(groups: pd.Series):
-    n = groups.nunique()
-    return LeaveOneGroupOut() if n <= 20 else GroupKFold(n_splits=10)
+class RoutedModel:
+    """Model tunggal + model per kombinasi section x tipe (bila dipilih)."""
+
+    def __init__(self, single: CalibrationModel, combos: dict[str, CalibrationModel] | None = None):
+        self.single, self.combos = single, combos or {}
+
+    def predict(self, df: pd.DataFrame) -> np.ndarray:
+        out = self.single.predict(df)
+        if self.combos:
+            keys = (df.section.astype(str) + "|" + df.well_type.astype(str)).to_numpy()
+            for key, m in self.combos.items():
+                mask = keys == key
+                if mask.any():
+                    out[mask] = m.predict(df[mask])
+        return out
 
 
-def oof_predict(df: pd.DataFrame, op: str, spec: dict) -> np.ndarray:
+def candidates(algorithm: str, include_mlp: bool) -> dict[str, dict]:
+    algos = list(ALGO_GRID) if algorithm == "semua" else [algorithm]
+    if not include_mlp and algorithm == "semua":
+        algos = [a for a in algos if a != "mlp"]
+    out = {}
+    for algo in algos:
+        for k, params in enumerate(ALGO_GRID[algo], start=1):
+            for form in ("langsung", "selisih"):
+                out[f"{algo}{k}_{form}"] = {"algo": algo, "form": form, "params": params}
+    return out
+
+
+def folds(df: pd.DataFrame, n: int = N_FOLDS):
+    groups = df.well_name.to_numpy()
+    k = min(n, len(np.unique(groups)))
+    return list(GroupKFold(n_splits=k).split(df, groups=groups))
+
+
+def oof(df: pd.DataFrame, op: str, spec: dict, num, cat, fold_idx=None) -> np.ndarray:
     pred = np.full(len(df), np.nan)
-    for tr, te in splitter(df.well_name).split(df, groups=df.well_name):
-        m = CalibrationModel(op, spec, make_pipeline(spec)).fit(df.iloc[tr])
+    for tr, te in fold_idx if fold_idx is not None else folds(df):
+        m = CalibrationModel(op, spec, num, cat).fit(df.iloc[tr])
         pred[te] = m.predict(df.iloc[te])
     return pred
+
+
+# ---------------------------------------------------------------- laporan
 
 
 def group_report(df: pd.DataFrame, pred_col: str, by: list[str]) -> list[dict]:
@@ -126,171 +223,554 @@ def group_report(df: pd.DataFrame, pred_col: str, by: list[str]) -> list[dict]:
                 "n_wells": int(n_wells),
                 "wellplan": all_metrics(g.target, g.wp_base),
                 "ml": all_metrics(g.target, g[pred_col]),
+                "ml_better_frac": better_frac(g.target, g[pred_col], g.wp_base),
                 "warning": n_wells < MIN_WELLS_PER_GROUP,
             }
         )
     return rows
 
 
-def train(db: Session, model_row: MLModel, algorithm: str = "terbaik") -> MLModel:
-    """Latih semua operasi, simpan bundle, metrik, dan prediksi out-of-fold."""
+def better_frac(y, ml, wp) -> float:
+    y, ml, wp = (np.asarray(a, float) for a in (y, ml, wp))
+    return float(np.mean(np.abs(ml - y) < np.abs(wp - y))) if len(y) else float("nan")
+
+
+def skill(ops_metrics: dict) -> float | None:
+    """Rasio rata-rata RMSE ML / RMSE WellPlan (lebih kecil = lebih baik)."""
+    r = [
+        m["overall"]["ml"]["rmse"] / m["overall"]["wellplan"]["rmse"]
+        for m in ops_metrics.values()
+        if m["overall"]["wellplan"]["rmse"] and m["overall"]["ml"]["rmse"] is not None
+    ]
+    return float(np.mean(r)) if r else None
+
+
+def _score_groups(train: pd.DataFrame, groups: list[str]) -> float:
+    num, cat = dsm.feature_columns(groups)
+    ratios = []
+    for op in OPERATIONS:
+        d = train[train.operation == op].reset_index(drop=True)
+        if d.well_name.nunique() < MIN_WELLS:
+            continue
+        p = oof(d, op, ABLATION_SPEC, num, cat)
+        wp = rmse(d.target, d.wp_base)
+        if wp:
+            ratios.append(rmse(d.target, p) / wp)
+    return float(np.mean(ratios)) if ratios else float("inf")
+
+
+def select_feature_groups(train: pd.DataFrame) -> tuple[list[str], list[dict]]:
+    """Greedy: tambahkan grup fitur satu per satu, pertahankan bila skor turun >= 1%."""
+    chosen: list[str] = []
+    base = _score_groups(train, chosen)
+    log_rows = [{"grup": "dasar", "skor": base, "dipakai": True, "keterangan": "fitur dasar"}]
+    for g in dsm.FEATURE_GROUPS:
+        s = _score_groups(train, chosen + [g])
+        keep = s < base * (1 - FEATURE_MIN_GAIN)
+        log_rows.append(
+            {
+                "grup": g,
+                "skor": s,
+                "dipakai": bool(keep),
+                "keterangan": f"{(base - s) / base:+.1%} vs tanpa grup ini",
+            }
+        )
+        if keep:
+            chosen.append(g)
+            base = s
+    return chosen, log_rows
+
+
+def learning_curve(d: pd.DataFrame, op: str, spec: dict, num, cat) -> list[dict]:
+    rng = np.random.default_rng(42)
+    n_total = d.well_name.nunique()
+    sizes = [s for s in LEARNING_SIZES if s < n_total * 0.8] + [None]
+    out = []
+    for size in sizes:
+        ys, ps, wps = [], [], []
+        for tr, te in folds(d):
+            tr_df = d.iloc[tr]
+            names = tr_df.well_name.unique()
+            reps = 1 if size is None or size >= len(names) else LEARNING_REPEATS
+            for _ in range(reps):
+                pick = (
+                    names
+                    if size is None or size >= len(names)
+                    else rng.choice(names, size, replace=False)
+                )
+                sub = tr_df[tr_df.well_name.isin(pick)]
+                m = CalibrationModel(op, spec, num, cat).fit(sub)
+                te_df = d.iloc[te]
+                ys.append(te_df.target.to_numpy())
+                ps.append(m.predict(te_df))
+                wps.append(te_df.wp_base.to_numpy())
+        y, p, wp = np.concatenate(ys), np.concatenate(ps), np.concatenate(wps)
+        out.append(
+            {
+                "n_wells": int(size or len(d.well_name.unique()) * (N_FOLDS - 1) // N_FOLDS),
+                "label": "semua" if size is None else str(size),
+                "rmse_ml": rmse(y, p),
+                "rmse_wp": rmse(y, wp),
+            }
+        )
+    return out
+
+
+def explain(model: CalibrationModel, d: pd.DataFrame) -> dict:
+    """SHAP (model pohon / linear) atau permutation importance (SVR, MLP), diringkas per fitur."""
+    sample = d.sample(min(len(d), 400), random_state=42)
+    X = sample[model.features]
+    prep = model.pipeline.named_steps["prep"]
+    est = model.pipeline.named_steps["model"]
+    names = list(prep.get_feature_names_out())
+    method = "SHAP"
+    try:
+        import shap
+
+        Xt = prep.transform(X)
+        if model.spec["algo"] in ("xgboost", "random_forest"):
+            sv = shap.TreeExplainer(est).shap_values(Xt)
+        elif model.spec["algo"] == "ridge":
+            sv = shap.LinearExplainer(est, Xt).shap_values(Xt)
+        else:
+            raise TypeError
+        imp = np.abs(sv).mean(axis=0)
+        signed = [
+            float(np.corrcoef(Xt[:, j], sv[:, j])[0, 1])
+            if np.std(Xt[:, j]) > 0 and np.std(sv[:, j]) > 0
+            else 0.0
+            for j in range(Xt.shape[1])
+        ]
+    except Exception:
+        method = "permutation importance"
+        y = sample.target - sample.wp_base if model.spec["form"] == "selisih" else sample.target
+        r = permutation_importance(model.pipeline, X, y, n_repeats=5, random_state=42)
+        imp, names, signed = r.importances_mean, model.features, [0.0] * len(model.features)
+    agg: dict[str, list[float]] = {}
+    for n, v, s in zip(names, imp, signed, strict=True):
+        base = _base_feature(n, model.num, model.cat)
+        a = agg.setdefault(base, [0.0, 0.0])
+        a[0] += float(v)
+        if abs(s) > abs(a[1]):
+            a[1] = s
+    rows = sorted(
+        ({"feature": k, "importance": v[0], "direction": v[1]} for k, v in agg.items()),
+        key=lambda r: -r["importance"],
+    )
+    top = [r["feature"] for r in rows[:4]]
+    physical = {
+        "inc_deg",
+        "dls_deg_30m",
+        "tortuosity",
+        "depth_m",
+        "open_hole_len_m",
+        "depth_from_kop_m",
+    }
+    if model.spec["form"] == "selisih":
+        # target = koreksi terhadap WellPlan: wajar bila geometri sumur / kedalaman yang dominan
+        physics_ok = any(f.startswith("wp_") or f in physical for f in top)
+        note = (
+            "Target berupa koreksi terhadap WellPlan. Wajar: fitur geometri/kedalaman atau WellPlan "
+            "termasuk 4 terpenting."
+            if physics_ok
+            else "PERIKSA: 4 fitur terpenting bukan fitur fisik (WellPlan, inklinasi, kedalaman)."
+        )
+    else:
+        physics_ok = any(f.startswith("wp_") for f in top)
+        note = (
+            "Wajar: nilai WellPlan (fungsi friction factor) termasuk fitur terpenting."
+            if physics_ok
+            else "PERIKSA: nilai WellPlan tidak termasuk 4 fitur terpenting; model mungkin bergantung "
+            "pada fitur non-fisik."
+        )
+    if "plan_format" in top:
+        note += (
+            " Format file (roadmap vs laporan WellPlan) ikut berpengaruh: ada perbedaan sistematis "
+            "antara dua sumber rencana."
+        )
+    if "inc_deg" in agg:
+        rank = [r["feature"] for r in rows].index("inc_deg") + 1
+        note += f" Inklinasi peringkat {rank}."
+    return {
+        "method": method,
+        "features": rows,
+        "physics_ok": physics_ok,
+        "note": note,
+        "form": model.spec["form"],
+    }
+
+
+def _base_feature(name: str, num: list[str], cat: list[str]) -> str:
+    n = name.split("__", 1)[-1]
+    n = n.replace("missingindicator_", "")
+    if n in num:
+        return n
+    for c in sorted(cat, key=len, reverse=True):
+        if n.startswith(c + "_") or n == c:
+            return c
+    return n
+
+
+def depth_bins(d: pd.DataFrame, col: str) -> list[dict]:
+    q = pd.qcut(d.depth_m, q=min(5, d.depth_m.nunique()), duplicates="drop")
+    rows = []
+    for interval, g in d.groupby(q, observed=True):
+        rows.append(
+            {
+                "depth_from_m": float(interval.left),
+                "depth_to_m": float(interval.right),
+                "wellplan": all_metrics(g.target, g.wp_base),
+                "ml": all_metrics(g.target, g[col]),
+                "ml_better_frac": better_frac(g.target, g[col], g.wp_base),
+            }
+        )
+    return rows
+
+
+# ---------------------------------------------------------------- pelatihan
+
+
+def latest_dataset(db: Session) -> Dataset | None:
+    return db.scalar(select(Dataset).order_by(Dataset.version.desc()))
+
+
+def train(
+    db: Session,
+    model_row: MLModel,
+    algorithm: str = "semua",
+    include_mlp: bool = False,
+    dataset_id: int | None = None,
+) -> MLModel:
     settings = get_settings()
     model_row.status = "berjalan"
     db.commit()
 
-    ds, notes = dsm.build_dataset(db)
-    if ds.empty:
-        raise ValueError("Dataset kosong: " + "; ".join(notes))
-    n_wells = ds.well_name.nunique()
+    dataset = db.get(Dataset, dataset_id) if dataset_id else latest_dataset(db)
+    if dataset is None:
+        dataset = dsm.freeze_dataset(db)
+    model_row.dataset_id = dataset.id
+    db.commit()
+    df = dsm.load_frozen(dataset)
+    train_df = df[~df.is_blind].reset_index(drop=True)
+    n_wells = train_df.well_name.nunique()
     if n_wells < MIN_WELLS:
-        raise ValueError(f"Butuh minimal {MIN_WELLS} sumur dengan data aktual, baru {n_wells}")
+        raise ValueError(
+            f"Butuh minimal {MIN_WELLS} sumur latih (di luar blind test), baru {n_wells}"
+        )
 
-    cands = candidates()
-    if algorithm == "ridge":
-        cands = {k: v for k, v in cands.items() if v["algo"] == "ridge"}
-    elif algorithm == "xgboost":
-        cands = {k: v for k, v in cands.items() if v["algo"] == "xgboost"}
+    groups, feature_log = select_feature_groups(train_df)
+    num, cat = dsm.feature_columns(groups)
+    cands = candidates(algorithm, include_mlp)
 
     bundle: dict = {"operations": {}}
-    metrics: dict = {"operations": {}, "notes": notes}
+    metrics: dict = {
+        "operations": {},
+        "notes": list(dataset.notes or []),
+        "feature_selection": feature_log,
+        "feature_groups": groups,
+        "features": {"numeric": num, "categorical": cat},
+    }
     oof_frames = []
     for op in OPERATIONS:
-        d = ds[ds.operation == op].reset_index(drop=True)
+        d = train_df[train_df.operation == op].reset_index(drop=True)
         if d.well_name.nunique() < MIN_WELLS:
-            metrics["notes"].append(f"{op}: sumur dengan data aktual < {MIN_WELLS}, tidak dilatih")
+            metrics["notes"].append(f"{op}: sumur latih < {MIN_WELLS}, tidak dilatih")
             continue
-        cand_scores = {}
-        cand_preds = {}
+        fidx = folds(d)
+        scores, preds = {}, {}
         for name, spec in cands.items():
-            p = oof_predict(d, op, spec)
-            cand_preds[name] = p
-            cand_scores[name] = all_metrics(d.target, p)
-        best = min(cand_scores, key=lambda k: cand_scores[k]["rmse"])
-        d["ml_oof"] = cand_preds[best]
+            preds[name] = oof(d, op, spec, num, cat, fidx)
+            scores[name] = all_metrics(d.target, preds[name])
+        best = min(scores, key=lambda k: scores[k]["rmse"])
+        spec = cands[best]
+        d["ml_single"] = preds[best]
+        d["ml_oof"] = d["ml_single"]
+
+        # model tunggal vs per kombinasi section x tipe
+        strategy = []
+        combo_specs = {}
+        d["combo"] = d.section.astype(str) + "|" + d.well_type.astype(str)
+        for key, g in d.groupby("combo"):
+            nw = g.well_name.nunique()
+            row = {"combo": key, "n_wells": int(nw), "rmse_single": rmse(g.target, g.ml_single)}
+            if nw >= COMBO_MIN_WELLS:
+                gg = g.reset_index()
+                p = oof(gg, op, spec, num, cat)
+                row["rmse_combo"] = rmse(gg.target, p)
+                if row["rmse_combo"] < row["rmse_single"] * (1 - COMBO_MIN_GAIN):
+                    row["dipakai"] = "per kombinasi"
+                    combo_specs[key] = spec
+                    d.loc[gg["index"], "ml_oof"] = p
+                else:
+                    row["dipakai"] = "tunggal"
+            else:
+                row["dipakai"] = f"tunggal (< {COMBO_MIN_WELLS} sumur)"
+            strategy.append(row)
+
+        final_single = CalibrationModel(op, spec, num, cat).fit(d)
+        combos = {
+            k: CalibrationModel(op, s, num, cat).fit(d[d.combo == k])
+            for k, s in combo_specs.items()
+        }
+        resid = (d.target - d.ml_oof).to_numpy()
+        bundle["operations"][op] = {
+            "model": RoutedModel(final_single, combos),
+            "spec": spec,
+            "band": [float(np.quantile(resid, BAND_Q[0])), float(np.quantile(resid, BAND_Q[1]))],
+        }
         oof_frames.append(d)
 
-        final = CalibrationModel(op, cands[best], make_pipeline(cands[best])).fit(d)
-        bundle["operations"][op] = final
-
-        per_well = []
-        for w, g in d.groupby("well_name"):
-            per_well.append(
-                {
-                    "well_name": w,
-                    "section": g.section.iloc[0],
-                    "well_type": g.well_type.iloc[0],
-                    "wellplan": all_metrics(g.target, g.wp_base),
-                    "ml": all_metrics(g.target, g.ml_oof),
-                }
-            )
-        per_well.sort(key=lambda r: -r["ml"]["rmse"])
+        worst = d.assign(err=(d.ml_oof - d.target).abs()).nlargest(10, "err")
         metrics["operations"][op] = {
             "chosen": best,
-            "chosen_spec": cands[best],
-            "candidates": cand_scores,
+            "chosen_label": f"{ALGO_LABEL[spec['algo']]} ({spec['form']})",
+            "chosen_spec": spec,
+            "candidates": scores,
+            "algo_best": _best_per_algo(scores),
             "overall": {
                 "wellplan": all_metrics(d.target, d.wp_base),
                 "ml": all_metrics(d.target, d.ml_oof),
                 "n_wells": int(d.well_name.nunique()),
+                "ml_better_frac": better_frac(d.target, d.ml_oof, d.wp_base),
             },
+            "strategy": strategy,
             "by_section": group_report(d, "ml_oof", ["section"]),
             "by_type": group_report(d, "ml_oof", ["well_type"]),
             "by_section_type": group_report(d, "ml_oof", ["section", "well_type"]),
-            "per_well": per_well,
+            "by_depth": depth_bins(d, "ml_oof"),
+            "per_well": sorted(
+                (
+                    {
+                        "well_name": w,
+                        "section": g.section.iloc[0],
+                        "well_type": g.well_type.iloc[0],
+                        "wellplan": all_metrics(g.target, g.wp_base),
+                        "ml": all_metrics(g.target, g.ml_oof),
+                    }
+                    for (w, _s), g in d.groupby(["well_name", "section"])
+                ),
+                key=lambda r: -(r["ml"]["rmse"] or 0),
+            ),
+            "worst_points": [
+                {
+                    "well_name": r.well_name,
+                    "section": r.section,
+                    "depth_m": float(r.depth_m),
+                    "actual": float(r.target),
+                    "wellplan": float(r.wp_base),
+                    "ml": float(r.ml_oof),
+                }
+                for r in worst.itertuples()
+            ],
+            "learning_curve": learning_curve(d, op, spec, num, cat),
+            "explain": explain(final_single, d),
+            "band": bundle["operations"][op]["band"],
         }
+        log.info("Model %s %s: %s", model_row.id, op, best)
 
     if not bundle["operations"]:
         raise ValueError("Tidak ada operasi yang bisa dilatih. " + "; ".join(metrics["notes"]))
 
-    wells_tbl = ds.drop_duplicates("well_name")[["well_name", "section", "well_type"]]
-    combos = wells_tbl.groupby(["section", "well_type"]).size()
-    bundle["train_combos"] = {f"{s}|{t}": int(n) for (s, t), n in combos.items()}
-    bundle["train_sections"] = sorted(wells_tbl.section.unique().tolist())
-    bundle["train_types"] = sorted(wells_tbl.well_type.unique().tolist())
-    bundle["depth_range_m"] = [float(ds.depth_m.min()), float(ds.depth_m.max())]
-    bundle["trained_well_ids"] = sorted(int(x) for x in ds.well_id.unique())
-    bundle["versions"] = {"sklearn": sklearn.__version__, "xgboost": xgboost.__version__}
-    bundle["baseline_ff"] = BASELINE_FF
-
+    wells_tbl = train_df.drop_duplicates(["well_name", "section"])[
+        ["well_name", "section", "well_type"]
+    ]
+    per_well = train_df.drop_duplicates("well_name")[["well_name", "well_type"]]
+    combos_ct = wells_tbl.groupby(["section", "well_type"]).well_name.nunique()
+    bundle.update(
+        {
+            "features": {"numeric": num, "categorical": cat, "groups": groups},
+            "train_combos": {f"{s}|{t}": int(n) for (s, t), n in combos_ct.items()},
+            "train_sections": sorted(wells_tbl.section.astype(str).unique().tolist()),
+            "train_types": sorted(per_well.well_type.unique().tolist()),
+            "depth_range_m": [float(train_df.depth_m.min()), float(train_df.depth_m.max())],
+            "trained_wells": sorted(per_well.well_name.unique().tolist()),
+            "dataset_id": dataset.id,
+            "dataset_version": dataset.version,
+            "versions": {"sklearn": sklearn.__version__, "xgboost": xgboost.__version__},
+            "baseline_ff": BASELINE_FF,
+        }
+    )
     metrics["dataset"] = {
-        "rows": int(len(ds)),
-        "wells": int(n_wells),
+        "id": dataset.id,
+        "version": dataset.version,
+        "hash": dataset.content_hash,
+        "rows_train": int(len(train_df)),
+        "wells_train": int(n_wells),
+        "rows_blind": int(df.is_blind.sum()),
+        "wells_blind": int(df[df.is_blind].well_name.nunique()),
         "train_combos": bundle["train_combos"],
     }
+    metrics["skill"] = skill(metrics["operations"])
 
     settings.model_dir.mkdir(parents=True, exist_ok=True)
     path = Path(settings.model_dir) / f"model_{model_row.id}.joblib"
     joblib.dump(bundle, path)
-
     model_row.path = str(path)
     model_row.metrics = _json_safe(metrics)
     model_row.params = _json_safe(
         {
             "algorithm": algorithm,
+            "include_mlp": include_mlp,
             "chosen": {op: m["chosen"] for op, m in metrics["operations"].items()},
-            "xgb_grid": XGB_GRID,
+            "grid": ALGO_GRID,
             "xgb_fixed": XGB_FIXED,
-            "ridge_alpha": RIDGE_ALPHA,
+            "feature_groups": groups,
+            "n_folds": N_FOLDS,
             "baseline_ff": BASELINE_FF,
             "versions": bundle["versions"],
+            "dataset_version": dataset.version,
         }
     )
     _save_oof(db, model_row, pd.concat(oof_frames, ignore_index=True), bundle)
-
-    db.execute(update(MLModel).values(active=False))
-    model_row.active = True
-    model_row.status = "selesai"
+    _compare_and_activate(db, model_row)
     model_row.finished_at = datetime.now(UTC)
     db.commit()
     return model_row
 
 
-def _save_oof(db: Session, model_row: MLModel, oof: pd.DataFrame, bundle: dict) -> None:
-    """Prediksi out-of-fold di seluruh grid kedalaman WellPlan tiap sumur latih.
+def _best_per_algo(scores: dict) -> dict:
+    best: dict = {}
+    for name, s in scores.items():
+        algo = name.split("_")[0].rstrip("0123456789")
+        if algo not in best or s["rmse"] < best[algo]["rmse"]:
+            best[algo] = {"candidate": name, **s}
+    return best
 
-    Untuk sumur X, model dilatih ulang tanpa X lalu memprediksi grid X. Dengan
-    leave-one-well-out ini berarti satu model per sumur per operasi."""
-    ds_ids = oof.well_id.unique().tolist()
-    wells = dsm.load_wells(db, ds_ids)
-    plan, survey = dsm.load_plan(db, ds_ids), dsm.load_survey(db, ds_ids)
-    full_ds = oof
+
+def _compare_and_activate(db: Session, row: MLModel) -> None:
+    active = db.scalar(select(MLModel).where(MLModel.active.is_(True), MLModel.id != row.id))
+    new = (row.metrics or {}).get("skill")
+    cmp = {"new_skill": new, "active_id": None, "active_skill": None}
+    if active is not None:
+        old = (active.metrics or {}).get("skill")
+        cmp.update({"active_id": active.id, "active_skill": old})
+        if old is not None and new is not None and new > old * (1 + HOLD_TOLERANCE):
+            cmp["decision"] = (
+                f"Ditahan: rasio RMSE ML/WellPlan {new:.3f} lebih buruk dari model aktif "
+                f"#{active.id} ({old:.3f}). Bisa diaktifkan manual bila perlu."
+            )
+            row.comparison = cmp
+            row.status = "ditahan"
+            row.active = False
+            return
+        cmp["decision"] = (
+            f"Diaktifkan: rasio {new:.3f} vs model aktif #{active.id} "
+            f"({old if old is None else round(old, 3)})"
+        )
+    else:
+        cmp["decision"] = "Diaktifkan: belum ada model aktif"
+    row.comparison = cmp
+    db.execute(update(MLModel).values(active=False))
+    row.active = True
+    row.status = "selesai"
+
+
+def _save_oof(db: Session, model_row: MLModel, oof_df: pd.DataFrame, bundle: dict) -> None:
+    """Prediksi out-of-fold di grid kedalaman tiap sumur latih: model fold yang tidak pernah
+    melihat sumur itu (sama dengan fold validasi)."""
+    ids = oof_df.well_id.unique().tolist()
+    wells = dsm.load_wells(db, ids)
+    plan, survey = dsm.load_plan(db, ids), dsm.load_survey(db, ids)
     db.execute(
         delete(Prediction).where(Prediction.kind == "oof", Prediction.model_id == model_row.id)
     )
+    num, cat = bundle["features"]["numeric"], bundle["features"]["categorical"]
     preds: dict[int, Prediction] = {}
-    for op, cm in bundle["operations"].items():
-        d = full_ds[full_ds.operation == op]
-        for _, w in wells.iterrows():
-            train_part = d[d.well_name != w.well_name]
-            if train_part.well_name.nunique() < 2:
-                continue
-            grid = dsm.plan_grid(db, int(w.well_id))
-            if not len(grid):
-                continue
-            feats = dsm.features_frame(w, op, grid, plan, survey).dropna(subset=["wp_base"])
-            if feats.empty:
-                continue
-            for c in ("section", "well_type"):
-                feats[c] = feats[c].fillna("tidak diketahui")
-            m = CalibrationModel(op, cm.spec, make_pipeline(cm.spec)).fit(train_part)
-            yhat = m.predict(feats)
-            pred = preds.get(int(w.well_id))
-            if pred is None:
-                pred = Prediction(well_id=int(w.well_id), model_id=model_row.id, kind="oof")
-                db.add(pred)
-                db.flush()
-                preds[int(w.well_id)] = pred
-            db.add_all(
-                PredictionPoint(
-                    prediction_id=pred.id,
-                    operation=op,
-                    depth_m=float(dep),
-                    wellplan_si=float(wp),
-                    ml_si=float(y),
-                )
-                for dep, wp, y in zip(feats.depth_m, feats.wp_base, yhat, strict=True)
+    for op, entry in bundle["operations"].items():
+        d = oof_df[oof_df.operation == op].reset_index(drop=True)
+        spec = entry["spec"]
+        combo_keys = list(entry["model"].combos)
+        for tr, te in folds(d):
+            tr_df = d.iloc[tr]
+            routed = RoutedModel(
+                CalibrationModel(op, spec, num, cat).fit(tr_df),
+                {
+                    k: CalibrationModel(op, spec, num, cat).fit(tr_df[tr_df.combo == k])
+                    for k in combo_keys
+                    if (tr_df.combo == k).sum() > 10
+                },
             )
+            for wid in d.iloc[te].well_id.unique():
+                w = wells[wells.well_id == wid].iloc[0]
+                grid = dsm.plan_grid(db, int(wid))
+                if not len(grid):
+                    continue
+                f = dsm.features_frame(w, op, grid, plan, survey).dropna(subset=["wp_base"])
+                if f.empty:
+                    continue
+                for c in ("section", "well_type", "plan_format", "interval_type"):
+                    f[c] = f[c].fillna("tidak diketahui").astype(str)
+                yhat = routed.predict(f)
+                pred = preds.get(int(wid))
+                if pred is None:
+                    pred = Prediction(
+                        well_id=int(wid), model_id=model_row.id, kind="oof", warnings=[]
+                    )
+                    db.add(pred)
+                    db.flush()
+                    preds[int(wid)] = pred
+                db.add_all(
+                    PredictionPoint(
+                        prediction_id=pred.id,
+                        operation=op,
+                        depth_m=float(dep),
+                        wellplan_si=float(wp),
+                        ml_si=float(y),
+                    )
+                    for dep, wp, y in zip(f.depth_m, f.wp_base, yhat, strict=True)
+                )
     db.flush()
+
+
+def run_blind_test(db: Session, model: MLModel) -> dict:
+    """Uji sekali pada sumur blind test (tidak pernah dipakai untuk tuning)."""
+    if model.blind_result:
+        raise ValueError("Blind test model ini sudah pernah dijalankan; hasilnya tidak diulang.")
+    if model.status not in ("selesai", "ditahan") or not model.path:
+        raise ValueError("Model belum selesai dilatih")
+    dataset = db.get(Dataset, model.dataset_id)
+    df = dsm.load_frozen(dataset)
+    blind = df[df.is_blind].reset_index(drop=True)
+    if blind.empty:
+        raise ValueError("Dataset ini tidak memiliki sumur blind test")
+    bundle = joblib.load(model.path)
+    res: dict = {
+        "operations": {},
+        "wells": sorted(blind.well_name.unique().tolist()),
+        "run_at": datetime.now(UTC).isoformat(),
+    }
+    for op, entry in bundle["operations"].items():
+        d = blind[blind.operation == op]
+        if d.empty:
+            continue
+        p = entry["model"].predict(d)
+        res["operations"][op] = {
+            "wellplan": all_metrics(d.target, d.wp_base),
+            "ml": all_metrics(d.target, p),
+            "ml_better_frac": better_frac(d.target, p, d.wp_base),
+            "per_well": [
+                {
+                    "well_name": w,
+                    "section": g.section.iloc[0],
+                    "wellplan": all_metrics(g.target, g.wp_base),
+                    "ml": all_metrics(g.target, p[g.index.to_numpy()]),
+                }
+                for (w, _s), g in d.reset_index(drop=True).groupby(["well_name", "section"])
+            ],
+        }
+    model.blind_result = _json_safe(res)
+    db.commit()
+    # prediksi penuh untuk sumur blind agar bisa dilihat di dashboard setelah uji
+    from app.services.predict import predict_well
+
+    for wid in blind.well_id.unique():
+        w = db.get(Well, int(wid))
+        if w is not None:
+            try:
+                predict_well(db, w, model)
+            except ValueError:
+                pass
+    return model.blind_result
 
 
 def _json_safe(obj):
@@ -308,15 +788,17 @@ def _json_safe(obj):
     return obj
 
 
-def run_training_job(model_id: int, algorithm: str) -> None:
-    """Dijalankan sebagai proses latar belakang FastAPI dengan sesi DB sendiri."""
+def run_training_job(
+    model_id: int, algorithm: str, include_mlp: bool = False, dataset_id: int | None = None
+) -> None:
+    """Proses latar belakang FastAPI dengan sesi DB sendiri."""
     from app.db.session import SessionLocal
 
     db = SessionLocal()
     try:
         row = db.get(MLModel, model_id)
         try:
-            train(db, row, algorithm)
+            train(db, row, algorithm, include_mlp, dataset_id)
         except Exception as exc:
             db.rollback()
             row = db.get(MLModel, model_id)

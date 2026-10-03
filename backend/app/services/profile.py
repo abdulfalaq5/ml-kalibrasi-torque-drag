@@ -8,12 +8,14 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import PredictionPoint, Well
+from app.db.models import MLModel, PredictionPoint, Well, WellQuality
 from app.services import dataset as dsm
 from app.services import units
+from app.services.limits import applicable_limits, first_crossing, margin
 from app.services.metrics import all_metrics
 from app.services.operations import BASELINE_FF, OP_DIMENSION, OP_LABELS, OPERATIONS
 from app.services.predict import coverage_warnings, load_bundle, prediction_for_dashboard
+from app.services.quality import effective_status, latest_review
 from app.services.training import active_model
 
 PCT_FLOOR_FRAC = 0.05  # penyebut persen minimal 5% x median |pembanding|
@@ -30,7 +32,13 @@ def _r(a, nd=4) -> list:
     return [None if v is None or not np.isfinite(v) else round(float(v), nd) for v in a]
 
 
-def well_profile(db: Session, well: Well, unit_system: str = "imperial") -> dict:
+def _depth_or_none(d, conv_depth):
+    return None if d is None else round(float(conv_depth(np.array([d]))[0]), 1)
+
+
+def well_profile(
+    db: Session, well: Well, unit_system: str = "imperial", model: MLModel | None = None
+) -> dict:
     disp = units.DISPLAY_UNITS[unit_system]
     len_u = disp["length"]
 
@@ -44,8 +52,9 @@ def well_profile(db: Session, well: Well, unit_system: str = "imperial") -> dict
     ids = [well.id]
     plan = dsm.load_plan(db, ids)
     actual = dsm.load_actual(db, ids)
-    pred = prediction_for_dashboard(db, well)
-    model = active_model(db)
+    model = model or active_model(db)
+    pred = prediction_for_dashboard(db, well, model)
+    bundle = load_bundle(model.path) if model is not None and model.path else None
     pts = []
     if pred is not None:
         pts = db.execute(
@@ -72,6 +81,9 @@ def well_profile(db: Session, well: Well, unit_system: str = "imperial") -> dict
         warnings.append("Sumur belum diprediksi dengan model aktif. Klik 'Prediksi'.")
 
     has_actual = not actual.empty
+    limits = applicable_limits(db, well)
+    wq = db.scalar(select(WellQuality).where(WellQuality.well_id == well.id))
+    review = latest_review(db, well.id)
     if not has_actual:
         warnings.append("Belum ada data aktual: grafik Selisih hanya menampilkan ML - WellPlan")
 
@@ -123,12 +135,55 @@ def well_profile(db: Session, well: Well, unit_system: str = "imperial") -> dict
                 if metrics[k] is not None:
                     metrics[k]["rmse"] = float(conv(np.array([metrics[k]["rmse"]]), op)[0])
 
+        band = (bundle or {}).get("operations", {}).get(op, {}).get("band")
+        ml_lo = ml_v + band[0] if band and len(ml_v) else np.array([])
+        ml_hi = ml_v + band[1] if band and len(ml_v) else np.array([])
+
+        lims = []
+        disp_u = disp[OP_DIMENSION[op]]
+        for lim in limits:
+            if lim.operation != op:
+                continue
+            wp_d, wp_v = base if base else (np.array([]), np.array([]))
+            lims.append(
+                {
+                    "id": lim.id,
+                    "kind": lim.kind,
+                    "scope": "sumur" if lim.well_id else "section",
+                    "value": round(units.from_si(lim.value_si, disp_u), 3),
+                    "note": lim.note,
+                    "cross_ml": _depth_or_none(
+                        first_crossing(ml_d, ml_v, lim.value_si, lim.kind), conv_depth
+                    ),
+                    "cross_ml_band": _depth_or_none(
+                        first_crossing(
+                            ml_d, ml_hi if lim.kind == "max" else ml_lo, lim.value_si, lim.kind
+                        )
+                        if len(ml_lo)
+                        else None,
+                        conv_depth,
+                    ),
+                    "cross_wellplan": _depth_or_none(
+                        first_crossing(wp_d, wp_v, lim.value_si, lim.kind), conv_depth
+                    ),
+                    "margin_ml": None
+                    if not len(ml_v)
+                    else round(units.from_si(margin(ml_v, lim.value_si, lim.kind), disp_u), 3),
+                }
+            )
+
         ops_out[op] = {
             "label": OP_LABELS[op],
             "unit": units.UNIT_LABELS[disp[OP_DIMENSION[op]]],
             "wellplan": wp_series,
             "wellplan_baseline_ff": BASELINE_FF if BASELINE_FF in curves else None,
-            "ml": {"depth": _r(conv_depth(ml_d), 2), "value": _r(conv(ml_v, op))},
+            "ml": {
+                "depth": _r(conv_depth(ml_d), 2),
+                "value": _r(conv(ml_v, op)),
+                "lo": _r(conv(ml_lo, op)),
+                "hi": _r(conv(ml_hi, op)),
+            },
+            "limits": lims,
             "actual": {"depth": _r(conv_depth(act_d), 2), "value": _r(conv(act_v, op))},
             "diff": {
                 "wp_minus_actual": {
@@ -165,6 +220,23 @@ def well_profile(db: Session, well: Well, unit_system: str = "imperial") -> dict
         "prediction": None
         if pred is None
         else {"id": pred.id, "kind": pred.kind, "model_id": pred.model_id},
+        "model": None
+        if model is None
+        else {
+            "id": model.id,
+            "active": model.active,
+            "dataset_version": (model.params or {}).get("dataset_version"),
+            "band_quantiles": [10, 90],
+        },
+        "quality": {
+            "status": effective_status(wq, review),
+            "auto_status": wq.status if wq else None,
+            "score": wq.score if wq else None,
+            "issues": [c for c in (wq.checks if wq else []) if c["level"] != "lolos"],
+            "review": None
+            if review is None
+            else {"decision": review.decision, "reason": review.reason},
+        },
         "warnings": warnings,
         "sign_convention": "Selisih = A - B. Kanan (+) = A lebih tinggi, kiri (-) = A lebih rendah.",
         "operations": ops_out,

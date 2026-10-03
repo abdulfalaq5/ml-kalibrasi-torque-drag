@@ -23,12 +23,20 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_DIR: /data/uploads
       MODEL_DIR: /data/models
+      INBOX_DIR: /data/inbox
+      PROCESSED_DIR: /data/processed
+      REJECTED_DIR: /data/rejected
+      MPLCONFIGDIR: /tmp/matplotlib
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - uploads:/data/uploads
       - models:/data/models
+      # Impor massal dari folder (bind mount; hanya ada di server/laptop, tidak di Git)
+      - ./data/inbox:/data/inbox
+      - ./data/processed:/data/processed
+      - ./data/rejected:/data/rejected
     ports:
       - "127.0.0.1:8000:8000"   # hanya bisa diakses dari server itu sendiri (nginx)
     networks: [internal]

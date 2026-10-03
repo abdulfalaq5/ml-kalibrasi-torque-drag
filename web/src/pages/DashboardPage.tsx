@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, fmt, Op, OP_LABEL, OPS, Profile, WellItem } from "../api";
+import { api, fmt, ModelItem, Op, OP_LABEL, OPS, Profile, Q_LABEL, QStatus, WellItem } from "../api";
+import LimitsPanel from "../components/LimitsPanel";
+import QualityBadge from "../components/QualityBadge";
 import ThreeProfileChart, {
   ChartOptions,
   flaggedIntervals,
@@ -20,6 +22,10 @@ export default function DashboardPage() {
   const [section, setSection] = useState("");
   const [wtype, setWtype] = useState("");
   const [units, setUnits] = useState<"imperial" | "si">("imperial");
+  const [quality, setQuality] = useState<"" | QStatus>("");
+  const [modelId, setModelId] = useState("");
+  const models = useQuery({ queryKey: ["models"], queryFn: () => api.get<ModelItem[]>("/api/models") });
+  const usable = (models.data ?? []).filter((m) => m.status === "selesai" || m.status === "ditahan");
   const [opts, setOpts] = useState<ChartOptions>({
     ops: Object.fromEntries(OPS.map((o) => [o, true])) as Record<Op, boolean>,
     showFF: false,
@@ -27,10 +33,14 @@ export default function DashboardPage() {
     diffMode: "abs",
     flagSeries: "ml_minus_actual",
     threshold: 5,
+    showBand: true,
   });
 
   const filtered = (wells.data ?? []).filter(
-    (w) => (!section || String(w.section_in) === section) && (!wtype || w.well_type === wtype),
+    (w) =>
+      (!section || String(w.section_in) === section) &&
+      (!wtype || w.well_type === wtype) &&
+      (!quality || w.quality === quality),
   );
   const selectedId = wellId ? Number(wellId) : filtered.find((w) => w.actual_points > 0)?.id ?? filtered[0]?.id;
 
@@ -39,12 +49,12 @@ export default function DashboardPage() {
   }, [wellId, selectedId, nav]);
 
   const profile = useQuery({
-    queryKey: ["profile", selectedId, units],
-    queryFn: () => api.get<Profile>(`/api/wells/${selectedId}/profile?units=${units}`),
+    queryKey: ["profile", selectedId, units, modelId],
+    queryFn: () => api.get<Profile>(`/api/wells/${selectedId}/profile?units=${units}${modelId ? `&model_id=${modelId}` : ""}`),
     enabled: !!selectedId,
   });
   const predict = useMutation({
-    mutationFn: () => api.post(`/api/wells/${selectedId}/predict`),
+    mutationFn: () => api.post(`/api/wells/${selectedId}/predict${modelId ? `?model_id=${modelId}` : ""}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["profile"] });
       qc.invalidateQueries({ queryKey: ["wells"] });
@@ -100,12 +110,23 @@ export default function DashboardPage() {
             </select>
           </label>
           <label className="inline">
+            Kualitas
+            <select value={quality} onChange={(e) => setQuality(e.target.value as "" | QStatus)}>
+              <option value="">Semua</option>
+              {(["A", "B", "C", "X"] as QStatus[]).map((q) => (
+                <option key={q} value={q}>
+                  {q} · {Q_LABEL[q]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="inline">
             Sumur
             <select value={selectedId ?? ""} onChange={(e) => nav(`/dashboard/${e.target.value}`)}>
               {!filtered.some((w) => w.id === selectedId) && selectedId && <option value={selectedId}>(di luar filter)</option>}
               {filtered.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name} · {w.section_in}" · {w.well_type ?? "?"} {w.actual_points ? "" : "· tanpa aktual"}
+                  {w.name} · {w.section_in}" · {w.well_type ?? "?"} · {w.quality} {w.actual_points ? "" : "· tanpa aktual"}
                 </option>
               ))}
             </select>
@@ -117,6 +138,17 @@ export default function DashboardPage() {
               <option value="si">SI (m, kN, kN·m)</option>
             </select>
           </label>
+          <label className="inline">
+            Model
+            <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
+              <option value="">aktif</option>
+              {usable.map((m) => (
+                <option key={m.id} value={m.id}>
+                  #{m.id} · dataset v{m.dataset_version ?? "?"} {m.active ? "(aktif)" : m.status === "ditahan" ? "(ditahan)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="spacer" />
           {selectedId && (
             <>
@@ -124,8 +156,14 @@ export default function DashboardPage() {
                 {predict.isPending ? "Memprediksi…" : "Prediksi ulang"}
               </button>
               <a
+                className="btn"
+                href={`/api/wells/${selectedId}/report.pdf?units=${units}&target=${opts.diffTarget}${modelId ? `&model_id=${modelId}` : ""}`}
+              >
+                PDF
+              </a>
+              <a
                 className="btn primary"
-                href={`/api/wells/${selectedId}/export.xlsx?units=${units}&target=${opts.diffTarget}`}
+                href={`/api/wells/${selectedId}/export.xlsx?units=${units}&target=${opts.diffTarget}${modelId ? `&model_id=${modelId}` : ""}`}
               >
                 Ekspor Excel
               </a>
@@ -156,7 +194,11 @@ export default function DashboardPage() {
             ))}
             <label className="check">
               <input type="checkbox" checked={opts.showFF} onChange={(e) => set("showFF", e.target.checked)} />
-              Kurva FF 0,1 / 0,3 / 0,5
+              Semua kurva FF
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={opts.showBand} onChange={(e) => set("showBand", e.target.checked)} />
+              Pita ketidakpastian ML
             </label>
           </fieldset>
           <fieldset>
@@ -223,12 +265,16 @@ export default function DashboardPage() {
               <h2>
                 {p.well.name} · {p.well.section_in}" · {p.well.well_type ?? "?"}
               </h2>
-              <span className="muted small">
+              <span className="row gap">
+                <QualityBadge s={p.quality.status} long />
+                <span className="muted small">
                 {p.prediction
                   ? p.prediction.kind === "oof"
                     ? `Prediksi ML out-of-fold (model #${p.prediction.model_id} tanpa melihat sumur ini)`
                     : `Prediksi ML model #${p.prediction.model_id}`
                   : "Belum ada prediksi ML"}
+                {p.model?.dataset_version ? ` · dataset v${p.model.dataset_version}` : ""}
+                </span>
               </span>
             </div>
             <div className="small legend-note">
@@ -256,6 +302,21 @@ export default function DashboardPage() {
             <ThreeProfileChart profile={p} options={{ ...opts, flagSeries }} intervals={intervals} />
           </section>
 
+          {p.quality.issues.length > 0 && (
+            <details className="card">
+              <summary>
+                Catatan kualitas data ({p.quality.issues.length}){p.quality.review ? ` · tinjauan: ${p.quality.review.decision}` : ""}
+              </summary>
+              <ul className="issues">
+                {p.quality.issues.map((c, i) => (
+                  <li key={i} className={c.level === "kritis" ? "error" : "warning"}>
+                    {c.message}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <LimitsPanel profile={p} />
           <div className="grid2">
             <section className="card">
               <h3>

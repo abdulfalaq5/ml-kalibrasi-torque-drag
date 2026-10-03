@@ -156,3 +156,18 @@ details summary { cursor: pointer; margin-top: 12px; color: var(--text-2); }
   position: absolute; display: none; height: 0; pointer-events: none; z-index: 2;
   border-top: 1px dashed #52514e;
 }
+
+/* paket 6 minggu */
+.stat-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px; min-width: 130px;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; font: inherit; }
+.stat-tile.on { outline: 2px solid var(--accent); }
+.stat-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.review-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.review-form input { min-width: 280px; flex: 1; }
+.issues li.pass { color: var(--text-2); }
+.eval-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 12px; }
+.blind-box { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; }
+.wrap-seg { flex-wrap: wrap; }
+tr.row-bad td { background: var(--bad-bg); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+code { font-size: 12px; background: var(--surface-0); padding: 1px 4px; border-radius: 4px; }

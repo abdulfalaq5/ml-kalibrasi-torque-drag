@@ -20,9 +20,11 @@ OP_LABELS = {
     TORQUE_ON: "Torque on bottom",
 }
 
-FF_SCENARIOS = [0.1, 0.3, 0.5]
+# Skenario FF di data client: roadmap {0.1,0.3,0.5} atau {0.3,0.4,0.5}; laporan WellPlan
+# {0.2,0.3,0.4,0.5}. FF 0.3 dan 0.5 ada di semua file -> dipakai sebagai fitur (K-06).
+FF_SCENARIOS = [0.3, 0.5]
 # Baseline WellPlan: skenario FF nominal (lihat docs/keputusan.md K-06)
 BASELINE_FF = 0.3
 
 WELL_TYPES = ["J", "S", "Horizontal"]
-SECTIONS_IN = [17.5, 12.25, 8.5, 6.125]
+SECTIONS_IN = [26.0, 22.0, 17.5, 12.25, 8.5, 6.125]

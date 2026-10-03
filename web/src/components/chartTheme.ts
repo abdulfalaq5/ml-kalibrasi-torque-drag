@@ -5,6 +5,7 @@ export const COLOR = {
   ml: "#eb6834",
   actual: "#1baf7a",
   mlMinusWp: "#4a3aa7",
+  limit: "#e34948",
   flag: "rgba(237, 161, 0, 0.20)",
   guide: "#52514e",
   grid: "#e7e6e2",

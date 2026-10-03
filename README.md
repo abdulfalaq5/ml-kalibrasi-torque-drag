@@ -1,17 +1,17 @@
-# Prototype Sistem Kalibrasi Torque & Drag ML
+# Sistem Kalibrasi Torque & Drag ML (paket 6 minggu)
 
-Aplikasi web untuk mengimpor laporan WellPlan + data aktual (Excel), melatih model kalibrasi
-(Ridge / XGBoost, divalidasi per sumur), memprediksi sumur baru, menampilkan dashboard tiga
-grafik (Hookload, Torque, Selisih), dan mengekspor hasil ke Excel. Aplikasi memakai satu akun admin.
-
-Dokumen lain:
+Aplikasi web untuk mengimpor file WellPlan + data aktual sumur (Excel), memeriksa kualitas data,
+melatih dan membandingkan model kalibrasi (Ridge, XGBoost, Random Forest, SVR, MLP opsional),
+menguji model pada sumur yang tidak pernah dilihat (validasi per sumur + blind test), memprediksi
+sumur baru, dan menampilkan hasilnya dalam dashboard tiga grafik (Hookload, Torque, Selisih),
+ekspor Excel, dan ringkasan PDF. Aplikasi memakai satu akun admin.
 
 | Dokumen | Isi |
 |---|---|
-| `TODO_Prototype_3_Minggu.md` | Rencana kerja dan status |
-| `TOOLS_dan_Arsitektur.md` | Tools dan arsitektur |
-| `docs/panduan.md` | Panduan pemakaian dan operasional lengkap |
-| `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-17) |
+| `docs/panduan.md` | **Panduan pengguna** langkah demi langkah + panduan operasional |
+| `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-30) |
+| `TODO_Lanjutan_6_Minggu.md` | Rencana kerja paket 6 minggu dan status |
+| `TOOLS_dan_Arsitektur_6_Minggu.md` | Tools dan arsitektur |
 | `CLAUDE.md` | Konteks untuk Claude Code |
 
 ---
@@ -20,273 +20,168 @@ Dokumen lain:
 
 | | Laptop (lokal) | Server (production) |
 |---|---|---|
-| **Link** | http://127.0.0.1:8000 | `https://<domain-anda>` (mis. `https://td.contoh.com`) |
-| **Username** | nilai `ADMIN_USERNAME` di `.env` (bawaan: `admin`) | sama |
-| **Password** | nilai `ADMIN_PASSWORD` di `.env` saat aplikasi **pertama kali** dijalankan | sama, lalu diganti saat serah terima |
+| **Link** | http://127.0.0.1:8000 | `https://<domain-anda>` |
+| **Username** | nilai `ADMIN_USERNAME` di `.env` (bawaan `admin`) | sama |
+| **Password** | nilai `ADMIN_PASSWORD` di `.env` saat aplikasi **pertama kali** dijalankan | sama, diganti saat serah terima |
 
-> Tidak ada password bawaan. Akun admin dibuat sekali dari `ADMIN_USERNAME` + `ADMIN_PASSWORD`
-> di `.env` saat aplikasi pertama kali jalan. Setelah itu, mengubah `.env` **tidak** mengubah
-> password. Untuk menggantinya, pakai `make password` (lihat [Lupa / ganti password](#lupa--ganti-password)).
+> Tidak ada password bawaan. Akun dibuat sekali dari `.env` saat start pertama. Setelah itu mengubah
+> `.env` tidak mengubah password. Ganti/lupa password: `make password`.
+
+Format file yang diterima (hasil audit 94 file folder `Training/`):
+
+| Format | Ekstensi | Sheet yang dibaca | Data aktual |
+|---|---|---|---|
+| **A. Roadmap** | `.xlsx` | `Drag`, `Torque` (blok per friction factor) | `T&D Actual Reading` |
+| **B. Laporan WellPlan** | `.xlsm` (macro tidak dijalankan) | `Summary`, `Tripping Load Analysis`, `Off Bottom Torque analysis`, `Rotary Drill Buckling Outputs`, `Survey Outputs` | `Drilling Data`, `Tripping  Data` |
+
+Satu file = satu section. Section dibaca dari nama file (`_8.5in`, `12.25 HS`, `22inHS`, …).
+Susunan folder: `<tipe J|S|Horizontal>/<nama sumur>/<file>`. Nama folder = kode sumur.
 
 ---
 
 ## A. Setup dari awal di laptop (Docker)
 
-### Langkah 1: Siapkan perangkat
-
-Pasang:
-
-- **Docker**: Docker Desktop (Windows/Mac) atau Docker Engine + plugin Compose (Linux)
-- **Git**
-
-Cek bahwa keduanya terpasang:
+### 1. Perangkat
+Pasang **Docker** (Docker Desktop di Windows/Mac, atau Docker Engine + plugin Compose di Linux)
+dan **Git**. Python dan Node tidak perlu dipasang.
 
 ```bash
 docker --version
-docker compose version     # harus "Docker Compose version v2..." (bukan docker-compose lama)
-git --version
+docker compose version     # harus "Docker Compose version v2..."
 ```
 
-Python dan Node **tidak perlu** dipasang, karena semuanya dibangun di dalam Docker.
-
-### Langkah 2: Ambil kode
-
+### 2. Ambil kode
 ```bash
 git clone <url-repo> td-ml
 cd td-ml
 ```
 
-Jika foldernya sudah ada di laptop, cukup `cd` ke folder tersebut.
-
-### Langkah 3: Buat file `.env`
-
+### 3. Buat `.env`
 ```bash
 cp .env.example .env
 ```
-
-Buka `.env` dengan editor dan isi seperti contoh berikut:
-
+Isi:
 ```ini
-POSTGRES_DB=tdml
-POSTGRES_USER=tdml
-POSTGRES_PASSWORD=isi-acak-panjang          # password database (tidak dipakai untuk login web)
-APP_ENV=production
-MAX_UPLOAD_MB=100
-SECRET_KEY=isi-acak-minimal-32-karakter     # kunci tanda tangan cookie sesi
-SESSION_HOURS=8
-COOKIE_SECURE=false                         # LOKAL (http) wajib false; server (https) true
-ADMIN_USERNAME=admin                        # username untuk login web
-ADMIN_PASSWORD=GantiDenganPasswordAnda123   # password untuk login web (minimal 12 karakter disarankan)
+POSTGRES_PASSWORD=<openssl rand -hex 16>
+SECRET_KEY=<openssl rand -hex 32>      # minimal 32 karakter
+COOKIE_SECURE=false                    # laptop (http) = false; server (https) = true
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=GantiDenganPasswordAnda123
 ```
 
-Membuat nilai acak untuk `POSTGRES_PASSWORD` dan `SECRET_KEY`:
-
+### 4. Jalankan
 ```bash
-openssl rand -hex 16    # untuk POSTGRES_PASSWORD
-openssl rand -hex 32    # untuk SECRET_KEY
+make up            # = buat folder data/inbox, processed, rejected, backups + docker compose up -d --build
 ```
-
-Hal yang perlu diperhatikan:
-
-- **`COOKIE_SECURE=false` wajib di laptop.** Di laptop aplikasi dibuka lewat `http://`. Bila
-  nilainya `true`, browser bisa menolak menyimpan cookie sesi, sehingga login tampak berhasil
-  tetapi Anda langsung kembali ke halaman login.
-- `SECRET_KEY` minimal 32 karakter. Bila lebih pendek, aplikasi menolak jalan saat `APP_ENV=production`.
-- `.env` **jangan di-commit**. File ini sudah ada di `.gitignore`.
-
-### Langkah 4: Jalankan
-
-```bash
-docker compose up -d --build
-```
-
-Build pertama membutuhkan sekitar 3–10 menit, karena perlu mengunduh image dan membangun frontend serta
-pustaka ML. Perintah ini menjalankan tiga container:
+Build pertama 5–10 menit (pustaka ML, SHAP, PDF). Container yang berjalan:
 
 | Container | Fungsi |
 |---|---|
-| `db` | PostgreSQL 16 (data di volume `pgdata`) |
-| `app` | API FastAPI + web React + ML, di port `127.0.0.1:8000` |
-| `backup` | Dump database harian ke folder `./backups` |
+| `db` | PostgreSQL 16 (volume `pgdata`) |
+| `app` | API + web + ML di `127.0.0.1:8000`; membaca folder `data/inbox` |
+| `backup` | Dump database harian ke `./backups` |
 
-Saat start, migrasi database berjalan otomatis dan akun admin dibuat.
+Migrasi database berjalan otomatis saat start.
 
-### Langkah 5: Pastikan berjalan
-
+### 5. Cek
 ```bash
-docker compose ps
+docker compose ps                              # app, db (healthy), backup
+curl http://127.0.0.1:8000/api/health          # {"status":"ok","database":"OK"}
 ```
 
-Ketiga container harus berstatus `Up`, dan `db` berstatus `(healthy)`.
+### 6. Login
+Buka **http://127.0.0.1:8000**, masuk dengan `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Lalu hapus baris
+`ADMIN_PASSWORD` dari `.env` dan jalankan `docker compose up -d`.
 
+### 7. Masukkan data sumur
+**Data client (folder `Training/`):**
 ```bash
-curl http://127.0.0.1:8000/api/health
-# {"status":"ok","database":"OK"}
-
-docker compose logs app | grep -i admin
-# ... Akun admin 'admin' dibuat. Hapus ADMIN_PASSWORD dari .env.
+make inbox-training      # salin Training/<tipe>/<sumur>/* ke data/inbox (file asli tidak diubah)
 ```
-
-### Langkah 6: Buka dan login
-
-1. Buka **http://127.0.0.1:8000** di browser.
-2. Isi **Username** dengan nilai `ADMIN_USERNAME` (mis. `admin`).
-3. Isi **Password** dengan nilai `ADMIN_PASSWORD` dari Langkah 3.
-4. Klik **Masuk**. Anda akan diarahkan ke halaman **Data sumur**.
-
-Sesi login berlaku 8 jam. Setelah 5 kali salah password, login dikunci 15 menit.
-
-### Langkah 7: Hapus password dari `.env`
-
-Setelah login berhasil, akun sudah tersimpan di database dalam bentuk hash. Hapus baris
-`ADMIN_PASSWORD=...` dari `.env`, lalu jalankan:
-
+**Atau data contoh sintetis (bukan data client):**
 ```bash
-docker compose up -d
+make inbox-sample
 ```
+Lalu di web: **Data sumur → Pindai folder**. Lanjutkan sesuai `docs/panduan.md`
+(Kualitas data → Model → Latih → Blind test → Dashboard → Ekspor).
 
-Simpan password tersebut di pengelola password Anda.
-
-### Langkah 8 (opsional): Coba dengan data contoh
-
-Data contoh **sintetis** (bukan data client): 15 sumur dengan data aktual, 2 sumur baru tanpa
-data aktual, dan 2 file roadmap.
-
-```bash
-make sample-docker
-# file dibuat di data/sample/*.xlsx
-```
-
-Tanpa `make`:
-
-```bash
-mkdir -p data
-docker compose run --rm --no-deps -v "$PWD/scripts:/scripts:ro" -v "$PWD/data:/out" \
-  --user "$(id -u):$(id -g)" app python /scripts/make_sample_data.py --out /out/sample
-```
-
-Di Windows (PowerShell), jalankan perintah ini dari WSL, atau ganti `$PWD` dengan path folder
-lengkap dan hapus opsi `--user`.
-
-Lalu coba alurnya di web:
-
-1. **Data sumur → Impor file Excel**: tarik semua file `W01…W15_*_wellplan.xlsx`. Untuk file
-   `*_roadmap.xlsx`, isi dulu **Nama sumur** (mis. `W01`) karena file roadmap tidak memuat nama sumur.
-2. **Model → Latih model**: proses berjalan di latar belakang sekitar 20 detik. Statusnya berubah
-   menjadi `selesai` dan `aktif`. Klik **Laporan** untuk melihat akurasi per section dan tipe sumur.
-3. **Data sumur → Prediksi sumur baru**: tarik `W16_..._baru_wellplan.xlsx`. Dashboard terbuka otomatis.
-4. **Dashboard**: pilih sumur. Tiga grafik tampil (Hookload, Torque, Selisih). Arahkan kursor
-   untuk melihat garis penuntun di ketiga grafik. Atur ambang untuk penandaan interval.
-5. **Ekspor Excel** di dashboard: file `.xlsx` berisi data perbandingan, prediksi, dan grafik.
+> Aturan data (Pasal 11): data client hanya dipakai di laptop/server yang disepakati, tidak ke Git
+> (`Training/`, `data/` ada di `.gitignore`), dan salinannya dihapus 14 hari setelah proyek selesai.
 
 ---
 
-## B. Perintah sehari-hari
+## B. Keluaran yang dihasilkan sistem
 
-| Tujuan | Perintah | Pintasan |
+| Keluaran | Dari mana | Isi |
 |---|---|---|
-| Jalankan / perbarui setelah kode berubah | `docker compose up -d --build` | `make up` |
-| Lihat log aplikasi | `docker compose logs -f app` | `make logs` |
-| Status container | `docker compose ps` | |
-| Hentikan (data tetap aman) | `docker compose down` | `make down` |
-| Ganti password admin | `docker compose exec app python -m app.cli set-admin-password` | `make password` |
-| Masuk ke database | `docker compose exec db psql -U tdml -d tdml` | |
-| Backup manual | | `make backup` |
+| Laporan audit file | `make audit` → `data/audit/laporan_audit.md` + CSV | Format, sheet, satuan, titik, matriks sumur × section × tipe, penyimpangan per file |
+| Hasil pindai folder | Data sumur → Pindai folder | Per file (diterima / peringatan / duplikat / ditolak + alasan) dan per sumur-section (status A/B/C) |
+| Laporan kualitas data | Kualitas data → Unduh (.xlsx) | Status A/B/C/X, skor, alasan, rasio aktual/WellPlan, riwayat tinjauan |
+| Dataset beku | Model → Dataset → Unduh | Snapshot CSV + hash, daftar sumur, sumur blind test, sumur dikecualikan |
+| Laporan model | Model → Laporan (.xlsx) / Ringkasan PDF | Metrik validasi silang & blind test per operasi, per section/tipe/kedalaman/sumur, perbandingan algoritma, uji fitur, kurva belajar, SHAP |
+| Dashboard | Dashboard | 3 panel (Hookload, Torque, Selisih), pita ketidakpastian, batas aman, interval ditandai |
+| Ekspor per sumur | Dashboard → Ekspor Excel / PDF | Sheet `Drag`, `Torque`, `T&D Actual Reading` + kolom ML & selisih + 3 grafik + batas aman; PDF 2 halaman |
+| Evaluasi prediksi | Evaluasi | Prediksi sumur baru vs data aktualnya (otomatis setelah data aktual diimpor) |
 
-> **Jangan jalankan `docker compose down -v`** kecuali memang ingin mengosongkan semuanya. Opsi
-> `-v` menghapus volume: database, file unggahan, dan model.
-
-### Lupa / ganti password
-
-```bash
-docker compose exec app python -m app.cli set-admin-password
-```
-
-- Masukkan password baru dua kali (minimal 12 karakter). Bila dikosongkan, password acak dibuat
-  dan ditampilkan.
-- Perintah ini juga **membuka kunci** login yang terkunci karena terlalu banyak percobaan salah.
-- Untuk mengganti username sekaligus, tambahkan `--username nama_baru`. Akun tetap satu.
-
-### Mulai ulang dari nol (hapus semua data)
-
-```bash
-docker compose down -v      # HAPUS database, unggahan, model
-# isi lagi ADMIN_PASSWORD di .env
-docker compose up -d --build
-```
+Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, berisi nama sumur).
 
 ---
 
-## C. Masalah umum
+## C. Perintah sehari-hari
 
-| Gejala | Penyebab / solusi |
+| Tujuan | Perintah |
 |---|---|
-| Login "berhasil" tapi kembali ke halaman login | `COOKIE_SECURE=true` saat dibuka lewat `http://`. Ubah ke `false` di laptop, lalu `docker compose up -d`. |
-| "Username atau password salah" padahal `.env` benar | Akun sudah dibuat sebelumnya dengan password lain (`.env` hanya dipakai saat pertama kali). Jalankan `make password`. |
-| "Terlalu banyak percobaan salah" | Tunggu 15 menit, atau jalankan `make password`. |
-| Log: "Belum ada akun admin" | `ADMIN_USERNAME`/`ADMIN_PASSWORD` kosong saat start pertama. Isi lalu `docker compose up -d`, atau buat lewat `make password`. |
-| `port is already allocated` (8000) | Port 8000 dipakai program lain. Hentikan program itu, atau ganti `127.0.0.1:8000:8000` menjadi mis. `127.0.0.1:8080:8000` di `docker-compose.yml`, lalu buka http://127.0.0.1:8080. |
-| Tidak bisa dibuka dari komputer lain di jaringan | Disengaja: port hanya dibuka ke `127.0.0.1`. Akses dari luar lewat nginx + HTTPS (bagian D). |
-| Aplikasi menolak start: "SECRET_KEY production harus acak…" | `SECRET_KEY` kurang dari 32 karakter atau masih nilai contoh. |
-| File gagal diimpor | Lihat alasannya di **Data sumur → Riwayat impor** (klik baris). Pola nama sheet/kolom bisa disesuaikan di `backend/app/parsers/column_map.py`. |
+| Jalankan / perbarui | `make up` |
+| Log aplikasi | `make logs` |
+| Hentikan (data aman) | `make down` |
+| Ganti password admin (juga membuka kunci login) | `make password` |
+| Salin data Training ke inbox | `make inbox-training` |
+| Data contoh sintetis ke inbox | `make inbox-sample` |
+| Laporan audit file Training | `make audit` |
+| Backup manual | `make backup` |
+| Masuk database | `docker compose exec db psql -U tdml -d tdml` |
+
+> **Jangan `docker compose down -v`** kecuali ingin menghapus semua data (database, unggahan, model).
 
 ---
 
-## D. Setup di server (production, dengan domain + HTTPS)
+## D. Masalah umum
 
-Kebutuhan: VPS Ubuntu 24.04 (2 vCPU, 4 GB RAM, 40 GB disk), domain atau subdomain dengan
-**DNS A record** yang mengarah ke IP server, dan akses SSH.
+| Gejala | Solusi |
+|---|---|
+| Login kembali ke halaman login | `COOKIE_SECURE=false` untuk http lokal, lalu `docker compose up -d` |
+| Password `.env` tidak diterima | Akun sudah dibuat sebelumnya → `make password` |
+| "Terlalu banyak percobaan salah" | Tunggu 15 menit atau `make password` |
+| Tombol "Pindai folder" nonaktif | `data/inbox` kosong; jalankan `make inbox-training` |
+| File di inbox "dilewati" | File baru diubah < 1 menit; tunggu lalu pindai lagi |
+| Pindai gagal "Permission denied" | Folder `data/` harus bisa ditulis uid 1000: `sudo chown -R 1000:1000 data` |
+| Port 8000 dipakai | Ubah `127.0.0.1:8000:8000` di `docker-compose.yml` |
+
+---
+
+## E. Server (production)
 
 ```bash
-# 1. Di server: ambil kode
 git clone <url-repo> td-ml && cd td-ml
-
-# 2. Pasang semuanya: paket, firewall (22/80/443), Docker, nginx, sertifikat HTTPS, .env dasar
-DOMAIN=td.contoh.com EMAIL=admin@contoh.com bash deploy/setup_server.sh
-#    - diminta membuat username/password BASIC AUTH sementara (lapisan nginx, bukan login aplikasi)
-#    - .env dibuat dengan POSTGRES_PASSWORD dan SECRET_KEY acak
-
-# 3. Isi akun admin aplikasi
-nano .env        # isi ADMIN_USERNAME dan ADMIN_PASSWORD; pastikan COOKIE_SECURE=true
-
-# 4. Jalankan
-docker compose up -d --build
+DOMAIN=td.contoh.com EMAIL=admin@contoh.com bash deploy/setup_server.sh   # paket, firewall, Docker, nginx, HTTPS, .env
+nano .env                                    # ADMIN_USERNAME, ADMIN_PASSWORD, COOKIE_SECURE=true
+make up
+sudo chown -R 1000:1000 data && chmod 750 data   # folder inbox hanya untuk user server dan container
 ```
-
-5. Buka **`https://td.contoh.com`**. Browser pertama-tama meminta basic auth sementara dari langkah 2,
-   lalu halaman login aplikasi tampil. Login dengan `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
-6. Setelah login aplikasi berfungsi, **cabut basic auth sementara** supaya tidak login dua kali.
-   Hapus dua baris `auth_basic` di `/etc/nginx/sites-available/td-ml`, lalu jalankan
-   `sudo nginx -t && sudo systemctl reload nginx`.
-7. **Hapus `ADMIN_PASSWORD`** dari `.env`, lalu jalankan `docker compose up -d`.
-8. Memperbarui aplikasi di kemudian hari: `git pull && docker compose up -d --build`.
-
-Aturan keamanan: jangan unggah file client ke server sebelum HTTPS dan login aplikasi berjalan.
-Saat serah terima, ganti password dengan `make password` dan serahkan lewat jalur aman (bukan
-chat). Detail backup, pemulihan, dan serah terima ada di `docs/panduan.md`.
+Buka `https://td.contoh.com`, login, cabut basic auth sementara di nginx, hapus `ADMIN_PASSWORD`.
+Data sumur disalin ke `data/inbox/` di server (mis. `scp -r Training/. server:td-ml/data/inbox/`)
+**setelah** HTTPS dan login berjalan. Detail di `docs/panduan.md` bagian B.
 
 ---
 
-## E. Pengembangan (opsional, tanpa Docker untuk app)
+## F. Pengembangan
 
 ```bash
 uv venv .venv -p 3.12 && uv pip install -p .venv/bin/python -r backend/requirements-dev.txt
-make test          # 32 tes, memakai SQLite sementara
-make lint          # ruff
-make sample        # data sintetis via Python lokal
-(cd backend && ../.venv/bin/alembic upgrade head)   # buat tabel (default SQLite backend/dev.db, atau set DATABASE_URL)
-make dev-api       # API di :8000
-make dev-web       # Vite dev server, /api diteruskan ke :8000
+make test        # 44 tes (parser format A/B, kualitas, alur penuh, login, selisih)
+make lint
+cd web && npm ci && npm run build
 ```
 
-## Struktur
-
-```
-backend/app/        api/ core/ db/ parsers/ services/ main.py cli.py
-backend/alembic/    migrasi database
-backend/tests/      tes + fixtures sintetis
-web/                React + Vite + Plotly
-scripts/            audit_files.py, anonymize_files.py, make_sample_data.py
-deploy/             konfigurasi nginx host + skrip pemasangan server
-docs/               keputusan.md, panduan.md, catatan perubahan lingkup login
-```
+Struktur: `backend/app/{api,core,db,parsers,services}`, `backend/alembic`, `backend/tests`,
+`web/` (React + Plotly), `scripts/` (audit, anonimisasi, data sintetis), `deploy/`, `docs/`.

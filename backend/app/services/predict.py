@@ -1,8 +1,9 @@
-"""Prediksi sumur memakai model aktif."""
+"""Prediksi sumur memakai model aktif (atau model tertentu)."""
 
 from functools import lru_cache
 
 import joblib
+import numpy as np
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -33,28 +34,38 @@ def coverage_warnings(bundle: dict, section: str | None, well_type: str | None) 
     return warns
 
 
+def predict_frame(bundle: dict, op: str, f) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    entry = bundle["operations"][op]
+    y = entry["model"].predict(f)
+    lo, hi = entry.get("band", [0.0, 0.0])
+    return y, y + lo, y + hi
+
+
 def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Prediction:
     model = model or active_model(db)
     if model is None:
         raise ValueError("Belum ada model aktif. Latih model terlebih dahulu.")
     bundle = load_bundle(model.path)
-    wells = dsm.load_wells(db, [well.id])
-    w = wells.iloc[0]
+    w = dsm.load_wells(db, [well.id]).iloc[0]
     plan, survey = dsm.load_plan(db, [well.id]), dsm.load_survey(db, [well.id])
     grid = dsm.plan_grid(db, well.id)
     if not len(grid):
         raise ValueError("Sumur ini belum punya hasil WellPlan untuk diprediksi")
 
-    section = w.section or "tidak diketahui"
-    wtype = w.well_type or "tidak diketahui"
     warns = coverage_warnings(bundle, w.section, w.well_type)
-    if survey.empty:
-        warns.append("Tidak ada survey: inklinasi dan dogleg diisi nilai tengah data latih")
+    if survey.empty and "survey" in bundle["features"]["groups"]:
+        warns.append(
+            "Tidak ada survey (file roadmap): fitur inklinasi/dogleg diisi nilai tengah data latih"
+        )
     lo, hi = bundle["depth_range_m"]
     if grid.max() > hi * 1.1 or grid.min() < lo * 0.9:
         warns.append(
             f"Rentang kedalaman sumur ({grid.min():.0f}-{grid.max():.0f} m) melewati rentang "
             f"data latih ({lo:.0f}-{hi:.0f} m)"
+        )
+    if w.well_name in bundle.get("trained_wells", []):
+        warns.append(
+            "Sumur ini ikut data latih model; untuk perbandingan jujur lihat prediksi out-of-fold"
         )
 
     db.execute(
@@ -67,13 +78,14 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
     pred = Prediction(well_id=well.id, model_id=model.id, kind="full", warnings=warns)
     db.add(pred)
     db.flush()
-    for op, cm in bundle["operations"].items():
+    for op in bundle["operations"]:
         f = dsm.features_frame(w, op, grid, plan, survey).dropna(subset=["wp_base"])
         if f.empty:
             warns.append(f"{op}: tidak ada hasil WellPlan, tidak diprediksi")
             continue
-        f["section"], f["well_type"] = section, wtype
-        yhat = cm.predict(f)
+        for c in ("section", "well_type", "plan_format", "interval_type"):
+            f[c] = f[c].fillna("tidak diketahui").astype(str)
+        yhat, _, _ = predict_frame(bundle, op, f)
         db.add_all(
             PredictionPoint(
                 prediction_id=pred.id,
@@ -89,9 +101,11 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
     return pred
 
 
-def prediction_for_dashboard(db: Session, well: Well) -> Prediction | None:
-    """Sumur latih -> prediksi out-of-fold model aktif; selain itu prediksi penuh."""
-    model = active_model(db)
+def prediction_for_dashboard(
+    db: Session, well: Well, model: MLModel | None = None
+) -> Prediction | None:
+    """Sumur latih -> prediksi out-of-fold; selain itu prediksi penuh model tersebut."""
+    model = model or active_model(db)
     if model is None:
         return None
     for kind in ("oof", "full"):

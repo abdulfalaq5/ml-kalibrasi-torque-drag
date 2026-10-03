@@ -13,6 +13,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -79,6 +80,9 @@ class UploadedFile(Base):
     checksum: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(16), default="diproses")  # ok, peringatan, gagal
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    source: Mapped[str] = mapped_column(String(16), default="upload")  # upload | folder
+    rel_path: Mapped[str | None] = mapped_column(String(512))  # jalur relatif di inbox
+    version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     well: Mapped[Well | None] = relationship(back_populates="files")
@@ -144,10 +148,68 @@ class ActualReading(Base):
     value_si: Mapped[float] = mapped_column(Float)
 
 
+class WellQuality(Base):
+    """Hasil gerbang kualitas data per sumur-section (status A/B/C)."""
+
+    __tablename__ = "well_quality"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    well_id: Mapped[int] = mapped_column(ForeignKey("wells.id", ondelete="CASCADE"), unique=True)
+    status: Mapped[str] = mapped_column(String(1))  # A, B, C (otomatis)
+    score: Mapped[int] = mapped_column(Integer)
+    checks: Mapped[list] = mapped_column(JSON, default=list)  # [{code, level, message}]
+    stats: Mapped[dict] = mapped_column(JSON, default=dict)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class QualityReview(Base):
+    """Keputusan tinjauan engineer: terima / kecualikan / perbaiki (riwayat, tidak dihapus)."""
+
+    __tablename__ = "quality_reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    well_id: Mapped[int] = mapped_column(ForeignKey("wells.id", ondelete="CASCADE"), index=True)
+    decision: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(Text)
+    reviewer: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BlindSet(Base):
+    """Sumur blind test: dikunci sebelum eksperimen, hanya dipakai sekali di akhir."""
+
+    __tablename__ = "blind_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    wells: Mapped[list] = mapped_column(JSON, default=list)  # nama sumur
+    seed: Mapped[int] = mapped_column(Integer, default=42)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Dataset(Base):
+    """Versi dataset beku: daftar sumur + hash isi, snapshot CSV untuk diulang."""
+
+    __tablename__ = "datasets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, unique=True)
+    blind_set_id: Mapped[int | None] = mapped_column(ForeignKey("blind_sets.id"))
+    wells: Mapped[list] = mapped_column(JSON, default=list)
+    excluded: Mapped[list] = mapped_column(JSON, default=list)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    n_rows: Mapped[int] = mapped_column(Integer)
+    path: Mapped[str] = mapped_column(String(512))
+    notes: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class MLModel(Base):
     __tablename__ = "models"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    dataset_id: Mapped[int | None] = mapped_column(ForeignKey("datasets.id"))
     algorithm: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(
         String(16), default="antri"
@@ -157,6 +219,9 @@ class MLModel(Base):
     path: Mapped[str | None] = mapped_column(String(512))
     active: Mapped[bool] = mapped_column(Boolean, default=False)
     message: Mapped[str | None] = mapped_column(Text)
+    # hasil banding dengan model aktif saat selesai dilatih, dan hasil blind test (sekali)
+    comparison: Mapped[dict] = mapped_column(JSON, default=dict)
+    blind_result: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -190,3 +255,42 @@ class PredictionPoint(Base):
     ml_si: Mapped[float] = mapped_column(Float)
 
     prediction: Mapped[Prediction] = relationship(back_populates="points")
+
+
+class PredictionEvaluation(Base):
+    """Evaluasi otomatis prediksi sumur baru setelah data aktualnya diunggah."""
+
+    __tablename__ = "prediction_evaluations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.id", ondelete="CASCADE"))
+    well_id: Mapped[int] = mapped_column(ForeignKey("wells.id", ondelete="CASCADE"), index=True)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Limit(Base):
+    """Batas aman dari client: per sumur atau per section (well_id kosong)."""
+
+    __tablename__ = "limits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    well_id: Mapped[int | None] = mapped_column(ForeignKey("wells.id", ondelete="CASCADE"))
+    section_in: Mapped[float | None] = mapped_column(Float)
+    operation: Mapped[str] = mapped_column(String(32))
+    kind: Mapped[str] = mapped_column(String(8))  # max | min
+    value_si: Mapped[float] = mapped_column(Float)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScanRun(Base):
+    """Riwayat pindai folder inbox (impor massal)."""
+
+    __tablename__ = "scan_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), default="berjalan")
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

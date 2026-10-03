@@ -1,53 +1,48 @@
-# Kalibrasi Torque & Drag ML (prototype 3 minggu)
+# Kalibrasi Torque & Drag ML (paket 6 minggu, 16 fitur)
 
 ## Tujuan
-Mengkalibrasi hasil simulasi torque & drag WellPlan dengan ML berdasarkan data aktual lapangan.
-Masukan: laporan WellPlan (.xlsx/.xlsm) + sheet data aktual. Keluaran: prediksi 5 target per
-kedalaman (pick up, slack off, rotating weight, torque off bottom, torque on bottom), dashboard
-tiga grafik, dan ekspor Excel. Pembanding wajib: WellPlan apa adanya (baseline).
+Mengkalibrasi hasil simulasi torque & drag WellPlan dengan ML berdasarkan data aktual lapangan
+40+ sumur. Keluaran: prediksi 5 target per kedalaman (pick up, slack off, rotating weight, torque off
+bottom, torque on bottom), gerbang kualitas data, laporan model jujur (validasi per sumur + blind
+test), dashboard tiga grafik, batas aman, ekspor Excel dan PDF. Pembanding wajib: WellPlan apa adanya.
 
-## Lingkup
-8 fitur sesuai perjanjian (impor, validasi, klasifikasi section/tipe, model Ridge + XGBoost,
-validasi model, prediksi sumur baru, dashboard 3 grafik, ekspor Excel) + **login satu akun admin**.
-TIDAK dikerjakan: banyak akun/role/manajemen pengguna, Random Forest, SVR, MLP, SHAP, versi
-model, pelatihan ulang otomatis, evaluasi pasca-sumur, PDF, REST API untuk sistem lain, what-if,
-real-time, mobile app.
+## Lingkup 16 fitur
+1 impor WellPlan (unggah + impor massal folder) · 2 impor data aktual · 3 validasi & gerbang kualitas
+A/B/C · 4 klasifikasi section & tipe + koreksi manual · 5 dataset & fitur · 6 Ridge, XGBoost, Random
+Forest, SVR (+MLP opsional) · 7 validasi per kelompok sumur, blind test, kurva belajar · 8 SHAP ·
+9 versi model & dataset · 10 prediksi sumur baru · 11 dashboard 3 profil · 12 batas aman & interval ·
+13 evaluasi prediksi vs aktual · 14 ekspor Excel · 15 ringkasan PDF · 16 login satu akun admin.
+TIDAK: banyak akun/role, REST API untuk sistem lain, what-if, real-time, mobile.
+
+## Data client (folder `Training/`, audit Okt 2026)
+- 45 sumur, 94 file, satu file per section. Susunan `Training/<J|S|Horizontal>/<sumur>/<file>`.
+- Format A roadmap `.xlsx` (Drag, Torque, T&D Actual Reading) dan format B laporan WellPlan `.xlsm`
+  (Summary, Tripping Load Analysis, Off Bottom Torque analysis, Rotary Drill Buckling Outputs,
+  Survey Outputs, Drilling Data). Detail di `docs/keputusan.md` K-03..K-06, `parsers/column_map.py`.
+- Tes TIDAK memakai data client: fixture dari `scripts/make_sample_data.py` yang meniru kedua format.
 
 ## Dashboard
-Tiga grafik berdampingan dengan sumbu kedalaman bersama (terbalik, 0 di atas): Hookload, Torque,
-Selisih. Warna tetap: WellPlan biru, ML oranye, Aktual hijau (titik). Grafik Selisih: A − B,
-kanan = positif (lebih tinggi), kiri = negatif (lebih rendah), garis nol di tengah. Sumur latih
-memakai prediksi **out-of-fold**.
+Tiga panel ditumpuk (Hookload, Torque, Selisih), sumbu kedalaman bersama (zoom tersinkron).
+WellPlan biru, ML oranye (+ pita 10–90%), Aktual hijau. Selisih: kanan = positif (lebih tinggi).
+Sumur latih memakai prediksi out-of-fold.
 
 ## Login
 Semua endpoint `/api/*` wajib sesi kecuali `/api/health` dan `/api/auth/login`
-(dipasang lewat `dependencies=[Depends(require_admin)]` di `app/main.py`). Jangan menambah akun
-atau role. Tes `backend/tests/test_auth.py` memeriksa setiap route.
+(`dependencies=[Depends(require_admin)]` di `app/main.py`). Tes `tests/test_auth.py` memeriksa setiap route.
 
-## Stack dan perintah
-- Backend: FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 16, pandas, scikit-learn, XGBoost.
-- Frontend: React + Vite + TypeScript, Plotly.js (`web/`), di-build ke `backend/static` lewat Dockerfile.
-- `make up` / `make down` / `make logs` — Docker Compose
-- `make test` — pytest (SQLite sementara, tanpa Docker)
-- `make lint` — ruff
-- `make sample` — buat data sintetis di `data/sample/`
-- `make dev-api` + `make dev-web` — pengembangan lokal (Vite proxy `/api` ke :8000)
-- Migrasi baru: `cd backend && alembic revision --autogenerate -m "..."` (dengan DATABASE_URL Postgres)
+## Perintah
+- `make up` / `make down` / `make logs` / `make password`
+- `make inbox-training` (Training → data/inbox) · `make inbox-sample` · `make audit`
+- `make test` (44 tes) · `make lint`
+- Migrasi baru: `cd backend && alembic revision --autogenerate -m "..."` dengan DATABASE_URL Postgres;
+  kolom NOT NULL baru wajib `server_default`.
 
 ## Aturan data (Pasal 11)
-- JANGAN membaca atau mencetak isi folder `data/`, `uploads/`, `models/` ke chat.
-- Pakai file sintetis (`scripts/make_sample_data.py`) atau salinan anonim (`scripts/anonymize_files.py`).
-- Jangan commit data, `.env`, atau model. Fixture tes hanya data sintetis.
-- Jangan unggah file client ke server sebelum login aktif dan HTTPS berjalan.
+- Jangan mencetak isi data client ke chat; analisis cukup struktur/statistik. Laporan berisi nama
+  sumur disimpan di `data/` (di luar Git), bukan `docs/`.
+- `Training/`, `data/`, `.env`, model tidak di-commit (`.gitignore`, pre-commit).
 
-## Aturan satuan
-Simpan nilai + satuan asli; konversi hanya di `backend/app/services/units.py`.
-Satuan baku internal SI: m, kN, kN·m, deg, deg/30m. Tampilan default imperial (ft, klbf, ft-lbf).
-
-## Aturan validasi model
-Selalu validasi per kelompok sumur (leave-one-well-out / GroupKFold), bandingkan dengan baseline
-WellPlan, tandai kombinasi section × tipe dengan < 3 sumur. Laporkan jujur bila ML tidak lebih baik.
-
-## Keputusan
-Semua asumsi dicatat di `docs/keputusan.md` (K-xx). Pola nama sheet/kolom di
-`backend/app/parsers/column_map.py` — sesuaikan setelah audit data.
+## Aturan model
+Selalu validasi per kelompok sumur, bandingkan dengan baseline WellPlan, blind test hanya sekali,
+tandai kombinasi section × tipe < 3 sumur, laporkan jujur bila ML tidak lebih baik.
+Satuan: simpan asli, konversi hanya di `services/units.py`.

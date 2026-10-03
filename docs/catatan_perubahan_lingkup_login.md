@@ -24,3 +24,14 @@ Disetujui,
 |---|---|
 | Nama: | Nama: |
 | Tanggal: | Tanggal: |
+
+---
+
+# Draf catatan lingkup: impor massal dari folder (paket 6 minggu)
+
+Proposal fitur 1 menyebut "unggah" file. Untuk 40+ sumur, file juga dapat ditaruh di folder
+`data/inbox/<tipe>/<sumur>/` di server dan diimpor dengan tombol **Pindai folder** (file dipindah ke
+`processed/` atau `rejected/` beserta alasan). Ini penyesuaian kecil pada fitur 1, tanpa tambahan
+biaya/jadwal (atau: ____). Unggah manual tetap tersedia.
+
+Disetujui: ______________________ (Pihak Pertama) ______________________ (Pihak Kedua)
