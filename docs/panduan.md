@@ -59,8 +59,15 @@ dengan model aktif, lalu membuka dashboard. Peringatan muncul bila section/tipe 
   - ML − WellPlan: kurva, koreksi yang diberikan ML.
 - **Penandaan interval**: pilih seri dan ambang |selisih|; interval yang melewati ambang diarsir
   di ketiga grafik dan didaftar di bawah.
-- Zoom/geser kedalaman berlaku untuk ketiga grafik. Kursor memunculkan garis penuntun di ketiga
-  grafik dan pembacaan nilai di bawahnya.
+- Tiga grafik tampil sebagai **panel terpisah yang ditumpuk ke bawah** (selebar layar), masing-masing
+  dengan legenda sendiri; klik item legenda untuk menyembunyikan/menampilkan garis.
+- **Zoom**: tarik kotak pada grafik. **Geser**: ikon tangan di toolbar grafik. **Klik dua kali**:
+  kembali ke rentang penuh. Tombol **Reset zoom** mengembalikan semua panel.
+- Dengan **"Samakan kedalaman saat zoom"** (bawaan aktif), zoom kedalaman di satu panel ikut
+  diterapkan ke dua panel lain; matikan untuk zoom tiap panel sendiri-sendiri. Zoom sumbu
+  horizontal selalu per panel.
+- Kursor memunculkan garis penuntun di ketiga panel pada kedalaman yang sama, dan nilai semua
+  profil di kedalaman itu tampil di bar pembacaan yang menempel di bawah layar.
 - Sumur latih memakai prediksi **out-of-fold**; sumur tanpa data aktual hanya menampilkan
   ML − WellPlan.
 - **Ekspor Excel**: sheet Info, Perbandingan (kedalaman aktual + selisih), Prediksi ML (grid

@@ -141,3 +141,18 @@ details summary { cursor: pointer; margin-top: 12px; color: var(--text-2); }
   .page { padding: 8px; }
   .card { padding: 12px; }
 }
+
+/* Tiga panel grafik ditumpuk ke bawah */
+.chart-stack { display: flex; flex-direction: column; gap: 12px; }
+.chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.chart-panel { border: 1px solid var(--border); border-radius: 8px; padding: 10px 8px 4px; background: var(--surface-1); }
+.chart-panel h3 { margin: 0 0 4px 8px; }
+.chart-stack .readout {
+  position: sticky; bottom: 0; z-index: 5; background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+}
+.plot-host { position: relative; }
+.plot-guide {
+  position: absolute; display: none; height: 0; pointer-events: none; z-index: 2;
+  border-top: 1px dashed #52514e;
+}

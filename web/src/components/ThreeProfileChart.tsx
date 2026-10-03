@@ -4,12 +4,6 @@ import PlotlyChart from "./PlotlyChart";
 import { Op, OP_LABEL, Profile } from "../api";
 import { COLOR, DASH, DIFF_COLOR, DIFF_KEYS, DIFF_LABEL, DiffKey, SYMBOL } from "./chartTheme";
 
-const CONFIG: Partial<Plotly.Config> = {
-  responsive: true,
-  displaylogo: false,
-  modeBarButtonsToRemove: ["lasso2d", "select2d"],
-};
-
 export const HOOKLOAD_OPS: Op[] = ["pick_up", "slack_off", "rotating_weight"];
 export const TORQUE_OPS: Op[] = ["torque_off_bottom", "torque_on_bottom"];
 
@@ -23,6 +17,13 @@ export type ChartOptions = {
 };
 
 export type Interval = { from: number; to: number; peak: number };
+
+const CONFIG: Partial<Plotly.Config> = {
+  responsive: true,
+  displaylogo: false,
+  modeBarButtonsToRemove: ["lasso2d", "select2d"],
+  toImageButtonOptions: { format: "png", scale: 2 },
+};
 
 /** Interval kedalaman dengan |selisih| > ambang. Batas = titik tengah ke tetangga. */
 export function flaggedIntervals(depth: number[], vals: number[], threshold: number): Interval[] {
@@ -53,7 +54,7 @@ export function flaggedIntervals(depth: number[], vals: number[], threshold: num
   return out;
 }
 
-function useNarrow(limit = 960) {
+function useNarrow(limit = 760) {
   const [narrow, setNarrow] = useState(window.innerWidth < limit);
   useEffect(() => {
     const on = () => setNarrow(window.innerWidth < limit);
@@ -84,6 +85,19 @@ function nearest(depth: number[], value: number[], at: number, tol: number): num
   return best;
 }
 
+/** Ambil rentang sumbu Y dari event relayout Plotly. null = autorange, undefined = bukan perubahan Y. */
+function yRangeFromRelayout(e: Plotly.PlotRelayoutEvent): [number, number] | null | undefined {
+  const r = e as Record<string, unknown>;
+  if (r["yaxis.autorange"]) return null;
+  if (typeof r["yaxis.range[0]"] === "number" && typeof r["yaxis.range[1]"] === "number") {
+    return [r["yaxis.range[0]"] as number, r["yaxis.range[1]"] as number];
+  }
+  if (Array.isArray(r["yaxis.range"])) return r["yaxis.range"] as [number, number];
+  return undefined;
+}
+
+type PanelKey = "hookload" | "torque" | "diff";
+
 export default function ThreeProfileChart({
   profile,
   options,
@@ -95,20 +109,31 @@ export default function ThreeProfileChart({
 }) {
   const narrow = useNarrow();
   const [hoverDepth, setHoverDepth] = useState<number | null>(null);
+  // Rentang kedalaman bersama (null = otomatis) + revisi untuk mereset zoom sumbu X
+  const [yRange, setYRange] = useState<[number, number] | null>(null);
+  const [syncDepth, setSyncDepth] = useState(true);
+  const [panelY, setPanelY] = useState<Record<PanelKey, [number, number] | null>>({
+    hookload: null,
+    torque: null,
+    diff: null,
+  });
+  const [zoomRev, setZoomRev] = useState(0);
   const raf = useRef<number | null>(null);
   const du = profile.depth_unit;
   const hkUnit = profile.operations.pick_up.unit;
   const tqUnit = profile.operations.torque_off_bottom.unit;
   const target = profile.operations[options.diffTarget];
 
-  const { data, diffRange } = useMemo(() => {
-    const traces: Plotly.Data[] = [];
-    const axes = (k: 1 | 2 | 3) =>
-      narrow
-        ? { xaxis: k === 1 ? "x" : `x${k}`, yaxis: k === 1 ? "y" : `y${k}` }
-        : { xaxis: k === 1 ? "x" : `x${k}`, yaxis: "y" };
+  // Reset zoom saat sumur / satuan berganti
+  useEffect(() => {
+    setYRange(null);
+    setPanelY({ hookload: null, torque: null, diff: null });
+    setZoomRev((r) => r + 1);
+  }, [profile.well.id, profile.unit_system]);
 
-    const addProfiles = (ops: Op[], k: 1 | 2) => {
+  const traces = useMemo(() => {
+    const profileTraces = (ops: Op[]): Plotly.Data[] => {
+      const out: Plotly.Data[] = [];
       for (const op of ops) {
         if (!options.ops[op]) continue;
         const o = profile.operations[op];
@@ -116,66 +141,63 @@ export default function ThreeProfileChart({
         for (const s of o.wellplan) {
           const isBase = s.ff === o.wellplan_baseline_ff || o.wellplan.length === 1;
           if (!isBase && !options.showFF) continue;
-          traces.push({
-            ...axes(k),
+          const name = `WellPlan ${label}${s.ff !== null ? ` FF ${s.ff}` : ""}`;
+          out.push({
             type: "scatter",
             mode: "lines",
             x: s.value,
             y: s.depth,
-            name: `WellPlan ${label}${s.ff !== null ? ` FF ${s.ff}` : ""}`,
-            legendgroup: "wellplan",
+            name,
             line: { color: COLOR.wellplan, width: isBase ? 2 : 1, dash: DASH[op] },
             opacity: isBase ? 1 : 0.45,
-            hovertemplate: `WellPlan ${label}${s.ff !== null ? ` FF ${s.ff}` : ""}<br>%{y:,.0f} ${du}: %{x:,.1f} ${o.unit}<extra></extra>`,
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${name}</extra>`,
           });
         }
         if (o.ml.depth.length) {
-          traces.push({
-            ...axes(k),
+          out.push({
             type: "scatter",
             mode: "lines",
             x: o.ml.value,
             y: o.ml.depth,
             name: `ML ${label}`,
-            legendgroup: "ml",
             line: { color: COLOR.ml, width: 2, dash: DASH[op] },
-            hovertemplate: `ML ${label}<br>%{y:,.0f} ${du}: %{x:,.1f} ${o.unit}<extra></extra>`,
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>ML ${label}</extra>`,
           });
         }
         if (o.actual.depth.length) {
-          traces.push({
-            ...axes(k),
+          out.push({
             type: "scatter",
             mode: "markers",
             x: o.actual.value,
             y: o.actual.depth,
             name: `Aktual ${label}`,
-            legendgroup: "actual",
-            marker: { color: COLOR.actual, size: 8, symbol: SYMBOL[op] as "circle", line: { color: COLOR.surface, width: 1.5 } },
-            hovertemplate: `Aktual ${label}<br>%{y:,.0f} ${du}: %{x:,.1f} ${o.unit}<extra></extra>`,
+            marker: {
+              color: COLOR.actual,
+              size: 8,
+              symbol: SYMBOL[op] as "circle",
+              line: { color: COLOR.surface, width: 1.5 },
+            },
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>Aktual ${label}</extra>`,
           });
         }
       }
+      return out;
     };
-    addProfiles(HOOKLOAD_OPS, 1);
-    addProfiles(TORQUE_OPS, 2);
 
+    const diff: Plotly.Data[] = [];
     let maxAbs = 0;
-    const unit = options.diffMode === "abs" ? target.unit : "%";
     for (const key of DIFF_KEYS) {
       const s = target.diff[key];
       if (!s.depth.length) continue;
       const vals = options.diffMode === "abs" ? s.abs : s.pct;
       vals.forEach((v) => (maxAbs = Math.max(maxAbs, Math.abs(v))));
       const isLine = key === "ml_minus_wp";
-      traces.push({
-        ...axes(3),
+      diff.push({
         type: "scatter",
         mode: isLine ? "lines" : "markers",
         x: vals,
         y: s.depth,
         name: DIFF_LABEL[key],
-        legendgroup: key,
         customdata: s.abs.map((a, i) => [a, s.pct[i]]),
         ...(isLine
           ? { line: { color: DIFF_COLOR[key], width: 2 } }
@@ -188,124 +210,131 @@ export default function ThreeProfileChart({
               },
             }),
         hovertemplate:
-          `${DIFF_LABEL[key]}<br>Kedalaman %{y:,.0f} ${du}<br>` +
-          `Selisih %{customdata[0]:+,.2f} ${target.unit} (%{customdata[1]:+.1f}%)<extra></extra>`,
+          `%{customdata[0]:+,.2f} ${target.unit} (%{customdata[1]:+.1f}%)` + `<extra>${DIFF_LABEL[key]}</extra>`,
       });
     }
     const m = maxAbs > 0 ? maxAbs * 1.15 : 1;
-    return { data: traces, diffRange: [-m, m], diffUnit: unit };
-  }, [profile, options, narrow, target, du]);
+    return {
+      hookload: profileTraces(HOOKLOAD_OPS),
+      torque: profileTraces(TORQUE_OPS),
+      diff,
+      diffRange: [-m, m] as [number, number],
+    };
+  }, [profile, options, target]);
 
-  const layout = useMemo(() => {
-    const ys = narrow ? ["y", "y2", "y3"] : ["y"];
-    const shapes: Partial<Plotly.Shape>[] = [];
-    for (const yref of ys) {
-      for (const iv of intervals) {
-        shapes.push({
-          type: "rect",
-          xref: "paper",
-          yref: yref as Plotly.YAxisName,
-          x0: 0,
-          x1: 1,
-          y0: iv.from,
-          y1: iv.to,
-          fillcolor: COLOR.flag,
-          line: { width: 0 },
-          layer: "below",
-        });
-      }
-      if (hoverDepth !== null) {
-        shapes.push({
-          type: "line",
-          xref: "paper",
-          yref: yref as Plotly.YAxisName,
-          x0: 0,
-          x1: 1,
-          y0: hoverDepth,
-          y1: hoverDepth,
-          line: { color: COLOR.guide, width: 1, dash: "dot" },
-        });
+  // Rentang kedalaman penuh yang sama untuk ketiga panel (terbalik: dalam di bawah)
+  const fullRange = useMemo((): [number, number] | null => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const d of [traces.hookload, traces.torque, traces.diff]) {
+      for (const t of d) {
+        for (const v of (t as { y: number[] }).y) {
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
       }
     }
+    if (!Number.isFinite(lo)) return null;
+    const pad = (hi - lo) * 0.03 || 10;
+    return [hi + pad, lo >= 0 ? Math.max(0, lo - pad) : lo - pad];
+  }, [traces]);
+
+  const makeLayout = (key: PanelKey, xTitle: string): Partial<Plotly.Layout> => {
+    const shapes: Partial<Plotly.Shape>[] = intervals.map((iv) => ({
+      type: "rect",
+      xref: "paper",
+      yref: "y",
+      x0: 0,
+      x1: 1,
+      y0: iv.from,
+      y1: iv.to,
+      fillcolor: COLOR.flag,
+      line: { width: 0 },
+      layer: "below",
+    }));
     const axisBase = {
       gridcolor: COLOR.grid,
-      zeroline: false,
       linecolor: COLOR.grid,
       tickfont: { color: COLOR.textMuted, size: 11 },
-      title: { font: { color: COLOR.textMuted, size: 12 } },
       automargin: true,
     };
-    const diffUnit = options.diffMode === "abs" ? target.unit : "%";
-    const xTitles = [
-      `Hookload (${hkUnit})`,
-      `Torque (${tqUnit})`,
-      `← lebih rendah (−)   ${diffUnit}   lebih tinggi (+) →`,
-    ];
-    const titles = [`Hookload`, `Torque`, `Selisih: ${OP_LABEL[options.diffTarget]}`];
-    const doms = narrow
-      ? [
-          [0.7, 1],
-          [0.36, 0.64],
-          [0, 0.3],
-        ]
-      : [
-          [0, 0.3],
-          [0.35, 0.65],
-          [0.7, 1],
-        ];
-    const l: Partial<Plotly.Layout> = {
-      height: narrow ? 1500 : 720,
-      margin: { l: 60, r: 16, t: 36, b: 50 },
+    const range = (syncDepth ? yRange : panelY[key]) ?? fullRange;
+    return {
+      height: narrow ? 520 : 640,
+      margin: { l: 64, r: 16, t: 12, b: 48 },
       paper_bgcolor: COLOR.surface,
       plot_bgcolor: COLOR.surface,
       font: { family: "inherit", color: COLOR.text },
       hovermode: "y unified",
       hoverlabel: { bgcolor: "#ffffff", bordercolor: COLOR.grid, font: { color: COLOR.text } },
-      showlegend: false, // legenda HTML di atas grafik (warna + gaya garis + simbol)
+      dragmode: "zoom",
+      // revisi UI: zoom sumbu X per panel bertahan saat hover/penandaan berubah
+      uirevision: `${key}-${zoomRev}-${options.diffTarget}-${options.diffMode}`,
+      showlegend: !narrow,
+      legend: { orientation: "v", x: 1.02, y: 1, font: { size: 11, color: COLOR.textMuted } },
       shapes: shapes as Plotly.Shape[],
-      annotations: titles.map((t, i) => ({
-        text: `<b>${t}</b>`,
-        showarrow: false,
-        xref: "paper",
-        yref: "paper",
-        x: narrow ? 0 : (doms[i][0] + doms[i][1]) / 2,
-        xanchor: narrow ? "left" : "center",
-        y: narrow ? doms[i][1] + 0.005 : 1.0,
-        yanchor: "bottom",
-        font: { size: 13 },
-      })) as Partial<Plotly.Annotations>[],
-    };
-    const anyL = l as Record<string, unknown>;
-    [1, 2, 3].forEach((k) => {
-      const xa = k === 1 ? "xaxis" : `xaxis${k}`;
-      const ya = narrow ? (k === 1 ? "y" : `y${k}`) : "y";
-      anyL[xa] = {
+      xaxis: {
         ...axisBase,
-        title: { ...axisBase.title, text: xTitles[k - 1] },
-        anchor: ya,
-        ...(narrow ? {} : { domain: doms[k - 1] }),
-        ...(k === 3
-          ? { zeroline: true, zerolinecolor: COLOR.zero, zerolinewidth: 2, range: diffRange }
-          : {}),
-      };
-    });
-    const yBase = { ...axisBase, autorange: "reversed", title: { ...axisBase.title, text: `Kedalaman (${du})` } };
-    anyL.yaxis = { ...yBase, ...(narrow ? { domain: doms[0] } : {}) };
-    if (narrow) {
-      anyL.yaxis2 = { ...yBase, domain: doms[1], matches: "y" };
-      anyL.yaxis3 = { ...yBase, domain: doms[2], matches: "y" };
-      anyL.xaxis = { ...(anyL.xaxis as object), domain: [0, 1] };
-      anyL.xaxis2 = { ...(anyL.xaxis2 as object), domain: [0, 1] };
-      anyL.xaxis3 = { ...(anyL.xaxis3 as object), domain: [0, 1] };
-    }
-    return l;
-  }, [narrow, intervals, hoverDepth, options, target, hkUnit, tqUnit, du, diffRange]);
+        title: { text: xTitle, font: { color: COLOR.textMuted, size: 12 } },
+        ...(key === "diff"
+          ? { zeroline: true, zerolinecolor: COLOR.zero, zerolinewidth: 2, range: [...traces.diffRange] }
+          : { zeroline: false }),
+      },
+      yaxis: {
+        ...axisBase,
+        zeroline: false,
+        title: { text: `Kedalaman (${du})`, font: { color: COLOR.textMuted, size: 12 } },
+        // kedalaman dikendalikan state aplikasi: revisi berubah setiap rentang berubah
+        uirevision: `${range ? range.join(",") : "auto"}-${zoomRev}`,
+        // salinan: Plotly menulis hasil zoom langsung ke array range yang diberikan
+        ...(range ? { range: [...range], autorange: false } : { autorange: "reversed" }),
+      },
+    };
+  };
+
+  const diffUnit = options.diffMode === "abs" ? target.unit : "%";
+  const panels: { key: PanelKey; title: string; data: Plotly.Data[]; xTitle: string }[] = [
+    { key: "hookload", title: `Hookload (${hkUnit})`, data: traces.hookload, xTitle: `Hookload (${hkUnit})` },
+    { key: "torque", title: `Torque (${tqUnit})`, data: traces.torque, xTitle: `Torque (${tqUnit})` },
+    {
+      key: "diff",
+      title: `Selisih: ${OP_LABEL[options.diffTarget]} (${diffUnit})`,
+      data: traces.diff,
+      xTitle: `← lebih rendah (−)   Selisih (${diffUnit})   lebih tinggi (+) →`,
+    },
+  ];
+  // layout dibuat ulang hanya bila input berubah (Plotly.react murah bila sama)
+  const layouts = useMemo(
+    () => Object.fromEntries(panels.map((p) => [p.key, makeLayout(p.key, p.xTitle)])) as Record<
+      PanelKey,
+      Partial<Plotly.Layout>
+    >,
+    [narrow, intervals, yRange, fullRange, panelY, syncDepth, zoomRev, traces, options, du, hkUnit, tqUnit, target],
+  );
 
   const onHover = (e: Plotly.PlotHoverEvent) => {
     const y = e.points?.[0]?.y;
     if (typeof y !== "number") return;
     if (raf.current) cancelAnimationFrame(raf.current);
     raf.current = requestAnimationFrame(() => setHoverDepth(y));
+  };
+
+  const resetZoom = () => {
+    setYRange(null);
+    setPanelY({ hookload: null, torque: null, diff: null });
+    setZoomRev((x) => x + 1);
+  };
+
+  const onRelayout = (key: PanelKey) => (e: Plotly.PlotRelayoutEvent) => {
+    const r = yRangeFromRelayout(e);
+    if (r === undefined) return;
+    if (r === null) {
+      // klik dua kali: kembali ke rentang penuh bersama (tetap terbalik, sejajar)
+      resetZoom();
+      return;
+    }
+    if (syncDepth) setYRange(r);
+    else setPanelY((p) => ({ ...p, [key]: r }));
   };
 
   // Pembacaan tersinkron: nilai semua profil di kedalaman penuntun
@@ -328,19 +357,55 @@ export default function ThreeProfileChart({
     const t = target.diff;
     const diffs = DIFF_KEYS.map((k) => ({
       key: k,
-      v:
-        k === "ml_minus_wp"
-          ? interpAt(t[k].depth, t[k].abs, hoverDepth)
-          : nearest(t[k].depth, t[k].abs, hoverDepth, tol),
+      v: k === "ml_minus_wp" ? interpAt(t[k].depth, t[k].abs, hoverDepth) : nearest(t[k].depth, t[k].abs, hoverDepth, tol),
     }));
     return { rows, diffs };
   }, [hoverDepth, profile, options.ops, target, du]);
 
   const f = (v: number | null) => (v === null ? "–" : v.toLocaleString("id-ID", { maximumFractionDigits: 1 }));
+  const zoomed = yRange !== null || Object.values(panelY).some((r) => r !== null);
 
   return (
-    <div className="chart-wrap" onMouseLeave={() => setHoverDepth(null)}>
-      <PlotlyChart data={data} layout={layout} config={CONFIG} onHover={onHover} />
+    <div className="chart-stack" onMouseLeave={() => setHoverDepth(null)}>
+      <div className="chart-toolbar">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={syncDepth}
+            onChange={(e) => {
+              setSyncDepth(e.target.checked);
+              setPanelY({ hookload: null, torque: null, diff: null });
+            }}
+          />
+          Samakan kedalaman saat zoom (ketiga panel)
+        </label>
+        <span className="muted small">
+          Zoom: tarik kotak pada grafik · geser: ikon tangan di toolbar grafik · klik dua kali: kembali penuh
+        </span>
+        <div className="spacer" />
+        <button className="btn small" onClick={resetZoom} disabled={!zoomed}>
+          Reset zoom
+        </button>
+      </div>
+
+      {panels.map((p) => (
+        <section key={p.key} className="chart-panel" aria-label={p.title}>
+          <h3>{p.title}</h3>
+          {p.data.length ? (
+            <PlotlyChart
+              data={p.data}
+              layout={layouts[p.key]}
+              config={CONFIG}
+              onHover={onHover}
+              onRelayout={onRelayout(p.key)}
+              guideY={hoverDepth}
+            />
+          ) : (
+            <p className="muted">Tidak ada data untuk panel ini (periksa kotak centang operasi).</p>
+          )}
+        </section>
+      ))}
+
       <div className="readout" aria-live="polite">
         {readout ? (
           <>
@@ -365,8 +430,8 @@ export default function ThreeProfileChart({
           </>
         ) : (
           <span className="muted">
-            Arahkan kursor ke grafik: garis penuntun memotong ketiga grafik di kedalaman yang sama. Zoom/geser pada satu
-            grafik ikut menggeser kedalaman grafik lain.
+            Arahkan kursor ke salah satu grafik: garis penuntun muncul di ketiga panel pada kedalaman yang sama, dan
+            nilainya tampil di sini.
           </span>
         )}
       </div>
