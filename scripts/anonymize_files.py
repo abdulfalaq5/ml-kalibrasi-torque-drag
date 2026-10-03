@@ -1,4 +1,4 @@
-"""Buat salinan anonim file Excel client untuk dipakai dengan alat AI / sebagai fixture.
+"""Buat salinan anonim file Excel client untuk dibagikan di luar tim client (pengembangan, demo, fixture tes).
 
 Nama sumur, lapangan, perusahaan, rig, dan koordinat diganti kode (W01, FLD-A, ...).
 Setiap sel teks yang memuat nama asli juga diganti. Tabel pemetaan disimpan di

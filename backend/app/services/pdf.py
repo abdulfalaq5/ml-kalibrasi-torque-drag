@@ -364,6 +364,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         topMargin=1.3 * cm,
         bottomMargin=1.3 * cm,
         title=f"Model #{model.id}",
+        author="Kalibrasi T&D ML",
     )
     els = [
         Paragraph(f"Ringkasan model kalibrasi #{model.id}", st["h1"]),

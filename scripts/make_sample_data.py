@@ -1,7 +1,7 @@
 """Buat file Excel SINTETIS (anonim) yang meniru DUA format file client: roadmap (A) dan laporan WellPlan (B).
 
 Bukan data client. Dipakai untuk pengembangan, tes, dan demo sebelum data asli
-tersedia / disetujui untuk dipakai dengan alat AI (Pasal 11).
+tersedia / disetujui untuk dipakai di luar lingkungan client (Pasal 11).
 
 Model fisik: soft-string sederhana (Johancsik). Data "aktual" dibangkitkan dengan
 friction factor "sebenarnya" yang bergantung pada tipe sumur, section, kedalaman,

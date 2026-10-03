@@ -13,7 +13,6 @@ ekspor Excel, dan ringkasan PDF. Aplikasi memakai satu akun admin.
 | `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-30) |
 | `TODO_Lanjutan_6_Minggu.md` | Rencana kerja paket 6 minggu dan status |
 | `TOOLS_dan_Arsitektur_6_Minggu.md` | Tools dan arsitektur |
-| `CLAUDE.md` | Konteks untuk Claude Code |
 
 ---
 

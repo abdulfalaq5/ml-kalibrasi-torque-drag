@@ -7,7 +7,7 @@ fungsi Python → tabel database → keluaran**, lengkap dengan **file dan folde
 Format rujukan kode: `folder/file.py` → `nama_fungsi()`. Semua jalur relatif dari root repo.
 
 Dokumen terkait: `README.md` (setup), `docs/panduan.md` (panduan pengguna),
-`docs/keputusan.md` (alasan setiap keputusan, kode K-xx), `CLAUDE.md` (aturan untuk AI asisten).
+`docs/keputusan.md` (alasan setiap keputusan, kode K-xx).
 
 ---
 
