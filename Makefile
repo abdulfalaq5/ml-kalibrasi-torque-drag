@@ -57,7 +57,7 @@ audit:
 		-e PYTHONPATH=/app --user "$$(id -u):$$(id -g)" app python /scripts/audit_files.py /in --out /out/audit
 
 dev-api:
-	cd backend && APP_ENV=development ../.venv/bin/uvicorn app.main:app --reload --port 8000
+	cd backend && APP_ENV=development ../.venv/bin/uvicorn app.main:app --reload --port 8401
 
 dev-web:
 	cd web && npm run dev

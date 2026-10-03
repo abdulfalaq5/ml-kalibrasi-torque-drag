@@ -19,7 +19,7 @@ Bagian A untuk pengguna (engineer), bagian B untuk operator server.
 ## A. Panduan pengguna
 
 ### 1. Masuk
-Buka link aplikasi (laptop: http://127.0.0.1:8000). Isi username dan password admin.
+Buka link aplikasi (laptop: http://127.0.0.1:8401). Isi username dan password admin.
 Sesi berlaku 8 jam. Setelah 5 kali salah password, login terkunci 15 menit. Tombol mata di kolom
 password menampilkan/menyembunyikan password.
 

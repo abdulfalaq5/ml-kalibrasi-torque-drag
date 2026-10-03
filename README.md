@@ -21,7 +21,7 @@ ekspor Excel, dan ringkasan PDF. Aplikasi memakai satu akun admin.
 
 | | Laptop (lokal) | Server (production) |
 |---|---|---|
-| **Link** | http://127.0.0.1:8000 | `https://<domain-anda>` |
+| **Link** | http://127.0.0.1:8401 | `https://<domain-anda>` |
 | **Username** | nilai `ADMIN_USERNAME` di `.env` (bawaan `admin`) | sama |
 | **Password** | nilai `ADMIN_PASSWORD` di `.env` saat aplikasi **pertama kali** dijalankan | sama, diganti saat serah terima |
 
@@ -82,7 +82,7 @@ Build pertama 5–10 menit (pustaka ML, SHAP, PDF). Container yang berjalan:
 | Container | Fungsi |
 |---|---|
 | `db` | PostgreSQL 16 (volume `pgdata`) |
-| `app` | API + web + ML di `127.0.0.1:8000`; membaca folder `data/inbox` |
+| `app` | API + web + ML di `127.0.0.1:8401`; membaca folder `data/inbox` |
 | `backup` | Dump database harian ke `./backups` |
 
 Migrasi database berjalan otomatis saat start.
@@ -90,11 +90,11 @@ Migrasi database berjalan otomatis saat start.
 ### 5. Cek
 ```bash
 docker compose ps                              # app, db (healthy), backup
-curl http://127.0.0.1:8000/api/health          # {"status":"ok","database":"OK"}
+curl http://127.0.0.1:8401/api/health          # {"status":"ok","database":"OK"}
 ```
 
 ### 6. Login
-Buka **http://127.0.0.1:8000**, masuk dengan `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Lalu hapus baris
+Buka **http://127.0.0.1:8401**, masuk dengan `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Lalu hapus baris
 `ADMIN_PASSWORD` dari `.env` dan jalankan `docker compose up -d`.
 
 ### 7. Masukkan data sumur
@@ -161,11 +161,20 @@ Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, 
 | Tombol "Pindai folder" nonaktif | `data/inbox` kosong; jalankan `make inbox-training` |
 | File di inbox "dilewati" | File baru diubah < 1 menit; tunggu lalu pindai lagi |
 | Pindai gagal "Permission denied" | Folder `data/` harus bisa ditulis uid 1000: `sudo chown -R 1000:1000 data` |
-| Port 8000 dipakai | Ubah `127.0.0.1:8000:8000` di `docker-compose.yml` |
+| Port 8401 dipakai | Ubah port kiri `127.0.0.1:8401:8401` (mis. `127.0.0.1:8402:8401`) di `docker-compose.yml` |
 
 ---
 
 ## E. Server (production)
+
+**Subdomain `dev-ml-kalibrasi-torque-rag.lokatali.my.id`:** konfigurasi nginx siap pakai dan
+langkah pemasangan manual ada di `deploy/nginx/PASANG_SUBDOMAIN.md`
+(`dev-ml-kalibrasi-torque-rag.lokatali.my.id.awal.conf` → certbot →
+`dev-ml-kalibrasi-torque-rag.lokatali.my.id.conf`). Orang lain mengakses lewat
+`https://dev-ml-kalibrasi-torque-rag.lokatali.my.id`, sedangkan di mesin itu sendiri tetap bisa
+`http://localhost:8401`. Di `.env` server pakai `COOKIE_SECURE=true`.
+
+Cara otomatis (domain lain):
 
 ```bash
 git clone <url-repo> td-ml && cd td-ml

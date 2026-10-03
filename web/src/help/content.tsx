@@ -84,7 +84,7 @@ export const TOPICS: Topic[] = [
       <>
         <Steps>
           <Step n={1} title="Buka alamat aplikasi">
-            Laptop: <code>http://127.0.0.1:8000</code>. Server: alamat <code>https://…</code> dari admin.
+            Laptop: <code>http://127.0.0.1:8401</code>. Server: alamat <code>https://…</code> dari admin.
           </Step>
           <Step n={2} title="Isi Username dan Password">
             Klik ikon mata di kolom password untuk menampilkan/menyembunyikan password.

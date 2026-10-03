@@ -38,7 +38,7 @@ services:
       - ./data/processed:/data/processed
       - ./data/rejected:/data/rejected
     ports:
-      - "127.0.0.1:8000:8000"   # hanya bisa diakses dari server itu sendiri (nginx)
+      - "127.0.0.1:8401:8401"   # hanya bisa diakses dari server itu sendiri (nginx)
     networks: [internal]
 
   # Backup database harian (cek ulang tag image di Docker Hub saat dipasang)

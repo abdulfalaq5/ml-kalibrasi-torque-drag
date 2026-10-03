@@ -553,7 +553,8 @@ FastAPI (`main.py` → rute `spa()`).
 | Container | `Dockerfile` (build web + Python), `docker-compose.yml` (db, app, backup, bind mount `data/`) |
 | Perintah | `Makefile` (`up`, `down`, `logs`, `password`, `inbox-training`, `inbox-sample`, `audit`, `test`, `lint`, `backup`) |
 | Migrasi skema | `backend/alembic/versions/0001_skema_awal.py`, `0002_paket_6_minggu.py` (jalan otomatis saat container start) |
-| Server | `deploy/setup_server.sh`, `deploy/nginx/td-ml.conf` (HTTPS, rate limit login) |
+| Server | `deploy/setup_server.sh`, `deploy/nginx/td-ml.conf` (template domain umum) |
+| Subdomain dev | `deploy/nginx/dev-ml-kalibrasi-torque-rag.lokatali.my.id{.awal,}.conf` + panduan `deploy/nginx/PASANG_SUBDOMAIN.md` (nginx → `127.0.0.1:8401`) |
 | Backup | service `backup` di `docker-compose.yml`, `make backup` |
 
 ---

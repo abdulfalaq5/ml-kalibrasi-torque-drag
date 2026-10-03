@@ -20,5 +20,5 @@ COPY --from=web /web/dist ./static
 RUN useradd --create-home --uid 1000 appuser \
  && mkdir -p /data/uploads /data/models && chown -R appuser /data
 USER appuser
-EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips='*'"]
+EXPOSE 8401
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8401 --workers 2 --proxy-headers --forwarded-allow-ips='*'"]
