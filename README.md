@@ -8,7 +8,7 @@ ekspor Excel, dan ringkasan PDF. Aplikasi memakai satu akun admin.
 
 | Dokumen | Isi |
 |---|---|
-| `docs/panduan.md` | **Panduan pengguna** langkah demi langkah + panduan operasional |
+| `docs/panduan.md` | **Panduan pengguna** langkah demi langkah + panduan operasional (versi interaktif: menu **Panduan** di aplikasi) |
 | `docs/ALUR_DAN_KODE.md` | **Alur sistem dan peta kode**: setiap alur → endpoint → fungsi → file/folder (untuk developer & client) |
 | `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-30) |
 | `TODO_Lanjutan_6_Minggu.md` | Rencana kerja paket 6 minggu dan status |

@@ -2,6 +2,9 @@
 
 Bagian A untuk pengguna (engineer), bagian B untuk operator server.
 
+> Versi interaktif panduan ini ada di aplikasi: menu **Panduan** (langkah demi langkah, use case,
+> diagram alur sistem, daftar keluaran, FAQ, dengan pencarian).
+
 ## Alur kerja singkat
 
 ```

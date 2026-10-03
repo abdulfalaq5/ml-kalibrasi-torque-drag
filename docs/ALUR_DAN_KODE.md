@@ -526,7 +526,7 @@ Semua kecuali `health` dan `auth/login` wajib login. `/docs` (Swagger) hanya akt
 | File | Isi |
 |---|---|
 | `web/src/main.tsx` | bootstrap React, TanStack Query, router |
-| `web/src/App.tsx` | cek login, menu (Data sumur, Kualitas data, Model, Dashboard, Evaluasi), rute |
+| `web/src/App.tsx` | cek login, menu (Data sumur, Kualitas data, Model, Dashboard, Evaluasi, Panduan), rute |
 | `web/src/api.ts` | `api.get/post/patch/del`, tipe data (`WellItem`, `Profile`, `ModelItem`, `QualityRow`, …), `OPS`, `fmt()` |
 | `web/src/pages/LoginPage.tsx` | form login + tombol tampil/sembunyi password |
 | `web/src/pages/WellsPage.tsx` | `InboxPanel`, `ImportPanel`, `PredictPanel`, daftar sumur (koreksi section/tipe), matriks, riwayat impor |
@@ -534,6 +534,9 @@ Semua kecuali `health` dan `auth/login` wajib login. `/docs` (Swagger) hanya akt
 | `web/src/pages/ModelsPage.tsx` | `DatasetPanel`, form latih, riwayat model, `ModelDetail` (tab laporan, blind test, kurva belajar, SHAP) |
 | `web/src/pages/DashboardPage.tsx` | filter, `ThreeProfileChart`, `LimitsPanel`, tabel 5 selisih terbesar, metrik |
 | `web/src/pages/EvaluationsPage.tsx` | evaluasi prediksi vs aktual |
+| `web/src/pages/HelpPage.tsx` | menu **Panduan**: sub-menu per grup, pencarian, navigasi sebelumnya/berikutnya (`/panduan/:topik`) |
+| `web/src/help/content.tsx` | **isi panduan** (`TOPICS`, `GROUPS`): langkah demi langkah, use case, alur sistem, keluaran, FAQ |
+| `web/src/help/ui.tsx` | komponen panduan: `Steps`, `Step`, `Flow` (diagram alur), `Tip`, `Ui` (label tombol), `Go`, `Table` |
 | `web/src/components/*.tsx` | komponen di atas + `QualityBadge` |
 | `web/src/styles.css` | gaya (warna token di `:root`) |
 
@@ -584,6 +587,7 @@ FastAPI (`main.py` → rute `spa()`).
 | **Kolom tabel baru** | `backend/app/db/models.py`, lalu `cd backend && alembic revision --autogenerate -m "..."` (kolom NOT NULL wajib `server_default`) |
 | **Endpoint baru** | file di `backend/app/api/`, daftarkan di `backend/app/main.py` (otomatis wajib login); tipe & panggilan di `web/src/api.ts` |
 | **Halaman baru** | `web/src/pages/`, rute + menu di `web/src/App.tsx` |
+| **Topik panduan baru / ubah teks panduan** | tambah objek di `TOPICS` (`web/src/help/content.tsx`): `id`, `group`, `title`, `summary`, `keywords` (untuk pencarian), `body` |
 | **Sheet ekspor baru** | `services/export.py` → `export_well()` |
 
 Setiap keputusan/asumsi baru dicatat di `docs/keputusan.md` dengan kode K-xx.

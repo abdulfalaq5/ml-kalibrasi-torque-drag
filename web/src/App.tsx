@@ -8,6 +8,7 @@ import DashboardPage from "./pages/DashboardPage";
 import ModelsPage from "./pages/ModelsPage";
 import QualityPage from "./pages/QualityPage";
 import EvaluationsPage from "./pages/EvaluationsPage";
+import HelpPage from "./pages/HelpPage";
 
 export default function App() {
   const qc = useQueryClient();
@@ -46,6 +47,7 @@ export default function App() {
           <NavLink to="/model">Model</NavLink>
           <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/evaluasi">Evaluasi</NavLink>
+          <NavLink to="/panduan">Panduan</NavLink>
         </nav>
         <div className="user">
           <span className="muted">{me.data.username}</span>
@@ -61,6 +63,8 @@ export default function App() {
           <Route path="/kualitas" element={<QualityPage />} />
           <Route path="/model" element={<ModelsPage />} />
           <Route path="/evaluasi" element={<EvaluationsPage />} />
+          <Route path="/panduan" element={<HelpPage />} />
+          <Route path="/panduan/:topic" element={<HelpPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/dashboard/:wellId" element={<DashboardPage />} />
           <Route path="*" element={<Navigate to="/sumur" replace />} />
