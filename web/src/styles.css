@@ -171,3 +171,11 @@ details summary { cursor: pointer; margin-top: 12px; color: var(--text-2); }
 tr.row-bad td { background: var(--bad-bg); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 code { font-size: 12px; background: var(--surface-0); padding: 1px 4px; border-radius: 4px; }
+
+/* langkah unggah template */
+.steps { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 14px; }
+.step { display: flex; gap: 12px; align-items: flex-start; }
+.step-n { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.predict-result { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: #fff; }

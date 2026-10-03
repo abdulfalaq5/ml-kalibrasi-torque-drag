@@ -55,7 +55,7 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
     warns = coverage_warnings(bundle, w.section, w.well_type)
     if survey.empty and "survey" in bundle["features"]["groups"]:
         warns.append(
-            "Tidak ada survey (file roadmap): fitur inklinasi/dogleg diisi nilai tengah data latih"
+            "Tidak ada survey: fitur inklinasi/dogleg diisi nilai tengah data latih (isi sheet Survey agar lebih baik)"
         )
     lo, hi = bundle["depth_range_m"]
     if grid.max() > hi * 1.1 or grid.min() < lo * 0.9:

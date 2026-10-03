@@ -32,10 +32,20 @@ from app.parsers.common import (
 def parse_roadmap(wb, pw: ParsedWorkbook) -> None:
     pw.fmt = "roadmap"
     names = {norm(ws.title): ws for ws in wb.worksheets}
+    info: dict = {}
     for ws in wb.worksheets:
         n = norm(ws.title)
         rows = read_rows(ws)
-        if n == "drag":
+        if re.match(cm.TEMPLATE_INFO_SHEET, n):
+            pw.sheets.append(SheetInfo(ws.title, "info_sumur", len(rows)))
+            info = _parse_info(rows, pw, ws.title)
+        elif re.match(cm.TEMPLATE_SURVEY_SHEET, n):
+            from app.parsers.wellplan_report import _parse_survey
+
+            pw.sheets.append(SheetInfo(ws.title, "survey", len(rows)))
+            if any(cell(r, 0) not in (None, "") for r in rows[4:]):
+                _parse_survey(rows, pw, ws.title)
+        elif n == "drag":
             pw.sheets.append(SheetInfo(ws.title, "roadmap_drag", len(rows)))
             _parse_block_sheet(rows, pw, ws.title, cm.ROADMAP_DRAG_OPS, "klbf")
             _parse_drag_calibration(rows, pw)
@@ -60,6 +70,39 @@ def parse_roadmap(wb, pw: ParsedWorkbook) -> None:
         pw.kinds.add("actual")
     ffs = sorted({r.ff for r in pw.plan if r.ff is not None})
     pw.meta["ff_scenarios"] = ffs
+    # nilai di sheet Info Sumur (template) didahulukan atas meta di sheet aktual
+    pw.meta.update(info)
+
+
+def _parse_info(rows, pw, sheet) -> dict:
+    """Sheet 'Info Sumur' dari template: label di kolom A, nilai di kolom B."""
+    out: dict = {"template": True}
+    for r in rows:
+        label, val = norm(cell(r, 0)), cell(r, 1)
+        if not label or val in (None, ""):
+            continue
+        for key, pat in cm.TEMPLATE_INFO_KEYS.items():
+            if not re.search(pat, label):
+                continue
+            if key in ("section_template", "block_weight_klbf", "casing_shoe", "mud_weight_ppg"):
+                num = first_number(val)
+                if num is None:
+                    pw.error(f"Nilai '{val}' untuk '{cell(r, 0)}' bukan angka", sheet)
+                else:
+                    out[key] = num
+            elif key == "well_type_template":
+                t = str(val).strip().lower()
+                mapped = {"j": "J", "s": "S", "horizontal": "Horizontal", "h": "Horizontal"}.get(t)
+                if mapped is None:
+                    pw.error(f"Tipe sumur '{val}' harus J, S, atau Horizontal", sheet)
+                else:
+                    out[key] = mapped
+            else:
+                out[key] = str(val).strip()
+            break
+    if "casing_shoe" in out:
+        out["casing_shoe_unit"] = "ft"
+    return out
 
 
 def _parse_block_sheet(rows, pw, sheet, op_patterns, default_unit) -> None:

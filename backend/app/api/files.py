@@ -16,8 +16,22 @@ router = APIRouter(prefix="/api/files", tags=["files"])
 ZIP_MAGIC = b"PK\x03\x04"
 
 
-def file_out(f: UploadedFile) -> dict:
+def file_out(f: UploadedFile, db: Session | None = None) -> dict:
+    quality = None
+    if db is not None and f.well_id:
+        from app.db.models import WellQuality
+        from app.services.quality import effective_status, latest_review
+
+        wq = db.scalar(select(WellQuality).where(WellQuality.well_id == f.well_id))
+        quality = {
+            "status": effective_status(wq, latest_review(db, f.well_id)),
+            "score": wq.score if wq else None,
+            "issues": [c["message"] for c in (wq.checks if wq else []) if c["level"] != "lolos"],
+        }
     return {
+        "quality": quality,
+        "section_in": f.well.section_in if f.well else None,
+        "well_type": f.well.well_type if f.well else None,
         "id": f.id,
         "filename": f.filename,
         "kind": f.kind,
@@ -38,9 +52,12 @@ def upload(
     file: UploadFile = File(...),
     well_name: str | None = Form(None),
     section_in: float | None = Form(None),
+    well_type: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     settings = get_settings()
+    if well_type and well_type not in ("J", "S", "Horizontal"):
+        raise HTTPException(400, "Tipe sumur harus J, S, atau Horizontal")
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(400, f"Hanya file {', '.join(sorted(ALLOWED_EXT))} yang diterima")
@@ -61,9 +78,17 @@ def upload(
         dest, checksum = store_upload(tmp_path, file.filename or "file.xlsx")
     finally:
         tmp_path.unlink(missing_ok=True)
-    uf = import_file(db, dest, file.filename or dest.name, checksum, well_name or None, section_in)
+    uf = import_file(
+        db,
+        dest,
+        file.filename or dest.name,
+        checksum,
+        well_name or None,
+        section_in,
+        well_type=well_type or None,
+    )
     db.refresh(uf)
-    return file_out(uf)
+    return file_out(uf, db)
 
 
 @router.get("")

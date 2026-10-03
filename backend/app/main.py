@@ -18,6 +18,7 @@ from app.api import (
     limits,
     models,
     quality,
+    templates,
     wells,
 )
 from app.core.config import get_settings
@@ -90,7 +91,14 @@ def create_app() -> FastAPI:
     app.include_router(files.router, dependencies=protected)
     app.include_router(wells.router, dependencies=protected)
     app.include_router(models.router, dependencies=protected)
-    for r in (inbox.router, quality.router, datasets.router, limits.router, evaluations.router):
+    for r in (
+        inbox.router,
+        quality.router,
+        datasets.router,
+        limits.router,
+        evaluations.router,
+        templates.router,
+    ):
         app.include_router(r, dependencies=protected)
 
     @app.api_route(

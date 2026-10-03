@@ -102,6 +102,7 @@ def import_file(
     section_in: float | None = None,
     rel_path: str | None = None,
     source: str = "upload",
+    well_type: str | None = None,
 ) -> UploadedFile:
     existing = find_by_checksum(db, checksum)
     if existing is not None:
@@ -125,11 +126,15 @@ def import_file(
     name = (
         well_name
         or meta.get("well_folder")
+        or (meta.get("well_name") if meta.get("template") else None)
         or meta.get("well_name")
         or _name_from_filename(original_name)
     ).strip()
+    if meta.get("template") and not (well_name or meta.get("well_name")):
+        pw.warn("Nama sumur di sheet 'Info Sumur' kosong; dipakai nama file")
     section = classify_section(
         section_in
+        or meta.get("section_template")
         or meta.get("section_from_filename")
         or meta.get("hole_size_in")
         or meta.get("bit_size_in")
@@ -155,7 +160,7 @@ def import_file(
     uf.well_id = well.id
     uf.version = _replace_previous(db, well, uf)
     _save_data(db, well, uf, pw)
-    _classify(well, pw)
+    _classify(well, pw, well_type)
 
     uf.status = "peringatan" if pw.issues else "ok"
     _save_issues(db, uf, pw)
@@ -264,8 +269,14 @@ def _save_data(db: Session, well: Well, uf: UploadedFile, pw: ParsedWorkbook) ->
     db.flush()
 
 
-def _classify(well: Well, pw: ParsedWorkbook) -> None:
+def _classify(well: Well, pw: ParsedWorkbook, override: str | None = None) -> None:
+    if override:
+        well.well_type, well.type_source = override, "manual"
+        return
     if well.type_source == "manual":
+        return
+    if pw.meta.get("well_type_template"):
+        well.well_type, well.type_source = pw.meta["well_type_template"], "template"
         return
     if pw.meta.get("well_type_folder"):
         well.well_type = pw.meta["well_type_folder"]

@@ -1,117 +1,18 @@
 import { Fragment, useState } from "react";
-import { useDropzone } from "react-dropzone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { api, FileItem, WellItem } from "../api";
 import InboxPanel from "../components/InboxPanel";
+import { ImportPanel, PredictPanel } from "../components/UploadPanels";
 import QualityBadge from "../components/QualityBadge";
 
 const TYPES = ["J", "S", "Horizontal"];
 const SECTIONS = [26, 22, 17.5, 12.25, 8.5, 6.125];
 
-type UploadResult = { name: string; result?: FileItem; error?: string };
-
 function StatusBadge({ s }: { s: string }) {
   const cls =
     s === "ok" || s === "siap" ? "ok" : s === "gagal" ? "bad" : s === "peringatan" || s === "tanpa aktual" ? "warn" : "";
   return <span className={`badge ${cls}`}>{s}</span>;
-}
-
-function Uploader({ predictAfter }: { predictAfter?: boolean }) {
-  const qc = useQueryClient();
-  const nav = useNavigate();
-  const [wellName, setWellName] = useState("");
-  const [section, setSection] = useState("");
-  const [results, setResults] = useState<UploadResult[]>([]);
-  const [busy, setBusy] = useState(false);
-
-  const onDrop = async (files: File[]) => {
-    setBusy(true);
-    const out: UploadResult[] = [];
-    for (const f of files) {
-      const fd = new FormData();
-      fd.append("file", f);
-      if (wellName) fd.append("well_name", wellName);
-      if (section) fd.append("section_in", section);
-      try {
-        const r = await api.post<FileItem>("/api/files", fd);
-        out.push({ name: f.name, result: r });
-        if (predictAfter && r.well_id && r.status !== "gagal") {
-          try {
-            await api.post(`/api/wells/${r.well_id}/predict`);
-            nav(`/dashboard/${r.well_id}`);
-          } catch (e) {
-            out.push({ name: f.name, error: `Prediksi: ${(e as Error).message}` });
-          }
-        }
-      } catch (e) {
-        out.push({ name: f.name, error: (e as Error).message });
-      }
-      setResults([...out]);
-    }
-    setBusy(false);
-    qc.invalidateQueries({ queryKey: ["wells"] });
-    qc.invalidateQueries({ queryKey: ["files"] });
-  };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    multiple: !predictAfter,
-    accept: {
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-      "application/vnd.ms-excel.sheet.macroEnabled.12": [".xlsm"],
-    },
-  });
-
-  return (
-    <div>
-      <div className="row gap">
-        <label className="inline">
-          Nama sumur (opsional)
-          <input value={wellName} onChange={(e) => setWellName(e.target.value)} placeholder="dari file" />
-        </label>
-        <label className="inline">
-          Section (opsional)
-          <select value={section} onChange={(e) => setSection(e.target.value)}>
-            <option value="">dari file</option>
-            {SECTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}"
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <p className="muted small">
-        Isi nama/section hanya bila file tidak memuatnya (mis. file roadmap). File .xlsm dibaca tanpa menjalankan macro.
-      </p>
-      <div {...getRootProps({ className: `dropzone ${isDragActive ? "active" : ""}` })}>
-        <input {...getInputProps()} />
-        {busy
-          ? "Mengimpor…"
-          : predictAfter
-            ? "Tarik file WellPlan sumur baru ke sini, atau klik untuk memilih"
-            : "Tarik file Excel (.xlsx / .xlsm) ke sini, atau klik untuk memilih. Bisa banyak sekaligus."}
-      </div>
-      {results.length > 0 && (
-        <ul className="results">
-          {results.map((r, i) => (
-            <li key={i}>
-              <b>{r.name}</b>{" "}
-              {r.error ? (
-                <span className="badge bad">{r.error}</span>
-              ) : (
-                <>
-                  <StatusBadge s={r.result!.status} /> {r.result!.well_name && <>→ sumur {r.result!.well_name}</>}
-                  <IssueList issues={r.result!.issues} />
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 function IssueList({ issues }: { issues: FileItem["issues"] }) {
@@ -159,18 +60,9 @@ export default function WellsPage() {
     <div className="page">
       <InboxPanel />
 
-      <section className="card">
-        <h2>Unggah file Excel</h2>
-        <Uploader />
-      </section>
+      <ImportPanel />
 
-      <section className="card">
-        <h2>Prediksi sumur baru</h2>
-        <p className="muted small">
-          Unggah satu laporan WellPlan sumur baru. Setelah impor, prediksi dibuat dengan model aktif lalu dashboard dibuka.
-        </p>
-        <Uploader predictAfter />
-      </section>
+      <PredictPanel />
 
       <section className="card">
         <h2>Daftar sumur ({list.length})</h2>

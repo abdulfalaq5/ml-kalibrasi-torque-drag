@@ -52,7 +52,19 @@ Cara cepat: `make inbox-training` menyalin seluruh folder `Training/` ke `data/i
 5. File dipindah ke `data/processed/` (diterima) atau `data/rejected/` (ditolak, beserta file
    `.alasan.txt`).
 
-Unggah satu-satu tetap bisa lewat **Unggah file Excel** di halaman yang sama.
+### 3b. Data sumur → Impor file Excel (dengan template)
+Untuk menambah satu atau beberapa sumur tanpa folder inbox:
+1. **Unduh template** → *Template data latih (.xlsx)*.
+2. **Isi** sesuai sheet *Petunjuk*: `Info Sumur` (nama sumur, section, tipe J/S/Horizontal,
+   block weight; casing shoe & mud weight opsional), `Drag` (kedalaman ft + hookload kip untuk
+   Tripping In / Tripping Out / Rotating Off Bottom per friction factor), `Torque` (Rotating On/Off
+   Bottom ft-lbf per FF), `T&D Actual Reading` (pembacaan lapangan, minimal 8 kedalaman),
+   `Survey` (opsional). Sheet `Contoh ...` menunjukkan contoh isian; sheet Petunjuk dan Contoh
+   tidak ikut diimpor. Nilai FF di baris "open hole friction factor" boleh diubah; sertakan 0.30
+   dan 0.50.
+3. **Unggah** (bisa banyak file). File roadmap / laporan WellPlan asli juga diterima.
+4. **Hasil**: status impor per file, sumur, section, tipe, dan status kualitas (A/B/C) beserta
+   alasan. A/B ikut melatih model pada pelatihan berikutnya (bekukan dataset baru → latih).
 
 ### 4. Kualitas data
 Setiap sumur-section mendapat status:
@@ -128,10 +140,19 @@ hasil dicatat apa adanya dan tidak bisa diulang).
 - **PDF**: ringkasan 2 halaman (status kualitas, versi model & dataset, metrik, batas aman,
   tiga grafik).
 
-### 7. Prediksi sumur baru
-Data sumur → **Prediksi sumur baru** → tarik file WellPlan/roadmap sumur baru. Sistem mengimpor,
-memprediksi dengan model aktif, lalu membuka dashboard. Peringatan muncul bila section/tipe jarang
-di data latih, kedalaman di luar rentang latih, atau survey tidak ada.
+### 7. Prediksi sumur baru (dengan template)
+Data sumur → **Prediksi sumur baru**:
+1. **Unduh template** → *Template sumur baru (.xlsx)* (tanpa sheet data aktual).
+2. **Isi** `Info Sumur`, `Drag`, `Torque` dengan hasil WellPlan sumur yang akan dibor; `Survey`
+   bila ada (prediksi lebih baik).
+3. **Unggah** satu file. Sistem mengimpor, memeriksa, dan memprediksi dengan model aktif.
+4. **Hasil prediksi** langsung tampil: tabel per operasi di kedalaman akhir (WellPlan FF 0,3,
+   prediksi ML, rentang 10–90%, ML − WellPlan), peringatan (section/tipe jarang di data latih,
+   kedalaman di luar rentang latih, survey kosong), dan tombol **Buka dashboard**,
+   **Hasil prediksi (.xlsx)** (prediksi per kedalaman di sheet Drag/Torque + grafik), dan
+   **Ringkasan (PDF)**.
+
+Bila file gagal diimpor, alasan per sheet/kolom ditampilkan; perbaiki lalu unggah lagi.
 
 ### 8. Evaluasi
 Saat file berisi data aktual sumur yang sudah diprediksi diimpor kemudian, prediksi lama otomatis

@@ -35,6 +35,9 @@ Format file yang diterima (hasil audit 94 file folder `Training/`):
 | **B. Laporan WellPlan** | `.xlsm` (macro tidak dijalankan) | `Summary`, `Tripping Load Analysis`, `Off Bottom Torque analysis`, `Rotary Drill Buckling Outputs`, `Survey Outputs` | `Drilling Data`, `Tripping  Data` |
 
 Satu file = satu section. Section dibaca dari nama file (`_8.5in`, `12.25 HS`, `22inHS`, …).
+Selain dua format itu, pengguna bisa mengunduh **template** dari aplikasi (format A + sheet
+`Info Sumur` berisi nama, section, tipe, block weight; `Survey` opsional), mengisinya, dan
+mengunggahnya kembali.
 Susunan folder: `<tipe J|S|Horizontal>/<nama sumur>/<file>`. Nama folder = kode sumur.
 
 ---
@@ -115,6 +118,8 @@ Lalu di web: **Data sumur → Pindai folder**. Lanjutkan sesuai `docs/panduan.md
 | Keluaran | Dari mana | Isi |
 |---|---|---|
 | Laporan audit file | `make audit` → `data/audit/laporan_audit.md` + CSV | Format, sheet, satuan, titik, matriks sumur × section × tipe, penyimpangan per file |
+| Template isian | Data sumur → Impor file Excel / Prediksi sumur baru → Unduh template | `template_data_latih_TnD.xlsx` (rencana + aktual) dan `template_sumur_baru_TnD.xlsx` (rencana saja), dengan Petunjuk dan Contoh |
+| Hasil prediksi sumur baru | Data sumur → Prediksi sumur baru → unggah template terisi | Tabel prediksi per operasi + tombol dashboard, Excel, PDF |
 | Hasil pindai folder | Data sumur → Pindai folder | Per file (diterima / peringatan / duplikat / ditolak + alasan) dan per sumur-section (status A/B/C) |
 | Laporan kualitas data | Kualitas data → Unduh (.xlsx) | Status A/B/C/X, skor, alasan, rasio aktual/WellPlan, riwayat tinjauan |
 | Dataset beku | Model → Dataset → Unduh | Snapshot CSV + hash, daftar sumur, sumur blind test, sumur dikecualikan |
@@ -178,7 +183,7 @@ Data sumur disalin ke `data/inbox/` di server (mis. `scp -r Training/. server:td
 
 ```bash
 uv venv .venv -p 3.12 && uv pip install -p .venv/bin/python -r backend/requirements-dev.txt
-make test        # 44 tes (parser format A/B, kualitas, alur penuh, login, selisih)
+make test        # 48 tes (parser format A/B, kualitas, alur penuh, login, selisih)
 make lint
 cd web && npm ci && npm run build
 ```
