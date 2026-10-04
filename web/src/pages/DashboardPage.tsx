@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, fmt, ModelItem, Op, OP_LABEL, OPS, Profile, Q_LABEL, QStatus, WellItem } from "../api";
+import { api, fmt, Forecast, ModelItem, Op, OP_LABEL, OPS, Profile, PURPOSE_LABEL, Q_LABEL, QStatus, TYPES, WellItem } from "../api";
+import ForecastPanel from "../components/ForecastPanel";
 import LimitsPanel from "../components/LimitsPanel";
 import QualityBadge from "../components/QualityBadge";
 import ThreeProfileChart, {
@@ -10,9 +11,7 @@ import ThreeProfileChart, {
   HOOKLOAD_OPS,
   TORQUE_OPS,
 } from "../components/ThreeProfileChart";
-import { DIFF_KEYS, DIFF_LABEL, DiffKey } from "../components/chartTheme";
-
-const TYPES = ["J", "S", "Horizontal"];
+import { DIFF_KEYS, DIFF_LABEL, DiffKey, OHFF_COLOR } from "../components/chartTheme";
 
 export default function DashboardPage() {
   const { wellId } = useParams();
@@ -24,20 +23,24 @@ export default function DashboardPage() {
   const [units, setUnits] = useState<"imperial" | "si">("imperial");
   const [quality, setQuality] = useState<"" | QStatus>("");
   const [modelId, setModelId] = useState("");
+  const [group, setGroup] = useState<"" | "training" | "monitoring">("");
+  const [calibration, setCalibration] = useState<"" | "calibrated" | "raw">("");
+  const [forecast, setForecast] = useState<Forecast | null>(null);
   const models = useQuery({ queryKey: ["models"], queryFn: () => api.get<ModelItem[]>("/api/models") });
-  const usable = (models.data ?? []).filter((m) => m.status === "selesai" || m.status === "ditahan");
+  const usable = (models.data ?? []).filter((m) => m.status === "done" || m.status === "held");
   const [opts, setOpts] = useState<ChartOptions>({
     ops: Object.fromEntries(OPS.map((o) => [o, true])) as Record<Op, boolean>,
-    showFF: false,
+    showFF: true,
     diffTarget: "pick_up",
     diffMode: "abs",
     flagSeries: "ml_minus_actual",
     threshold: 5,
-    showBand: true,
+    showBand: false,
   });
 
   const filtered = (wells.data ?? []).filter(
     (w) =>
+      (!group || w.purpose === group) &&
       (!section || String(w.section_in) === section) &&
       (!wtype || w.well_type === wtype) &&
       (!quality || w.quality === quality),
@@ -48,11 +51,14 @@ export default function DashboardPage() {
     if (!wellId && selectedId) nav(`/dashboard/${selectedId}`, { replace: true });
   }, [wellId, selectedId, nav]);
 
+  const qs = `units=${units}${modelId ? `&model_id=${modelId}` : ""}${calibration ? `&calibration=${calibration}` : ""}`;
   const profile = useQuery({
-    queryKey: ["profile", selectedId, units, modelId],
-    queryFn: () => api.get<Profile>(`/api/wells/${selectedId}/profile?units=${units}${modelId ? `&model_id=${modelId}` : ""}`),
+    queryKey: ["profile", selectedId, units, modelId, calibration],
+    queryFn: () => api.get<Profile>(`/api/wells/${selectedId}/profile?${qs}`),
     enabled: !!selectedId,
   });
+  // a forecast belongs to one well / unit system / model
+  useEffect(() => setForecast(null), [selectedId, units, modelId, calibration]);
   const predict = useMutation({
     mutationFn: () => api.post(`/api/wells/${selectedId}/predict${modelId ? `?model_id=${modelId}` : ""}`),
     onSuccess: () => {
@@ -63,7 +69,7 @@ export default function DashboardPage() {
   });
 
   const p = profile.data;
-  // Tanpa data aktual: hanya ML − WellPlan yang bisa ditandai
+  // Without actual data only ML − WellPlan can be flagged
   const flagSeries: DiffKey = p && !p.has_actual ? "ml_minus_wp" : opts.flagSeries;
   const target = p?.operations[opts.diffTarget];
   const flagData = target?.diff[flagSeries];
@@ -90,9 +96,17 @@ export default function DashboardPage() {
       <section className="card filters">
         <div className="row gap wrap">
           <label className="inline">
-            Section
+            Data group
+            <select value={group} onChange={(e) => setGroup(e.target.value as typeof group)}>
+              <option value="">All</option>
+              <option value="training">{PURPOSE_LABEL.training}</option>
+              <option value="monitoring">{PURPOSE_LABEL.monitoring}</option>
+            </select>
+          </label>
+          <label className="inline">
+            Well section
             <select value={section} onChange={(e) => setSection(e.target.value)}>
-              <option value="">Semua</option>
+              <option value="">All</option>
               {sections.map((s) => (
                 <option key={s} value={String(s)}>
                   {s}"
@@ -101,18 +115,18 @@ export default function DashboardPage() {
             </select>
           </label>
           <label className="inline">
-            Tipe sumur
+            Well type
             <select value={wtype} onChange={(e) => setWtype(e.target.value)}>
-              <option value="">Semua</option>
+              <option value="">All</option>
               {TYPES.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
           </label>
           <label className="inline">
-            Kualitas
+            Quality
             <select value={quality} onChange={(e) => setQuality(e.target.value as "" | QStatus)}>
-              <option value="">Semua</option>
+              <option value="">All</option>
               {(["A", "B", "C", "X"] as QStatus[]).map((q) => (
                 <option key={q} value={q}>
                   {q} · {Q_LABEL[q]}
@@ -121,18 +135,19 @@ export default function DashboardPage() {
             </select>
           </label>
           <label className="inline">
-            Sumur
+            Well
             <select value={selectedId ?? ""} onChange={(e) => nav(`/dashboard/${e.target.value}`)}>
-              {!filtered.some((w) => w.id === selectedId) && selectedId && <option value={selectedId}>(di luar filter)</option>}
+              {!filtered.some((w) => w.id === selectedId) && selectedId && <option value={selectedId}>(outside the filter)</option>}
               {filtered.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name} · {w.section_in}" · {w.well_type ?? "?"} · {w.quality} {w.actual_points ? "" : "· tanpa aktual"}
+                  {w.purpose === "monitoring" ? "[Monitoring] " : ""}
+                  {w.name} · {w.section_in}" · {w.well_type ?? "?"} · {w.quality} {w.actual_points ? "" : "· no actual data"}
                 </option>
               ))}
             </select>
           </label>
           <label className="inline">
-            Satuan
+            Units
             <select value={units} onChange={(e) => setUnits(e.target.value as "imperial" | "si")}>
               <option value="imperial">Imperial (ft, klbf, ft-lbf)</option>
               <option value="si">SI (m, kN, kN·m)</option>
@@ -141,36 +156,44 @@ export default function DashboardPage() {
           <label className="inline">
             Model
             <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
-              <option value="">aktif</option>
+              <option value="">active</option>
               {usable.map((m) => (
                 <option key={m.id} value={m.id}>
-                  #{m.id} · dataset v{m.dataset_version ?? "?"} {m.active ? "(aktif)" : m.status === "ditahan" ? "(ditahan)" : ""}
+                  #{m.id} · dataset v{m.dataset_version ?? "?"} {m.active ? "(active)" : m.status === "held" ? "(held)" : ""}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="inline" title="DD Calibrate offsets from the roadmap file (as the Excel 'Graph reference')">
+            WellPlan curves
+            <select value={calibration} onChange={(e) => setCalibration(e.target.value as typeof calibration)}>
+              <option value="">Automatic</option>
+              <option value="calibrated">With DD Calibrate</option>
+              <option value="raw">As modelled</option>
             </select>
           </label>
           <div className="spacer" />
           {selectedId && (
             <>
               <button className="btn" onClick={() => predict.mutate()} disabled={predict.isPending}>
-                {predict.isPending ? "Memprediksi…" : "Prediksi ulang"}
+                {predict.isPending ? "Forecasting…" : "Forecast again"}
               </button>
               <a
                 className="btn"
-                href={`/api/wells/${selectedId}/report.pdf?units=${units}&target=${opts.diffTarget}${modelId ? `&model_id=${modelId}` : ""}`}
+                href={`/api/wells/${selectedId}/report.pdf?${qs}&target=${opts.diffTarget}`}
               >
                 PDF
               </a>
               <a
                 className="btn primary"
-                href={`/api/wells/${selectedId}/export.xlsx?units=${units}&target=${opts.diffTarget}${modelId ? `&model_id=${modelId}` : ""}`}
+                href={`/api/wells/${selectedId}/export.xlsx?${qs}&target=${opts.diffTarget}`}
               >
-                Ekspor Excel
+                Export Excel
               </a>
             </>
           )}
         </div>
-        {!filtered.length && wells.isSuccess && <div className="alert">Tidak ada sumur untuk filter ini.</div>}
+        {!filtered.length && wells.isSuccess && <div className="alert">No wells for this filter.</div>}
       </section>
 
       <section className="card filters">
@@ -194,15 +217,15 @@ export default function DashboardPage() {
             ))}
             <label className="check">
               <input type="checkbox" checked={opts.showFF} onChange={(e) => set("showFF", e.target.checked)} />
-              Semua kurva FF
+              All OHFF curves
             </label>
             <label className="check">
               <input type="checkbox" checked={opts.showBand} onChange={(e) => set("showBand", e.target.checked)} />
-              Pita ketidakpastian ML
+              Uncertainty band (P10–P90)
             </label>
           </fieldset>
           <fieldset>
-            <legend>Grafik Selisih</legend>
+            <legend>Difference (Δ) chart</legend>
             <select value={opts.diffTarget} onChange={(e) => set("diffTarget", e.target.value as Op)}>
               {OPS.map((o) => (
                 <option key={o} value={o}>
@@ -212,15 +235,15 @@ export default function DashboardPage() {
             </select>
             <div className="seg">
               <button className={opts.diffMode === "abs" ? "on" : ""} onClick={() => setOpts((o) => ({ ...o, diffMode: "abs", threshold: 5 }))}>
-                Absolut
+                Absolute
               </button>
               <button className={opts.diffMode === "pct" ? "on" : ""} onClick={() => setOpts((o) => ({ ...o, diffMode: "pct", threshold: 5 }))}>
-                Persen
+                Percent
               </button>
             </div>
           </fieldset>
           <fieldset>
-            <legend>Penandaan interval</legend>
+            <legend>Flag intervals</legend>
             <select
               value={flagSeries}
               disabled={!!p && !p.has_actual}
@@ -233,7 +256,7 @@ export default function DashboardPage() {
               ))}
             </select>
             <label className="inline">
-              |selisih| &gt;
+              |Δ| &gt;
               <input
                 type="number"
                 min={0}
@@ -248,7 +271,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {profile.isLoading && <div className="card muted">Memuat profil…</div>}
+      {profile.isLoading && <div className="card muted">Loading profile…</div>}
       {profile.isError && <div className="alert error">{(profile.error as Error).message}</div>}
 
       {p && (
@@ -270,46 +293,61 @@ export default function DashboardPage() {
                 <span className="muted small">
                 {p.prediction
                   ? p.prediction.kind === "oof"
-                    ? `Prediksi ML out-of-fold (model #${p.prediction.model_id} tanpa melihat sumur ini)`
-                    : `Prediksi ML model #${p.prediction.model_id}`
-                  : "Belum ada prediksi ML"}
+                    ? `ML forecast out-of-fold (model #${p.prediction.model_id} never saw this well)`
+                    : `ML forecast, model #${p.prediction.model_id}`
+                  : "No ML forecast yet"}
                 {p.model?.dataset_version ? ` · dataset v${p.model.dataset_version}` : ""}
                 </span>
               </span>
             </div>
             <div className="small legend-note">
               <div>
-                <b>Profil:</b> <span className="sw wp" /> WellPlan (FF {p.operations.pick_up.wellplan_baseline_ff ?? "–"}
-                {opts.showFF ? "; FF lain lebih tipis" : ""}) &nbsp; <span className="sw ml" /> Prediksi ML &nbsp;{" "}
-                <span className="dot act" /> Aktual (titik)
+                <b>T&amp;D Model (one colour per OHFF):</b>{" "}
+                {Object.entries(OHFF_COLOR).map(([ff, c]) => (
+                  <span key={ff} className="nowrap">
+                    <span className="sw" style={{ background: c }} /> {ff}&nbsp;{" "}
+                  </span>
+                ))}
+                · <span className="sw ml" /> ML forecast{opts.showBand ? " (dashed = P10–P90 band)" : ""} ·{" "}
+                <span className="dot act" /> Actual (points) · <span className="sw limit" /> operating limit (dotted)
+                {p.calibration.mode === "calibrated" && <> · T&amp;D Model includes the DD Calibrate offsets</>}
               </div>
               <div>
-                <b>Operasi:</b> garis penuh / ● = pick up, torque off bottom · putus-putus / ▲ = slack off, torque on
-                bottom · titik-titik / ■ = rotating weight
+                <b>Names:</b> PU = pick up, SO = slack off, ROT = rotating weight (one curve). Actual markers: ● PU / torque
+                off bottom · ▲ SO / torque on bottom · ■ ROT.
               </div>
               <div>
-                <b>Selisih:</b> ● WellPlan − Aktual (biru) · ◆ ML − Aktual (oranye) · <span className="sw mlwp" /> ML −
-                WellPlan. <b>A − B: kanan (+) = A lebih tinggi, kiri (−) = A lebih rendah.</b>
+                <b>Difference (Δ):</b> ● T&amp;D Model − Actual (blue) · ◆ ML − Actual (orange) · <span className="sw mlwp" /> ML −
+                T&amp;D Model. <b>A − B: right (+) = A is higher, left (−) = A is lower.</b>
                 {intervals.length > 0 && (
                   <>
                     {" "}
-                    <span className="sw flag" /> {intervals.length} interval |{DIFF_LABEL[flagSeries]}| &gt;{" "}
+                    <span className="sw flag" /> {intervals.length} intervals |{DIFF_LABEL[flagSeries]}| &gt;{" "}
                     {opts.threshold} {modeUnit}
                   </>
                 )}
               </div>
             </div>
-            <ThreeProfileChart profile={p} options={{ ...opts, flagSeries }} intervals={intervals} />
+            <ThreeProfileChart profile={p} options={{ ...opts, flagSeries }} intervals={intervals} forecast={forecast} />
           </section>
+
+          <ForecastPanel
+            wellId={p.well.id}
+            units={units}
+            modelId={modelId}
+            calibration={calibration}
+            forecast={forecast}
+            onForecast={setForecast}
+          />
 
           {p.quality.issues.length > 0 && (
             <details className="card">
               <summary>
-                Catatan kualitas data ({p.quality.issues.length}){p.quality.review ? ` · tinjauan: ${p.quality.review.decision}` : ""}
+                Data quality notes ({p.quality.issues.length}){p.quality.review ? ` · review: ${p.quality.review.decision}` : ""}
               </summary>
               <ul className="issues">
                 {p.quality.issues.map((c, i) => (
-                  <li key={i} className={c.level === "kritis" ? "error" : "warning"}>
+                  <li key={i} className={c.level === "critical" ? "error" : "warning"}>
                     {c.message}
                   </li>
                 ))}
@@ -320,23 +358,23 @@ export default function DashboardPage() {
           <div className="grid2">
             <section className="card">
               <h3>
-                5 kedalaman dengan selisih terbesar · {DIFF_LABEL[flagSeries]} · {OP_LABEL[opts.diffTarget]}
+                5 depths with the largest difference · {DIFF_LABEL[flagSeries]} · {OP_LABEL[opts.diffTarget]}
               </h3>
               {top5.length ? (
                 <table>
                   <thead>
                     <tr>
-                      <th className="num">Kedalaman ({p.depth_unit})</th>
-                      <th>Arah</th>
-                      <th className="num">Selisih ({target?.unit})</th>
-                      <th className="num">Selisih (%)</th>
+                      <th className="num">Depth ({p.depth_unit})</th>
+                      <th>Direction</th>
+                      <th className="num">Δ ({target?.unit})</th>
+                      <th className="num">Δ (%)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {top5.map((r) => (
                       <tr key={r.d}>
                         <td className="num">{fmt(r.d, 0)}</td>
-                        <td>{r.abs >= 0 ? "→ Kanan (lebih tinggi)" : "← Kiri (lebih rendah)"}</td>
+                        <td>{r.abs >= 0 ? "→ Right (higher)" : "← Left (lower)"}</td>
                         <td className="num">
                           {r.abs > 0 ? "+" : ""}
                           {fmt(r.abs)}
@@ -350,16 +388,16 @@ export default function DashboardPage() {
                   </tbody>
                 </table>
               ) : (
-                <p className="muted">Tidak ada data selisih untuk pilihan ini.</p>
+                <p className="muted">No difference data for this selection.</p>
               )}
               {intervals.length > 0 && (
                 <>
-                  <h3>Interval ditandai</h3>
+                  <h3>Flagged intervals</h3>
                   <ul className="small">
                     {intervals.map((iv, i) => (
                       <li key={i}>
-                        {fmt(iv.from, 0)} – {fmt(iv.to, 0)} {p.depth_unit}: puncak {iv.peak > 0 ? "+" : ""}
-                        {fmt(iv.peak)} {modeUnit} ({iv.peak > 0 ? "kanan" : "kiri"})
+                        {fmt(iv.from, 0)} – {fmt(iv.to, 0)} {p.depth_unit}: peak {iv.peak > 0 ? "+" : ""}
+                        {fmt(iv.peak)} {modeUnit} ({iv.peak > 0 ? "right" : "left"})
                       </li>
                     ))}
                   </ul>
@@ -367,12 +405,12 @@ export default function DashboardPage() {
               )}
             </section>
             <section className="card">
-              <h3>Ringkasan metrik sumur ini</h3>
+              <h3>Metrics for this well</h3>
               {p.has_actual ? (
                 <table>
                   <thead>
                     <tr>
-                      <th>Operasi</th>
+                      <th>Operation</th>
                       <th className="num">RMSE WP</th>
                       <th className="num">RMSE ML</th>
                       <th className="num">MAPE WP</th>
@@ -401,7 +439,7 @@ export default function DashboardPage() {
                   </tbody>
                 </table>
               ) : (
-                <p className="muted">Belum ada data aktual untuk sumur ini, metrik belum bisa dihitung.</p>
+                <p className="muted">No actual data for this well yet; metrics cannot be computed.</p>
               )}
             </section>
           </div>

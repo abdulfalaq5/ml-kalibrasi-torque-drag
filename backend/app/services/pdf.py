@@ -1,5 +1,5 @@
-"""Ringkasan PDF: per sumur (metrik, tiga grafik, status kualitas, versi model & dataset,
-batas aman) dan per model (metrik validasi & blind test, kurva belajar, pentingnya fitur)."""
+"""Ringkasan PDF (teks Inggris): per sumur (metrik, grafik per operasi, status kualitas,
+versi model & dataset, operating limits) dan per model (metrik validasi & blind test, kurva belajar, pentingnya fitur)."""
 
 import io
 from datetime import datetime
@@ -28,25 +28,17 @@ from reportlab.platypus import (  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.db.models import Dataset, MLModel, Well  # noqa: E402
-from app.services.operations import HOOKLOAD_OPS, OP_LABELS, TORQUE_OPS  # noqa: E402
+from app.services.export import ohff_color  # noqa: E402
+from app.services.operations import OP_LABELS, OPERATIONS, SERIES_PREFIX  # noqa: E402
 from app.services.profile import well_profile  # noqa: E402
 
-C_WP, C_ML, C_ACT, C_MLWP = "#2a78d6", "#eb6834", "#1baf7a", "#4a3aa7"
-DASH = {
-    "pick_up": "-",
-    "slack_off": "--",
-    "rotating_weight": ":",
-    "torque_off_bottom": "-",
-    "torque_on_bottom": "--",
+C_WP, C_ML, C_ACT, C_MLWP, C_LIM = "#2a78d6", "#eb6834", "#1baf7a", "#4a3aa7", "#e34948"
+STATUS_LABEL = {
+    "A": "Accepted",
+    "B": "Accepted with warnings",
+    "C": "On hold",
+    "X": "Excluded",
 }
-MARK = {
-    "pick_up": "o",
-    "slack_off": "^",
-    "rotating_weight": "s",
-    "torque_off_bottom": "o",
-    "torque_on_bottom": "^",
-}
-STATUS_LABEL = {"A": "Layak", "B": "Layak dengan peringatan", "C": "Ditahan", "X": "Dikecualikan"}
 
 _FONT = "Helvetica"
 
@@ -105,7 +97,7 @@ def _n(v, d=2):
     if v is None:
         return "–"
     try:
-        return f"{v:,.{d}f}".replace(",", "_").replace(".", ",").replace("_", ".")
+        return f"{v:,.{d}f}"
     except (TypeError, ValueError):
         return str(v)
 
@@ -118,42 +110,57 @@ def _fig_png(fig) -> io.BytesIO:
     return buf
 
 
-def _three_charts(prof: dict, target: str) -> io.BytesIO:
-    ops = prof["operations"]
-    du = prof["depth_unit"]
-    fig, axes = plt.subplots(1, 3, figsize=(11, 7.2), sharey=True)
-    for ax, group, title in ((axes[0], HOOKLOAD_OPS, "Hookload"), (axes[1], TORQUE_OPS, "Torque")):
-        for op in group:
-            o = ops[op]
-            base = next(
-                (s for s in o["wellplan"] if s["ff"] == o["wellplan_baseline_ff"]),
-                o["wellplan"][0] if o["wellplan"] else None,
+def _op_panel(ax, prof: dict, op: str) -> None:
+    o = prof["operations"][op]
+    for sr in o["wellplan"]:
+        ax.plot(sr["value"], sr["depth"], "-", color=ohff_color(sr["ff"]), lw=1.3, label=sr["name"])
+    if o["ml"]["depth"]:
+        ax.plot(
+            o["ml"]["value"],
+            o["ml"]["depth"],
+            "-",
+            color=C_ML,
+            lw=1.8,
+            label=f"{SERIES_PREFIX[op]} - ML",
+        )
+        if o["ml"]["lo"]:
+            ax.plot(
+                o["ml"]["lo"],
+                o["ml"]["depth"],
+                "--",
+                color=C_ML,
+                lw=0.9,
+                label=f"{SERIES_PREFIX[op]} - ML P10 / P90",
             )
-            if base:
-                ax.plot(base["value"], base["depth"], DASH[op], color=C_WP, lw=1.3)
-            if o["ml"]["depth"]:
-                ax.plot(o["ml"]["value"], o["ml"]["depth"], DASH[op], color=C_ML, lw=1.5)
-                if o["ml"]["lo"]:
-                    ax.fill_betweenx(
-                        o["ml"]["depth"], o["ml"]["lo"], o["ml"]["hi"], color=C_ML, alpha=0.12, lw=0
-                    )
-            if o["actual"]["depth"]:
-                ax.plot(
-                    o["actual"]["value"],
-                    o["actual"]["depth"],
-                    MARK[op],
-                    color=C_ACT,
-                    ms=3.5,
-                    mec="white",
-                    mew=0.5,
-                    ls="none",
-                )
-            for lim in o["limits"]:
-                ax.axvline(lim["value"], color="#e34948", lw=1, ls="-.")
-        ax.set_title(title, fontsize=10)
-        ax.set_xlabel(f"{title} ({ops[group[0]]['unit']})", fontsize=8)
-    ax = axes[2]
-    o = ops[target]
+            ax.plot(o["ml"]["hi"], o["ml"]["depth"], "--", color=C_ML, lw=0.9)
+    if o["actual"]["depth"]:
+        ax.plot(
+            o["actual"]["value"],
+            o["actual"]["depth"],
+            "o",
+            color=C_ACT,
+            ms=3.5,
+            mec="white",
+            mew=0.5,
+            ls="none",
+            label=f"{SERIES_PREFIX[op]} Actual",
+        )
+    for i, lim in enumerate(o["limits"]):
+        ax.axvline(
+            lim["value"], color=C_LIM, lw=1.1, ls=":", label="Operating limit" if i == 0 else None
+        )
+    ax.set_title(OP_LABELS[op], fontsize=9)
+    ax.set_xlabel(f"{OP_LABELS[op]} ({o['unit']})", fontsize=7.5)
+    ax.legend(fontsize=6, frameon=False, loc="best")
+
+
+def _diff_panel(ax, prof: dict, target: str) -> None:
+    o = prof["operations"][target]
+    labels = {
+        "wp_minus_actual": "T&D Model - Actual",
+        "ml_minus_actual": "ML - Actual",
+        "ml_minus_wp": "ML - T&D Model",
+    }
     for key, color, line in (
         ("wp_minus_actual", C_WP, False),
         ("ml_minus_actual", C_ML, False),
@@ -163,7 +170,7 @@ def _three_charts(prof: dict, target: str) -> io.BytesIO:
         if not d["depth"]:
             continue
         if line:
-            ax.plot(d["abs"], d["depth"], "-", color=color, lw=1.4)
+            ax.plot(d["abs"], d["depth"], "-", color=color, lw=1.4, label=labels[key])
         else:
             ax.plot(
                 d["abs"],
@@ -174,50 +181,38 @@ def _three_charts(prof: dict, target: str) -> io.BytesIO:
                 ls="none",
                 mec="white",
                 mew=0.5,
+                label=labels[key],
             )
     ax.axvline(0, color="black", lw=1.4)
-    lim = (
-        max(
-            [
-                abs(v)
-                for k in ("wp_minus_actual", "ml_minus_actual", "ml_minus_wp")
-                for v in o["diff"][k]["abs"]
-            ]
-            or [1]
-        )
-        * 1.15
-    )
+    lim = max([abs(v) for k in labels for v in o["diff"][k]["abs"]] or [1]) * 1.15
     ax.set_xlim(-lim, lim)
-    ax.set_title(f"Selisih {OP_LABELS[target]}", fontsize=10)
-    ax.set_xlabel(f"<- lebih rendah   ({o['unit']})   lebih tinggi ->", fontsize=8)
-    axes[0].set_ylabel(f"Kedalaman ({du})", fontsize=8)
-    axes[0].invert_yaxis()
-    for a in axes:
-        a.grid(color="#e7e6e2", lw=0.6)
-        a.tick_params(labelsize=7)
-    handles = [
-        plt.Line2D([], [], color=C_WP, lw=1.5, label="WellPlan (FF 0,3)"),
-        plt.Line2D([], [], color=C_ML, lw=1.5, label="Prediksi ML (+ pita 10-90%)"),
-        plt.Line2D([], [], color=C_ACT, marker="o", ls="none", label="Aktual"),
-        plt.Line2D([], [], color=C_MLWP, lw=1.5, label="ML - WellPlan"),
-        plt.Line2D([], [], color="#e34948", ls="-.", label="Batas aman"),
-    ]
-    fig.legend(
-        handles=handles,
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0.045),
-        ncol=5,
-        fontsize=7.5,
-        frameon=False,
-    )
+    ax.set_title(f"Difference Δ {OP_LABELS[target]}", fontsize=9)
+    ax.set_xlabel(f"<- lower   Δ ({o['unit']})   higher ->", fontsize=7.5)
+    ax.legend(fontsize=6, frameon=False, loc="best")
+
+
+def _profile_charts(prof: dict, target: str) -> io.BytesIO:
+    """Enam panel bertumpuk 2 x 3: PU, SO, ROT / Torque off, Torque on, Difference."""
+    du = prof["depth_unit"]
+    fig, axes = plt.subplots(2, 3, figsize=(11, 12), sharey=True)
+    flat = axes.ravel()
+    for ax, op in zip(flat[:5], OPERATIONS, strict=True):
+        _op_panel(ax, prof, op)
+    _diff_panel(flat[5], prof, target)
+    for ax in flat:
+        ax.grid(color="#e7e6e2", lw=0.6)
+        ax.tick_params(labelsize=7)
+    for row in axes:
+        row[0].set_ylabel(f"Depth ({du})", fontsize=8)
+    axes[0][0].invert_yaxis()
     fig.text(
         0.01,
-        0.0,
-        "Garis penuh = pick up / torque off bottom, putus-putus = slack off / torque on bottom, "
-        "titik-titik = rotating. Selisih = A - B: kanan (+) = lebih tinggi.",
+        0.005,
+        "One colour per OHFF in every chart (lighter = lower OHFF). ML band = P10–P90 (dashed). "
+        "Operating limits dotted. Difference = A - B: right (+) = higher.",
         fontsize=6.5,
     )
-    fig.subplots_adjust(bottom=0.2, wspace=0.08)
+    fig.subplots_adjust(bottom=0.06, hspace=0.25, wspace=0.08)
     return _fig_png(fig)
 
 
@@ -227,8 +222,9 @@ def well_pdf(
     unit_system: str = "imperial",
     target: str = "pick_up",
     model: MLModel | None = None,
+    calibration: str | None = None,
 ) -> bytes:
-    prof = well_profile(db, well, unit_system, model)
+    prof = well_profile(db, well, unit_system, model, calibration)
     st = _styles()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -238,37 +234,45 @@ def well_pdf(
         rightMargin=1.4 * cm,
         topMargin=1.3 * cm,
         bottomMargin=1.3 * cm,
-        title=f"Ringkasan {well.name}",
-        author="Kalibrasi T&D ML",
+        title=f"Summary {well.name}",
+        author="T&D ML Calibration",
     )
     m = prof["model"] or {}
     q = prof["quality"]
     els = [
-        Paragraph(f'Ringkasan kalibrasi T&amp;D: {well.name} · {well.section_in:g}"', st["h1"]),
         Paragraph(
-            f"Dibuat {datetime.now():%d-%m-%Y %H:%M} · tipe {well.well_type or '-'} · "
-            f"format rencana {(well.meta or {}).get('plan_format') or '-'}",
+            f'T&amp;D calibration summary: {well.name} · {(well.section_in or 0):g}"', st["h1"]
+        ),
+        Paragraph(
+            f"Created {datetime.now():%Y-%m-%d %H:%M} · well type {well.well_type or '-'} · "
+            f"data group {well.purpose} · plan format {(well.meta or {}).get('plan_format') or '-'}",
             st["p"],
         ),
     ]
     info = [
-        ["Item", "Nilai"],
+        ["Item", "Value"],
         [
-            "Status kualitas data",
-            f"{q['status']} – {STATUS_LABEL.get(q['status'], '')} (skor {q['score']})",
+            "Data quality",
+            f"{q['status']} – {STATUS_LABEL.get(q['status'], '')} (score {q['score']})",
         ],
         ["Model", "-" if not m else f"#{m['id']} · dataset v{m.get('dataset_version')}"],
         [
-            "Prediksi",
+            "Forecast",
             "-"
             if prof["prediction"] is None
             else (
-                "out-of-fold (model tidak melihat sumur ini)"
+                "out-of-fold (the model never saw this well)"
                 if prof["prediction"]["kind"] == "oof"
-                else "model penuh"
+                else "full model"
             ),
         ],
-        ["Satuan", f"{unit_system} (kedalaman {prof['depth_unit']})"],
+        [
+            "WellPlan curves",
+            "WellPlan + DD Calibrate offsets"
+            if (prof.get("calibration") or {}).get("mode") == "calibrated"
+            else "WellPlan as modelled",
+        ],
+        ["Units", f"{unit_system} (depth {prof['depth_unit']})"],
     ]
     els += [
         Spacer(1, 4),
@@ -277,11 +281,21 @@ def well_pdf(
         ),
     ]
     if q["issues"]:
-        els.append(Paragraph("Catatan kualitas data", st["h2"]))
+        els.append(Paragraph("Data quality notes", st["h2"]))
         els += [Paragraph(f"• [{c['level']}] {c['message']}", st["small"]) for c in q["issues"]]
-    els.append(Paragraph("Metrik sumur ini (titik aktual)", st["h2"]))
+    els.append(Paragraph("Metrics for this well (actual points)", st["h2"]))
     rows = [
-        ["Operasi", "Satuan", "RMSE WP", "RMSE ML", "MAPE WP", "MAPE ML", "R² WP", "R² ML", "Titik"]
+        [
+            "Operation",
+            "Unit",
+            "RMSE WP",
+            "RMSE ML",
+            "MAPE WP",
+            "MAPE ML",
+            "R² WP",
+            "R² ML",
+            "Points",
+        ]
     ]
     for op, o in prof["operations"].items():
         mm = o["metrics"] or {}
@@ -301,17 +315,17 @@ def well_pdf(
         )
     els.append(_table(rows, st))
     lims = [(op, lim) for op, o in prof["operations"].items() for lim in o["limits"]]
-    els.append(Paragraph("Batas aman", st["h2"]))
+    els.append(Paragraph("Operating limits", st["h2"]))
     if lims:
         rows = [
             [
-                "Operasi",
-                "Batas",
-                "Berlaku",
-                "ML menyentuh",
-                "ML pita",
-                "WellPlan menyentuh",
-                "Margin ML",
+                "Operation",
+                "Limit",
+                "Applies to",
+                "ML reaches",
+                "ML band reaches",
+                "WellPlan reaches",
+                "ML margin",
             ]
         ]
         for op, lim in lims:
@@ -321,28 +335,28 @@ def well_pdf(
                     OP_LABELS[op],
                     f"{lim['kind']} {_n(lim['value'])} {u}",
                     lim["scope"],
-                    _n(lim["cross_ml"], 0) if lim["cross_ml"] is not None else "tidak",
-                    _n(lim["cross_ml_band"], 0) if lim["cross_ml_band"] is not None else "tidak",
-                    _n(lim["cross_wellplan"], 0) if lim["cross_wellplan"] is not None else "tidak",
+                    _n(lim["cross_ml"], 0) if lim["cross_ml"] is not None else "no",
+                    _n(lim["cross_ml_band"], 0) if lim["cross_ml_band"] is not None else "no",
+                    _n(lim["cross_wellplan"], 0) if lim["cross_wellplan"] is not None else "no",
                     _n(lim["margin_ml"]),
                 ]
             )
         els.append(_table(rows, st))
         els.append(
             Paragraph(
-                f"Kedalaman dalam {prof['depth_unit']}. 'tidak' = kurva tidak melewati batas.",
+                f"Depth in {prof['depth_unit']}. 'no' = the curve does not reach the limit.",
                 st["small"],
             )
         )
     else:
-        els.append(Paragraph("Belum ada batas aman untuk sumur/section ini.", st["small"]))
+        els.append(Paragraph("No operating limits for this well/section yet.", st["small"]))
     if prof["warnings"]:
-        els.append(Paragraph("Peringatan", st["h2"]))
+        els.append(Paragraph("Warnings", st["h2"]))
         els += [Paragraph(f"• {w}", st["small"]) for w in prof["warnings"]]
     els += [
         PageBreak(),
-        Paragraph("Tiga profil: Hookload, Torque, Selisih", st["h2"]),
-        Image(_three_charts(prof, target), width=18.2 * cm, height=12.4 * cm),
+        Paragraph("Profiles: Hookload, Torque, Difference", st["h2"]),
+        Image(_profile_charts(prof, target), width=18.2 * cm, height=19.8 * cm),
         Paragraph(prof["sign_convention"], st["small"]),
     ]
     doc.build(els)
@@ -364,22 +378,22 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         topMargin=1.3 * cm,
         bottomMargin=1.3 * cm,
         title=f"Model #{model.id}",
-        author="Kalibrasi T&D ML",
+        author="T&D ML Calibration",
     )
     els = [
-        Paragraph(f"Ringkasan model kalibrasi #{model.id}", st["h1"]),
+        Paragraph(f"Calibration model summary #{model.id}", st["h1"]),
         Paragraph(
-            f"Status {model.status}{' · AKTIF' if model.active else ''} · dibuat "
-            f"{model.created_at:%d-%m-%Y %H:%M} · dataset v{ds.get('version')} "
-            f"(hash {str(ds.get('hash', ''))[:12]}) · {ds.get('wells_train')} sumur latih, "
-            f"{ds.get('wells_blind')} sumur blind test",
+            f"Status {model.status}{' · ACTIVE' if model.active else ''} · created "
+            f"{model.created_at:%Y-%m-%d %H:%M} · dataset v{ds.get('version')} "
+            f"(hash {str(ds.get('hash', ''))[:12]}) · {ds.get('wells_train')} training wells, "
+            f"{ds.get('wells_blind')} blind test wells",
             st["p"],
         ),
         Paragraph((model.comparison or {}).get("decision", ""), st["small"]),
     ]
-    els.append(Paragraph("Validasi silang per kelompok sumur (GroupKFold 5)", st["h2"]))
+    els.append(Paragraph("Cross-validation grouped by well (GroupKFold 5)", st["h2"]))
     rows = [
-        ["Operasi", "Model", "Sumur", "RMSE WP", "RMSE ML", "Perbaikan", "ML lebih dekat", "R² ML"]
+        ["Operation", "Model", "Wells", "RMSE WP", "RMSE ML", "Improvement", "ML closer", "R² ML"]
     ]
     for op, d in ops.items():
         wp, ml = d["overall"]["wellplan"], d["overall"]["ml"]
@@ -399,14 +413,14 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
     els.append(_table(rows, st))
     els.append(
         Paragraph(
-            "RMSE dalam SI (kN untuk hookload, kN·m untuk torsi). 'ML lebih dekat' = persen "
-            "titik ketika prediksi ML lebih dekat ke aktual daripada WellPlan.",
+            "RMSE in SI (kN for hookload, kN·m for torque). 'ML closer' = share of points "
+            "where the ML forecast is closer to actual than WellPlan.",
             st["small"],
         )
     )
-    els.append(Paragraph("Blind test (sekali, sumur yang dikunci sejak awal)", st["h2"]))
+    els.append(Paragraph("Blind test (run once, wells locked from the start)", st["h2"]))
     if model.blind_result:
-        rows = [["Operasi", "Titik", "RMSE WP", "RMSE ML", "ML lebih dekat"]]
+        rows = [["Operation", "Points", "RMSE WP", "RMSE ML", "ML closer"]]
         for op, d in model.blind_result["operations"].items():
             rows.append(
                 [
@@ -420,17 +434,15 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         els.append(_table(rows, st))
         els.append(
             Paragraph(
-                "Sumur blind test: " + ", ".join(model.blind_result.get("wells", [])), st["small"]
+                "Blind test wells: " + ", ".join(model.blind_result.get("wells", [])), st["small"]
             )
         )
     else:
-        els.append(Paragraph("Belum dijalankan.", st["small"]))
-    els.append(Paragraph("Uji manfaat fitur", st["h2"]))
-    rows = [["Grup", "Skor (RMSE ML/WP)", "Dipakai", "Keterangan"]]
+        els.append(Paragraph("Not run yet.", st["small"]))
+    els.append(Paragraph("Feature group tests", st["h2"]))
+    rows = [["Group", "Score (RMSE ML/WP)", "Used", "Note"]]
     for r in m.get("feature_selection", []):
-        rows.append(
-            [r["grup"], _n(r["skor"], 3), "ya" if r["dipakai"] else "tidak", r["keterangan"]]
-        )
+        rows.append([r["group"], _n(r["score"], 3), "yes" if r["used"] else "no", r["note"]])
     els.append(_table(rows, st))
 
     if ops:
@@ -447,13 +459,13 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
             ax.grid(color="#e7e6e2", lw=0.6)
         axes[0].set_ylabel("RMSE", fontsize=7)
         axes[0].legend(fontsize=7, frameon=False)
-        fig.suptitle("Kurva belajar (jumlah sumur latih)", fontsize=9)
+        fig.suptitle("Learning curve (number of training wells)", fontsize=9)
         els += [
-            Paragraph("Kurva belajar", st["h2"]),
+            Paragraph("Learning curve", st["h2"]),
             Image(_fig_png(fig), width=18.2 * cm, height=4.6 * cm),
             Paragraph(
-                "Kurva yang masih turun di ujung kanan = menambah sumur masih membantu. "
-                "Mendatar = keterbatasan ada di data atau fitur.",
+                "A curve still falling at the right end = more wells still help. "
+                "Flat = the limit is in the data or the features.",
                 st["small"],
             ),
         ]
@@ -465,10 +477,10 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
             ax.barh([f["feature"] for f in feats], [f["importance"] for f in feats], color=C_WP)
             ax.set_title(OP_LABELS.get(op, op), fontsize=8)
             ax.tick_params(labelsize=6.5)
-        fig.suptitle("Pentingnya fitur (rata-rata |SHAP|)", fontsize=9)
+        fig.suptitle("Feature importance (mean |SHAP|)", fontsize=9)
         fig.tight_layout()
         els += [
-            Paragraph("Penjelasan model (SHAP)", st["h2"]),
+            Paragraph("Model explanation (SHAP)", st["h2"]),
             Image(_fig_png(fig), width=18.2 * cm, height=5.4 * cm),
         ]
         els += [
@@ -477,17 +489,17 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
             )
             for op, d in ops.items()
         ]
-    els.append(Paragraph("Keterbatasan", st["h2"]))
+    els.append(Paragraph("Limitations", st["h2"]))
     lims = [
-        "Akurasi diukur pada sumur yang tidak dilihat model; tidak ada jaminan untuk sumur di luar "
-        "rentang section/tipe/kedalaman data latih.",
-        "Kombinasi section × tipe dengan < 3 sumur ditandai 'data sedikit'.",
-        "Kesalahan pencatatan di lapangan yang tidak terlihat dari data tidak dapat dideteksi sistem.",
+        "Accuracy is measured on wells the model did not see; there is no guarantee for wells "
+        "outside the section/type/depth range of the training data.",
+        "Section × type combinations with < 3 wells are flagged 'limited data'.",
+        "Field recording errors that are not visible in the data cannot be detected by the system.",
     ]
     if dataset is not None and dataset.excluded:
         lims.append(
-            f"{len(dataset.excluded)} sumur-section dikecualikan oleh gerbang kualitas data "
-            "(lihat laporan kualitas data)."
+            f"{len(dataset.excluded)} well sections were excluded by the data quality gate "
+            "(see the data quality report)."
         )
     els += [Paragraph(f"• {t}", st["small"]) for t in lims]
     doc.build(els)

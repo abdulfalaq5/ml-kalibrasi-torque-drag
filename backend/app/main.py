@@ -36,10 +36,12 @@ def ensure_admin() -> None:
     with SessionLocal() as db:
         if db.scalar(select(AdminUser.id).limit(1)) is not None:
             if s.admin_password:
-                log.warning("ADMIN_PASSWORD masih ada di .env. Hapus setelah akun terbentuk.")
+                log.warning(
+                    "ADMIN_PASSWORD is still set in .env. Remove it now that the account exists."
+                )
             return
         if not (s.admin_username and s.admin_password):
-            log.warning("Belum ada akun admin. Isi ADMIN_USERNAME dan ADMIN_PASSWORD di .env.")
+            log.warning("No admin account yet. Set ADMIN_USERNAME and ADMIN_PASSWORD in .env.")
             return
         db.add(AdminUser(username=s.admin_username, password_hash=hash_password(s.admin_password)))
         try:
@@ -47,7 +49,7 @@ def ensure_admin() -> None:
         except IntegrityError:  # worker uvicorn lain membuatnya lebih dulu
             db.rollback()
             return
-        log.info("Akun admin '%s' dibuat. Hapus ADMIN_PASSWORD dari .env.", s.admin_username)
+        log.info("Admin account '%s' created. Remove ADMIN_PASSWORD from .env.", s.admin_username)
 
 
 @asynccontextmanager
@@ -59,17 +61,17 @@ async def lifespan(_: FastAPI):
     try:
         ensure_admin()
     except Exception as exc:  # tabel belum ada (migrasi belum jalan)
-        log.error("Tidak bisa memeriksa akun admin: %s", exc)
+        log.error("Cannot check the admin account: %s", exc)
     yield
 
 
 def create_app() -> FastAPI:
     s = get_settings()
     if s.is_production and (len(s.secret_key) < 32 or s.secret_key.startswith("dev-")):
-        raise RuntimeError("SECRET_KEY production harus acak dan minimal 32 karakter")
+        raise RuntimeError("In production SECRET_KEY must be random and at least 32 characters")
 
     app = FastAPI(
-        title="Kalibrasi Torque & Drag ML",
+        title="Torque & Drag ML Calibration",
         lifespan=lifespan,
         docs_url=None if s.is_production else "/docs",
         redoc_url=None,
@@ -108,7 +110,7 @@ def create_app() -> FastAPI:
         include_in_schema=False,
     )
     def api_not_found(rest: str):
-        raise HTTPException(404, "Endpoint tidak ada")
+        raise HTTPException(404, "Endpoint not found")
 
     static_dir = Path(s.static_dir)
 
@@ -121,7 +123,7 @@ def create_app() -> FastAPI:
         index = static_dir / "index.html"
         if index.exists():
             return FileResponse(index, headers={"Cache-Control": "no-cache"})
-        return {"detail": "Frontend belum di-build (jalankan npm run build di web/)"}
+        return {"detail": "Frontend is not built yet (run npm run build in web/)"}
 
     return app
 

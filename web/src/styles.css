@@ -230,3 +230,10 @@ code { font-size: 12px; background: var(--surface-0); padding: 1px 4px; border-r
   .topbar { gap: 8px 16px; }
   .topbar nav { flex-wrap: wrap; flex-basis: 100%; order: 3; }
 }
+.dropzone.disabled { opacity: 0.55; cursor: not-allowed; border-style: dotted; }
+.req { color: #c4302b; }
+.group-row td { background: #f4f4f2; font-weight: 600; }
+.tabs-note { margin: 0 0 12px; }
+.forecast-sentence { margin: 4px 0; line-height: 1.45; }
+.drivers td, .drivers th { padding: 2px 8px; }
+.sw.limit { background: repeating-linear-gradient(90deg, #e34948 0 3px, transparent 3px 6px); }

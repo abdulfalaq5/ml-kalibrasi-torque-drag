@@ -25,8 +25,8 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="login-wrap">
       <form className="card login" onSubmit={submit}>
-        <h1>Kalibrasi Torque &amp; Drag ML</h1>
-        <p className="muted">Masuk dengan akun admin.</p>
+        <h1>Torque &amp; Drag ML Calibration</h1>
+        <p className="muted">Sign in with the admin account.</p>
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
@@ -45,9 +45,9 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
               type="button"
               className="pw-toggle"
               onClick={() => setShowPassword((v) => !v)}
-              aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+              aria-label={showPassword ? "Hide password" : "Show password"}
               aria-pressed={showPassword}
-              title={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+              title={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? <EyeOffIcon /> : <EyeIcon />}
             </button>
@@ -55,7 +55,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
         </label>
         {error && <div className="alert error">{error}</div>}
         <button className="btn primary" disabled={busy}>
-          {busy ? "Memeriksa…" : "Masuk"}
+          {busy ? "Checking…" : "Sign in"}
         </button>
       </form>
     </div>

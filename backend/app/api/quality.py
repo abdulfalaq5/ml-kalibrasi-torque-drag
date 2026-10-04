@@ -12,7 +12,12 @@ from app.services.quality import DECISIONS, effective_status, latest_review, rec
 
 router = APIRouter(prefix="/api/quality", tags=["quality"])
 
-STATUS_LABEL = {"A": "Layak", "B": "Layak dengan peringatan", "C": "Ditahan", "X": "Dikecualikan"}
+STATUS_LABEL = {
+    "A": "Accepted",
+    "B": "Accepted with warnings",
+    "C": "On hold",
+    "X": "Excluded",
+}
 
 
 def quality_rows(db: Session) -> list[dict]:
@@ -29,6 +34,7 @@ def quality_rows(db: Session) -> list[dict]:
             {
                 "well_id": w.id,
                 "well": w.name,
+                "purpose": w.purpose,
                 "section_in": w.section_in,
                 "well_type": w.well_type,
                 "auto_status": wq.status if wq else None,
@@ -70,11 +76,11 @@ class ReviewIn(BaseModel):
 @router.post("/{well_id}/review")
 def review(well_id: int, body: ReviewIn, request: Request, db: Session = Depends(get_db)):
     if body.decision not in DECISIONS:
-        raise HTTPException(400, f"Keputusan harus salah satu dari {sorted(DECISIONS)}")
+        raise HTTPException(400, f"Decision must be one of {', '.join(sorted(DECISIONS))}")
     if len(body.reason.strip()) < 5:
-        raise HTTPException(400, "Alasan wajib diisi (minimal 5 karakter)")
+        raise HTTPException(400, "A reason is required (at least 5 characters)")
     if db.get(Well, well_id) is None:
-        raise HTTPException(404, "Sumur tidak ditemukan")
+        raise HTTPException(404, "Well not found")
     db.add(
         QualityReview(
             well_id=well_id,
@@ -93,5 +99,5 @@ def report(db: Session = Depends(get_db)):
     return Response(
         export_quality_report(quality_rows(db)),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="laporan_kualitas_data.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="data_quality_report.xlsx"'},
     )

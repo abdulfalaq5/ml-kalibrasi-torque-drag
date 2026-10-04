@@ -1,17 +1,17 @@
 import { FormEvent, Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { api, fmt, Q_LABEL, QStatus, QualityRow, WellItem } from "../api";
+import { api, fmt, fmtDate, PURPOSE_LABEL, Q_LABEL, QStatus, QualityRow, WellItem } from "../api";
 import QualityBadge from "../components/QualityBadge";
 
 const DECISIONS = [
-  ["terima", "Terima (dengan catatan)"],
-  ["kecualikan", "Kecualikan dari training"],
-  ["perbaiki", "Perbaiki (minta file baru)"],
+  ["accept", "Accept (with a note)"],
+  ["exclude", "Exclude from training"],
+  ["fix", "Fix (request a new file)"],
 ] as const;
 
 function ReviewForm({ row, onDone }: { row: QualityRow; onDone: () => void }) {
-  const [decision, setDecision] = useState("terima");
+  const [decision, setDecision] = useState("accept");
   const [reason, setReason] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const submit = async (e: FormEvent) => {
@@ -32,8 +32,8 @@ function ReviewForm({ row, onDone }: { row: QualityRow; onDone: () => void }) {
           </option>
         ))}
       </select>
-      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Alasan (wajib, dicatat)" required minLength={5} />
-      <button className="btn small primary">Simpan keputusan</button>
+      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (required, recorded)" required minLength={5} />
+      <button className="btn small primary">Save decision</button>
       {err && <span className="bad-text small">{err}</span>}
     </form>
   );
@@ -44,35 +44,48 @@ export default function QualityPage() {
   const rows = useQuery({ queryKey: ["quality"], queryFn: () => api.get<QualityRow[]>("/api/quality") });
   const wells = useQuery({ queryKey: ["wells"], queryFn: () => api.get<WellItem[]>("/api/wells") });
   const [filter, setFilter] = useState<"" | QStatus>("");
+  const [purpose, setPurpose] = useState<"" | "training" | "monitoring">("training");
   const [open, setOpen] = useState<number | null>(null);
   const recompute = useMutation({
     mutationFn: () => api.post("/api/quality/recompute"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quality"] }),
   });
-  const list = (rows.data ?? []).filter((r) => !filter || r.status === filter);
-  const counts = (rows.data ?? []).reduce<Record<string, number>>((a, r) => ({ ...a, [r.status]: (a[r.status] ?? 0) + 1 }), {});
+  const scoped = (rows.data ?? []).filter((r) => !purpose || r.purpose === purpose);
+  const list = scoped.filter((r) => !filter || r.status === filter);
+  const counts = scoped.reduce<Record<string, number>>((a, r) => ({ ...a, [r.status]: (a[r.status] ?? 0) + 1 }), {});
   const wellByKey = new Map((wells.data ?? []).map((w) => [w.id, w]));
 
   return (
     <div className="page">
       <section className="card">
         <div className="row space wrap">
-          <h2>Gerbang kualitas data</h2>
+          <h2>Data quality gate</h2>
           <div className="row gap">
             <button className="btn" onClick={() => recompute.mutate()} disabled={recompute.isPending}>
-              {recompute.isPending ? "Menghitung…" : "Hitung ulang"}
+              {recompute.isPending ? "Recomputing…" : "Recompute"}
             </button>
             <a className="btn primary" href="/api/quality/report.xlsx">
-              Unduh laporan kualitas (.xlsx)
+              Download quality report (.xlsx)
             </a>
           </div>
         </div>
         <p className="muted small">
-          Hanya sumur-section berstatus <b>A</b> dan <b>B</b> yang masuk training. <b>C</b> gagal pemeriksaan kritis (format, satuan,
-          kedalaman, nilai fisik, urutan slack off ≤ rotating ≤ pick up, tumpang rentang WellPlan–aktual, minimal 8 titik aktual, section
-          &amp; tipe, duplikat). <b>B</b> lolos tapi ada peringatan statistik. Keputusan tinjauan engineer (terima / kecualikan /
-          perbaiki) dicatat beserta alasan, nama, dan waktu.
+          Only <b>Training Data</b> well sections with status <b>A</b> or <b>B</b> are used for training. <b>C</b> failed a
+          critical check (format, units, depth, physical values, order slack off ≤ rotating ≤ pick up, WellPlan–actual depth
+          overlap, at least 8 actual points, section &amp; type, duplicate). <b>B</b> passed with statistical warnings. The
+          engineer's review decision (accept / exclude / fix) is recorded with the reason, name and time. Monitoring wells are
+          checked too, for information only.
         </p>
+        <div className="row gap wrap small" style={{ marginBottom: 8 }}>
+          <label className="inline">
+            Data group
+            <select value={purpose} onChange={(e) => setPurpose(e.target.value as typeof purpose)}>
+              <option value="training">{PURPOSE_LABEL.training}</option>
+              <option value="monitoring">{PURPOSE_LABEL.monitoring}</option>
+              <option value="">All</option>
+            </select>
+          </label>
+        </div>
         <div className="row gap wrap">
           {(["A", "B", "C", "X"] as QStatus[]).map((s) => (
             <button key={s} className={`stat-tile ${filter === s ? "on" : ""}`} onClick={() => setFilter(filter === s ? "" : s)}>
@@ -89,29 +102,31 @@ export default function QualityPage() {
           <table>
             <thead>
               <tr>
-                <th>Sumur</th>
+                <th>Well</th>
+                <th>Group</th>
                 <th>Section</th>
-                <th>Tipe</th>
+                <th>Type</th>
                 <th>Status</th>
-                <th className="num">Skor</th>
-                <th className="num">Titik aktual</th>
-                <th className="num">Rasio PU akt/WP</th>
-                <th>Alasan utama</th>
+                <th className="num">Score</th>
+                <th className="num">Actual points</th>
+                <th className="num">PU actual/WP ratio</th>
+                <th>Main reason</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {list.map((r) => {
-                const issues = r.checks.filter((c) => c.level !== "lolos");
+                const issues = r.checks.filter((c) => c.level !== "pass");
                 return (
                   <Fragment key={r.well_id}>
                     <tr className="clickable" onClick={() => setOpen(open === r.well_id ? null : r.well_id)}>
                       <td>{r.well}</td>
+                      <td className="small">{PURPOSE_LABEL[r.purpose]}</td>
                       <td>{r.section_in}"</td>
                       <td>{r.well_type ?? "?"}</td>
                       <td>
                         <QualityBadge s={r.status} long />
-                        {r.auto_status && r.auto_status !== r.status && <span className="muted small"> (otomatis {r.auto_status})</span>}
+                        {r.auto_status && r.auto_status !== r.status && <span className="muted small"> (automatic {r.auto_status})</span>}
                       </td>
                       <td className="num">{r.score}</td>
                       <td className="num">{r.stats.n_actual_depths ?? 0}</td>
@@ -127,21 +142,21 @@ export default function QualityPage() {
                     </tr>
                     {open === r.well_id && (
                       <tr>
-                        <td colSpan={9}>
+                        <td colSpan={10}>
                           <ul className="issues">
                             {r.checks.map((c, i) => (
-                              <li key={i} className={c.level === "kritis" ? "error" : c.level === "peringatan" ? "warning" : "pass"}>
+                              <li key={i} className={c.level === "critical" ? "error" : c.level === "warning" ? "warning" : "pass"}>
                                 <b>{c.code}</b> [{c.level}] {c.message}
                               </li>
                             ))}
                           </ul>
                           {r.reviews.length > 0 && (
                             <div className="small">
-                              <b>Riwayat tinjauan:</b>
+                              <b>Review history:</b>
                               <ul>
                                 {r.reviews.map((v, i) => (
                                   <li key={i}>
-                                    {new Date(v.created_at).toLocaleString("id-ID")} · {v.reviewer} · <b>{v.decision}</b>: {v.reason}
+                                    {fmtDate(v.created_at)} · {v.reviewer} · <b>{v.decision}</b>: {v.reason}
                                   </li>
                                 ))}
                               </ul>

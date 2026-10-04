@@ -111,7 +111,7 @@ def _save(tmp_path, sheets: dict[str, list[list]], name="uji.xlsx"):
 
 def test_unknown_format(tmp_path):
     pw = parse_workbook(_save(tmp_path, {"Lainnya": [["a", "b"]]}))
-    assert pw.has_errors and "Format tidak dikenali" in pw.issues[0].message
+    assert pw.has_errors and "Unknown format" in pw.issues[0].message
 
 
 def test_not_excel(tmp_path):
@@ -164,7 +164,7 @@ def test_out_of_range_values_dropped(tmp_path):
         },
     )
     pw = parse_workbook(p)
-    assert any("di luar rentang wajar" in i.message for i in pw.issues)
+    assert any("outside the plausible range" in i.message for i in pw.issues)
     assert not any(r.value == 99999 for r in pw.plan)
 
 

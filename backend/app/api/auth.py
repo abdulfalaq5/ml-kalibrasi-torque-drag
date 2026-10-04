@@ -47,14 +47,14 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     if _is_locked(db, username):
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
-            f"Terlalu banyak percobaan salah. Coba lagi {get_settings().login_lock_minutes} menit lagi.",
+            f"Too many failed attempts. Try again in {get_settings().login_lock_minutes} minutes.",
         )
     user = db.scalar(select(AdminUser).where(AdminUser.username == username))
     ok = user is not None and verify_password(user.password_hash, body.password)
     db.add(LoginAttempt(username=username, ip=ip, success=ok))
     db.commit()
     if not ok:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Username atau password salah")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect username or password")
     request.session.clear()
     request.session["user"] = user.username
     return {"username": user.username}

@@ -23,7 +23,7 @@ def lim_out(lim: Limit, unit_system: str = "imperial") -> dict:
         "value": round(units.from_si(lim.value_si, u), 3),
         "unit": units.UNIT_LABELS[u],
         "note": lim.note,
-        "scope": "sumur" if lim.well_id else "section",
+        "scope": "well" if lim.well_id else "section",
     }
 
 
@@ -56,14 +56,14 @@ class LimitIn(BaseModel):
 @router.post("")
 def create(body: LimitIn, db: Session = Depends(get_db)):
     if body.operation not in LIMIT_OPS:
-        raise HTTPException(400, "Operasi tidak dikenal")
+        raise HTTPException(400, "Unknown operation")
     if (body.well_id is None) == (body.section_in is None):
         raise HTTPException(
-            400, "Isi salah satu: well_id (batas sumur) atau section_in (batas section)"
+            400, "Fill in exactly one: well_id (well limit) or section_in (section limit)"
         )
     kind = body.kind or LIMIT_OPS[body.operation]
     if kind not in ("max", "min"):
-        raise HTTPException(400, "Jenis batas harus max atau min")
+        raise HTTPException(400, "Limit kind must be max or min")
     u = units.DISPLAY_UNITS.get(body.unit_system, units.DISPLAY_UNITS["imperial"])[
         OP_DIMENSION[body.operation]
     ]
@@ -84,7 +84,7 @@ def create(body: LimitIn, db: Session = Depends(get_db)):
 def remove(limit_id: int, db: Session = Depends(get_db)):
     lim = db.get(Limit, limit_id)
     if lim is None:
-        raise HTTPException(404, "Batas tidak ditemukan")
+        raise HTTPException(404, "Limit not found")
     db.delete(lim)
     db.commit()
     return {"ok": True}

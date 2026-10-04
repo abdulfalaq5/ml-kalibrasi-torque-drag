@@ -2,15 +2,21 @@
 
 Aplikasi web untuk mengimpor file WellPlan + data aktual sumur (Excel), memeriksa kualitas data,
 melatih dan membandingkan model kalibrasi (Ridge, XGBoost, Random Forest, SVR, MLP opsional),
-menguji model pada sumur yang tidak pernah dilihat (validasi per sumur + blind test), memprediksi
-sumur baru, dan menampilkan hasilnya dalam dashboard tiga grafik (Hookload, Torque, Selisih),
-ekspor Excel, dan ringkasan PDF. Aplikasi memakai satu akun admin.
+menguji model pada sumur yang tidak pernah dilihat (validasi per sumur + blind test), membuat
+forecast sumur monitoring (termasuk forecast N ft ke depan dengan penjelasan sebab-akibat), dan
+menampilkan hasilnya dalam dashboard (Hookload, Torque, Difference), ekspor Excel, dan ringkasan
+PDF. Aplikasi memakai satu akun admin. **Seluruh layar dan keluaran berbahasa Inggris** (feedback
+client #1); dokumen internal tetap berbahasa Indonesia.
+
+Data dipisah dua kelompok yang **tidak pernah dicampur**: **Training Data** (sumur historis, satu-
+satunya acuan ML) dan **Monitoring** (sumur yang akan/sedang dibor, hanya diprediksi).
 
 | Dokumen | Isi |
 |---|---|
-| `docs/panduan.md` | **Panduan pengguna** langkah demi langkah + panduan operasional (versi interaktif: menu **Panduan** di aplikasi) |
+| `docs/panduan.md` | **User guide** (bahasa Inggris, untuk client) + operasional (versi interaktif: menu **How-to Guide** di aplikasi) |
 | `docs/ALUR_DAN_KODE.md` | **Alur sistem dan peta kode**: setiap alur → endpoint → fungsi → file/folder (untuk developer & client) |
-| `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-30) |
+| `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-41) |
+| `TODO_Feedback_Client_01.md` | Perbaikan dari feedback client #1 dan statusnya |
 | `TODO_Lanjutan_6_Minggu.md` | Rencana kerja paket 6 minggu dan status |
 | `TOOLS_dan_Arsitektur_6_Minggu.md` | Tools dan arsitektur |
 
@@ -20,7 +26,7 @@ ekspor Excel, dan ringkasan PDF. Aplikasi memakai satu akun admin.
 
 | | Laptop (lokal) | Server (production) |
 |---|---|---|
-| **Link** | http://127.0.0.1:8401 | `https://<domain-anda>` |
+| **Link** | http://localhost:8401 | `https://dev-ml-kalibrasi-torque-rag.lokatali.my.id` |
 | **Username** | nilai `ADMIN_USERNAME` di `.env` (bawaan `admin`) | sama |
 | **Password** | nilai `ADMIN_PASSWORD` di `.env` saat aplikasi **pertama kali** dijalankan | sama, diganti saat serah terima |
 
@@ -31,13 +37,13 @@ Format file yang diterima (hasil audit 94 file folder `Training/`):
 
 | Format | Ekstensi | Sheet yang dibaca | Data aktual |
 |---|---|---|---|
-| **A. Roadmap** | `.xlsx` | `Drag`, `Torque` (blok per friction factor) | `T&D Actual Reading` |
+| **A. Roadmap** | `.xlsx` | `Drag`, `Torque` (blok per OHFF + offset **Calibrate** DD di baris atas) | `T&D Actual Reading` |
 | **B. Laporan WellPlan** | `.xlsm` (macro tidak dijalankan) | `Summary`, `Tripping Load Analysis`, `Off Bottom Torque analysis`, `Rotary Drill Buckling Outputs`, `Survey Outputs` | `Drilling Data`, `Tripping  Data` |
 
 Satu file = satu section. Section dibaca dari nama file (`_8.5in`, `12.25 HS`, `22inHS`, …).
 Selain dua format itu, pengguna bisa mengunduh **template** dari aplikasi (format A + sheet
-`Info Sumur` berisi nama, section, tipe, block weight; `Survey` opsional), mengisinya, dan
-mengunggahnya kembali.
+`Well Info` berisi nama, section, tipe, block weight; `Survey` opsional), mengisinya, dan
+mengunggahnya kembali. Saat unggah, **Well section dan Well type wajib dipilih** dulu.
 Susunan folder: `<tipe J|S|Horizontal>/<nama sumur>/<file>`. Nama folder = kode sumur.
 
 ---
@@ -105,8 +111,11 @@ make inbox-training      # salin Training/<tipe>/<sumur>/* ke data/inbox (file a
 ```bash
 make inbox-sample
 ```
-Lalu di web: **Data sumur → Pindai folder**. Lanjutkan sesuai `docs/panduan.md`
-(Kualitas data → Model → Latih → Blind test → Dashboard → Ekspor).
+Lalu di web: **Training Data → Scan folder**. Lanjutkan sesuai `docs/panduan.md`
+(Data Quality → Models → Train → Blind test → Monitoring → Dashboard/Forecast → Export).
+
+**File latihan sesi pengenalan (sintetis):** `make practice-files` → `data/practice/{training,monitoring}/`
++ `README.txt` (section & tipe yang dipilih saat unggah).
 
 > Aturan data (Pasal 11): data client hanya dipakai di laptop/server yang disepakati, tidak ke Git
 > (`Training/`, `data/` ada di `.gitignore`), dan salinannya dihapus 14 hari setelah proyek selesai.
@@ -118,15 +127,16 @@ Lalu di web: **Data sumur → Pindai folder**. Lanjutkan sesuai `docs/panduan.md
 | Keluaran | Dari mana | Isi |
 |---|---|---|
 | Laporan audit file | `make audit` → `data/audit/laporan_audit.md` + CSV | Format, sheet, satuan, titik, matriks sumur × section × tipe, penyimpangan per file |
-| Template isian | Data sumur → Impor file Excel / Prediksi sumur baru → Unduh template | `template_data_latih_TnD.xlsx` (rencana + aktual) dan `template_sumur_baru_TnD.xlsx` (rencana saja), dengan Petunjuk dan Contoh |
-| Hasil prediksi sumur baru | Data sumur → Prediksi sumur baru → unggah template terisi | Tabel prediksi per operasi + tombol dashboard, Excel, PDF |
-| Hasil pindai folder | Data sumur → Pindai folder | Per file (diterima / peringatan / duplikat / ditolak + alasan) dan per sumur-section (status A/B/C) |
-| Laporan kualitas data | Kualitas data → Unduh (.xlsx) | Status A/B/C/X, skor, alasan, rasio aktual/WellPlan, riwayat tinjauan |
-| Dataset beku | Model → Dataset → Unduh | Snapshot CSV + hash, daftar sumur, sumur blind test, sumur dikecualikan |
-| Laporan model | Model → Laporan (.xlsx) / Ringkasan PDF | Metrik validasi silang & blind test per operasi, per section/tipe/kedalaman/sumur, perbandingan algoritma, uji fitur, kurva belajar, SHAP |
-| Dashboard | Dashboard | 3 panel (Hookload, Torque, Selisih), pita ketidakpastian, batas aman, interval ditandai |
-| Ekspor per sumur | Dashboard → Ekspor Excel / PDF | Sheet `Drag`, `Torque`, `T&D Actual Reading` + kolom ML & selisih + 3 grafik + batas aman; PDF 2 halaman |
-| Evaluasi prediksi | Evaluasi | Prediksi sumur baru vs data aktualnya (otomatis setelah data aktual diimpor) |
+| Template isian | Training Data / Monitoring → langkah 2 | `TnD_template_training.xlsx` (rencana + aktual) dan `TnD_template_monitoring.xlsx`, dengan Instructions dan Example |
+| Forecast sumur monitoring | Monitoring → unggah | Tabel forecast per operasi + tombol dashboard, Excel, PDF |
+| Forecast N ft + sebab-akibat | Dashboard → Forecast ahead | ML, P10–P90, T&D model per OHFF, faktor penyebab (SHAP lokal), perubahan rencana, batas terlewati, kalimat otomatis; ekspor `.xlsx` |
+| Hasil pindai folder | Training Data → Scan folder | Per file (accepted / warning / duplicate / rejected + alasan) dan per sumur-section (status A/B/C) |
+| Laporan kualitas data | Data Quality → Download (.xlsx) | Status A/B/C/X, skor, alasan, rasio aktual/WellPlan, riwayat tinjauan |
+| Dataset beku | Models → Datasets → Download | Snapshot CSV + hash, daftar sumur, sumur blind test, sumur dikecualikan |
+| Laporan model | Models → Report (.xlsx) / PDF summary | Metrik validasi silang & blind test per operasi, per section/tipe/kedalaman/sumur, perbandingan algoritma, uji fitur, kurva belajar, SHAP |
+| Dashboard | Dashboard | Hookload, Torque, Difference; kurva T&D model per OHFF (warna tetap per OHFF, bawaan + offset Calibrate DD = crossplot Excel), band P10–P90, operating limits, zona forecast |
+| Ekspor per sumur | Dashboard → Export Excel / PDF | Sheet `Drag`, `Torque` (nama seri baku, ROT satu kolom), `T&D Actual Reading` + ML & Δ + grafik per operasi + operating limits; PDF |
+| Evaluasi | Evaluations | Forecast sumur monitoring vs data aktualnya (otomatis setelah data aktual diunggah) |
 
 Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, berisi nama sumur).
 
@@ -142,11 +152,22 @@ Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, 
 | Ganti password admin (juga membuka kunci login) | `make password` |
 | Salin data Training ke inbox | `make inbox-training` |
 | Data contoh sintetis ke inbox | `make inbox-sample` |
+| File latihan (Training + Monitoring) | `make practice-files` |
+| Baca ulang offset Calibrate DD | `docker compose exec app python -m app.cli refresh-calibration` |
+| Hitung ulang kualitas data | `docker compose exec app python -m app.cli recompute-quality` |
 | Laporan audit file Training | `make audit` |
-| Backup manual | `make backup` |
+| Backup manual | `make backup` (folder `backups/` milik root dari container backup: `sudo chown $USER backups` sekali) |
 | Masuk database | `docker compose exec db psql -U tdml -d tdml` |
 
 > **Jangan `docker compose down -v`** kecuali ingin menghapus semua data (database, unggahan, model).
+
+**Upgrade ke versi feedback client #1** (sekali): `make up` menjalankan migrasi `0003`
+(Training/Monitoring) dan `0004` (kode status bahasa Inggris; data kualitas dikosongkan), lalu:
+```bash
+docker compose exec app python -m app.cli refresh-calibration
+docker compose exec app python -m app.cli recompute-quality
+```
+lalu di web: Models → Freeze a new dataset → Train model (grup fitur DD Calibrate ikut diuji).
 
 ---
 
@@ -156,8 +177,9 @@ Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, 
 |---|---|
 | Login kembali ke halaman login | `COOKIE_SECURE=false` untuk http lokal, lalu `docker compose up -d` |
 | Password `.env` tidak diterima | Akun sudah dibuat sebelumnya → `make password` |
-| "Terlalu banyak percobaan salah" | Tunggu 15 menit atau `make password` |
-| Tombol "Pindai folder" nonaktif | `data/inbox` kosong; jalankan `make inbox-training` |
+| "Too many failed attempts" | Tunggu 15 menit atau `make password` |
+| Tombol "Scan folder" nonaktif | `data/inbox` kosong; jalankan `make inbox-training` |
+| Kotak unggah abu-abu | Pilih Well section dan Well type dulu (langkah 1) |
 | File di inbox "dilewati" | File baru diubah < 1 menit; tunggu lalu pindai lagi |
 | Pindai gagal "Permission denied" | Folder `data/` harus bisa ditulis uid 1000: `sudo chown -R 1000:1000 data` |
 | Port 8401 dipakai | Ubah port kiri `127.0.0.1:8401:8401` (mis. `127.0.0.1:8402:8401`) di `docker-compose.yml` |

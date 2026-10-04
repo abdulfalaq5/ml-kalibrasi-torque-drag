@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate backup test lint sample sample-docker password dev-api dev-web audit folders inbox-training inbox-sample
+.PHONY: up down logs migrate backup test lint sample sample-docker password dev-api dev-web audit folders inbox-training inbox-sample practice-files
 
 # Folder impor massal (harus bisa ditulis uid 1000 = user di dalam container)
 folders:
@@ -33,6 +33,11 @@ sample:
 sample-docker: folders
 	docker compose run --rm --no-deps -v "$$PWD/scripts:/scripts:ro" -v "$$PWD/data:/out" \
 		--user "$$(id -u):$$(id -g)" app python /scripts/make_sample_data.py --out /out/sample
+
+# File latihan sesi pengenalan (sintetis): data/practice/{training,monitoring}/ + README.txt
+practice-files: folders
+	docker compose run --rm --no-deps -v "$$PWD/scripts:/scripts:ro" -v "$$PWD/data:/out" \
+		--user "$$(id -u):$$(id -g)" app python /scripts/make_sample_data.py --practice --out /out/practice
 
 password:
 	docker compose exec app python -m app.cli set-admin-password

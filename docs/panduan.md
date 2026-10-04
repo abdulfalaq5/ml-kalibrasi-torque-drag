@@ -1,218 +1,231 @@
-# Panduan sistem Kalibrasi Torque & Drag ML
+# User Guide — Torque & Drag ML Calibration
 
-Bagian A untuk pengguna (engineer), bagian B untuk operator server.
+Part A is for users (engineers), part B for the server operator.
 
-> Versi interaktif panduan ini ada di aplikasi: menu **Panduan** (langkah demi langkah, use case,
-> diagram alur sistem, daftar keluaran, FAQ, dengan pencarian).
+> An interactive version of this guide is in the application: menu **How-to Guide** (Quick Start,
+> step by step, use cases, system flow diagrams, outputs, FAQ, with search).
 
-## Alur kerja singkat
+## What This System Does
+
+*A brief overview of the system, the data used, and the workflow from historical data to Torque &
+Drag forecasting.*
+
+Torque & Drag (T&D) models and actual field measurements are prepared and recorded by the
+Directional Driller (DD) during drilling operations. The dataset includes modeled and actual
+hookload under pick-up, slack-off, and rotating conditions, as well as torque, referenced against
+measured depth.
+
+The Machine Learning (ML) system learns the relationship and patterns between historical T&D model
+outputs and actual field measurements from previously drilled wells. Based on these learned
+patterns, the system generates a forward-looking forecast of Torque & Drag behavior at upcoming
+drilling depths.
+
+## Workflow
 
 ```
-1. Taruh file sumur di data/inbox      ->  2. Data sumur: Pindai folder
-3. Kualitas data: tinjau status C       ->  4. Model: Bekukan dataset + Latih model
-5. Model: periksa laporan, Blind test    ->  6. Dashboard: lihat 3 grafik, batas aman, ekspor
-7. Sumur baru: unggah WellPlan -> prediksi  ->  8. Evaluasi: setelah data aktualnya masuk
+1. Training Data: upload historical wells (select section + type)  ->  2. Data Quality: review status C
+3. Models: Freeze dataset + Train model, read the report, blind test
+4. Monitoring: upload the well being drilled (select section + type)
+5. Dashboard: charts, Forecast N ft ahead with cause and effect, operating limits
+6. Output: Excel / PDF / Forecast (.xlsx)  ->  7. Evaluations: forecast vs actual after drilling
 ```
+
+**Training Data and Monitoring are never mixed.** Only Training Data teaches the ML model.
+Monitoring wells are forecast and evaluated only, even when they contain actual readings.
 
 ---
 
-## A. Panduan pengguna
+## A. User guide
 
-### 1. Masuk
-Buka link aplikasi (laptop: http://127.0.0.1:8401). Isi username dan password admin.
-Sesi berlaku 8 jam. Setelah 5 kali salah password, login terkunci 15 menit. Tombol mata di kolom
-password menampilkan/menyembunyikan password.
+### 1. Sign in
+Open the application address (laptop: http://localhost:8401). Enter the admin username and
+password. The session lasts 8 hours. After 5 wrong passwords, sign-in is locked for 15 minutes. The
+eye icon in the password field shows/hides the password.
 
-### 2. Menyiapkan file sumur
-Satu file Excel = satu section sumur. Dua format diterima:
+### 2. Preparing well files
+One Excel file = one well section. Two original formats and the template are accepted:
 
-| Format | Ciri | Data rencana WellPlan | Data aktual |
+| Format | Recognised by | T&D model (WellPlan) | Actual data |
 |---|---|---|---|
-| **A. Roadmap** (`.xlsx`) | sheet `Drag`, `Torque`, `T&D Actual Reading` | blok per friction factor (mis. 0,1/0,3/0,5 atau 0,3/0,4/0,5) | `T&D Actual Reading` (Klbs, Lbs-ft) |
-| **B. Laporan WellPlan** (`.xlsm`) | sheet `Summary`, `Tripping Load Analysis`, … | FF 0,2–0,5 tiap 100 ft, torque on bottom dari `Rotary Drill Buckling Outputs` (Base FF), survey, BHA, mud weight | `Drilling Data` (+ `Tripping  Data`) |
+| **A. T&D roadmap** (`.xlsx`) | sheets `Drag`, `Torque`, `T&D Actual Reading` | blocks per OHFF (e.g. 0.1/0.3/0.5 or 0.3/0.4/0.5) + DD **Calibrate** offsets | `T&D Actual Reading` (Klbs, Lbs-ft) |
+| **B. WellPlan report** (`.xlsm`) | sheets `Summary`, `Tripping Load Analysis`, … | OHFF 0.2–0.5 every 100 ft, torque on bottom from `Rotary Drill Buckling Outputs`, survey, BHA, mud weight | `Drilling Data` (+ `Tripping  Data`) |
+| **Template** (`.xlsx`) | downloaded from the application | same layout as A | `T&D Actual Reading` |
 
-Susun folder seperti folder `Training` client:
+**DD Calibrate offsets** (format A and template): Drag row 1 labels `PICK UP / SLACK OFF / ROTATE`
+with the values in row 2 (klbf); Torque `Calibrate On Bot Torque` in C2 and the off-bottom offset in
+C3 (ft-lbf). The dashboard shows the T&D model with these offsets by default, exactly like the
+Excel "Graph reference" crossplot.
+
+### 3. Training Data
+**a. Upload.** Select **Well section** and **Well type** (required), optionally download the
+*Training data template*, fill it in (sheet *Instructions*), and drop the files. Several files at
+once are fine when they share the section and type. The result shows the import status and the
+data quality (A/B/C) per file. A/B wells are used in the next training run.
+
+**b. Bulk import from folder** (administrator, many historical wells). Folder layout as the client's
+`Training` folder:
 ```
 data/inbox/
-  Horizontal/                 <- tipe sumur (J, S, Horizontal)
-    MINAS 2193 (2D-96A) HW/   <- nama folder = kode sumur
-      P_MINA25_0017HW_BHA1A_17.5in_TnD.xlsm   <- section dibaca dari nama file
-      P_MINA25_0017HW_BHA2A_12.25in_TnD.xlsm
+  Horizontal/                 <- well type (J, S, Horizontal)
+    MINAS 2193 (2D-96A) HW/   <- folder name = well code
+      P_MINA25_0017HW_BHA1A_17.5in_TnD.xlsm   <- well section read from the file name
 ```
-Tanpa folder tipe (`data/inbox/<sumur>/<file>`) juga bisa; tipe sumur lalu ditebak dari survey
-(format B) atau diisi manual. Section harus ada di nama file (`8.5in`, `8.50in`, `12.25 HS`,
-`22inHS`); bila tidak, isi kolom Section saat unggah manual.
+Click **Scan folder**. Per file: `accepted`, `accepted with warnings`, `duplicate`, `skipped`
+(modified < 1 minute ago), `rejected` + reason. Files move to `data/processed/` or `data/rejected/`
+(with `.reason.txt`). The folder scan always imports as Training Data.
 
-Cara cepat: `make inbox-training` menyalin seluruh folder `Training/` ke `data/inbox/`.
+**c. Well list.** Filter by section, type and data quality, search by name, and group by section,
+type, section × type or quality. The import history can be filtered by status.
 
-### 3. Data sumur → Impor massal dari folder
-1. Panel menunjukkan jumlah file yang menunggu di inbox.
-2. Klik **Pindai folder**. 94 file butuh ±30 detik.
-3. Hasil **per file**: `diterima`, `diterima dengan peringatan`, `duplikat` (isi sama dengan file
-   yang sudah ada, tidak diimpor dua kali), `dilewati` (baru diubah < 1 menit), `ditolak` + alasan.
-   File yang sama tapi isinya berubah → diimpor sebagai **versi baru** dan menggantikan versi lama.
-4. Hasil **per sumur-section**: status kualitas A/B/C dan alasannya.
-5. File dipindah ke `data/processed/` (diterima) atau `data/rejected/` (ditolak, beserta file
-   `.alasan.txt`).
-
-### 3b. Data sumur → Impor file Excel (dengan template)
-Untuk menambah satu atau beberapa sumur tanpa folder inbox:
-1. **Unduh template** → *Template data latih (.xlsx)*.
-2. **Isi** sesuai sheet *Petunjuk*: `Info Sumur` (nama sumur, section, tipe J/S/Horizontal,
-   block weight; casing shoe & mud weight opsional), `Drag` (kedalaman ft + hookload kip untuk
-   Tripping In / Tripping Out / Rotating Off Bottom per friction factor), `Torque` (Rotating On/Off
-   Bottom ft-lbf per FF), `T&D Actual Reading` (pembacaan lapangan, minimal 8 kedalaman),
-   `Survey` (opsional). Sheet `Contoh ...` menunjukkan contoh isian; sheet Petunjuk dan Contoh
-   tidak ikut diimpor. Nilai FF di baris "open hole friction factor" boleh diubah; sertakan 0.30
-   dan 0.50.
-3. **Unggah** (bisa banyak file). File roadmap / laporan WellPlan asli juga diterima.
-4. **Hasil**: status impor per file, sumur, section, tipe, dan status kualitas (A/B/C) beserta
-   alasan. A/B ikut melatih model pada pelatihan berikutnya (bekukan dataset baru → latih).
-
-### 4. Kualitas data
-Setiap sumur-section mendapat status:
-
-| Status | Arti | Masuk training? |
+### 4. Data Quality
+| Status | Meaning | Used for training? |
 |---|---|---|
-| **A** Layak | lolos semua pemeriksaan | ya |
-| **B** Layak + peringatan | lolos pemeriksaan wajib, ada peringatan statistik | ya, ditandai |
-| **C** Ditahan | gagal pemeriksaan kritis | tidak, menunggu tinjauan |
-| **X** Dikecualikan | dikecualikan engineer lewat tinjauan | tidak |
+| **A** Accepted | passed all checks | yes |
+| **B** Accepted with warnings | passed the critical checks, statistical warnings | yes, flagged |
+| **C** On hold | failed a critical check | no, waiting for review |
+| **X** Excluded | excluded by an engineer's review | no |
 
-**Pemeriksaan kritis:** rencana operasi inti ada, satuan wajar (rasio aktual/WellPlan hookload
-0,33–3; torsi tidak beda faktor ~1000), kedalaman tanpa duplikat bertentangan, nilai fisik wajar,
-urutan slack off ≤ rotating ≤ pick up, minimal **8 titik aktual pick up di dalam rentang WellPlan**,
-section & tipe diketahui, bukan duplikat sumur lain.
-**Peringatan statistik:** rasio aktual/WellPlan menyimpang dari sumur sekelas (MAD), lompatan tak
-wajar, nilai berulang (salin tempel), titik jauh lebih sedikit dari sumur sekelas, rasio torsi jauh
-dari 1, urutan kedalaman di file tidak naik.
+**Critical checks:** core T&D model operations present, plausible units, no conflicting duplicate
+depths, plausible values, order slack off ≤ rotating ≤ pick up, at least **8 actual pick-up points
+within the T&D model depth range**, section & type known, not a duplicate of another well.
+**Statistical warnings:** actual/T&D model ratio deviates from similar wells (MAD), implausible
+jumps, repeated values, far fewer points than similar wells, torque ratio far from 1, decreasing
+depth order in the file.
 
-Klik baris untuk melihat semua pemeriksaan, lalu catat keputusan tinjauan:
-- **Terima**: status C menjadi B (dipakai training, dengan catatan).
-- **Kecualikan**: tidak dipakai training (X).
-- **Perbaiki**: tetap C, minta file baru ke client.
+Click a well to see all checks and record a decision: **Accept** (C → B), **Exclude** (X), or
+**Fix** (stays C, request a new file). A reason is required; the reviewer and time are recorded.
+**Download quality report (.xlsx)** to send to the client.
 
-Alasan wajib diisi; nama peninjau dan waktu tercatat. **Unduh laporan kualitas (.xlsx)** untuk
-dikirim ke client.
+### 5. Models
+**a. Freeze a dataset.** All actual points of Training Data wells with status A/B, paired with the
+T&D model at the same depth, plus features (depth, T&D model OHFF 0.3 & 0.5, OHFF slope, rotating
+weight, section, type, file format and the extra feature groups). Freezing saves a snapshot + hash.
+The first dataset also **locks ~20% of the wells as the blind test** (proportional per type).
 
-### 5. Model
-**a. Bekukan dataset.** Dataset = semua titik aktual sumur berstatus A/B, dipasangkan dengan nilai
-WellPlan di kedalaman yang sama, plus fitur (kedalaman, WellPlan FF 0,3 & 0,5, kemiringan FF,
-rotating weight, section, tipe, format file, dan grup fitur tambahan). Pembekuan menyimpan snapshot
-+ hash. Dataset pertama juga **mengunci ~20% sumur sebagai blind test** (proporsional per tipe);
-sumur ini tidak pernah dipakai melatih atau memilih model.
+**b. Train a model** (about 3–5 minutes):
+1. Feature group tests (survey, casing shoe, BHA & mud, KOP & interval type, block weight,
+   **DD Calibrate offset**): a group is used only if it lowers the error by ≥ 1%.
+2. All candidates × direct/residual target, scored with **cross-validation grouped by well**.
+3. Single model vs one model per section × type (if ≥ 10 wells).
+4. Learning curve, error analysis, SHAP, uncertainty band (P10–P90).
+5. Compared with the active model: **worse → held** (can be activated manually).
 
-**b. Latih model.** Pilih dataset (bawaan: terbaru) dan algoritma ("Bandingkan semua" =
-Ridge, XGBoost, Random Forest, SVR; centang MLP bila perlu). Proses ±3–5 menit, berisi:
-1. Uji manfaat grup fitur (survey, casing shoe, BHA & lumpur, KOP & tipe interval, block weight):
-   grup hanya dipakai bila menurunkan error ≥ 1%.
-2. Semua kandidat × target langsung/selisih terhadap WellPlan, dinilai dengan **validasi silang
-   per kelompok sumur** (satu sumur tidak pernah ada di data latih dan uji sekaligus).
-3. Model tunggal vs model terpisah per kombinasi section × tipe (bila ≥ 10 sumur).
-4. Kurva belajar, analisis kesalahan, SHAP, pita ketidakpastian 10–90%.
-5. Dibandingkan dengan model aktif: **lebih buruk → ditahan** (tidak aktif). Bisa diaktifkan manual.
+**c. Read the report**, **d. run the blind test once** per model.
 
-**c. Baca laporan** (klik *Laporan*):
-- Tabel utama: RMSE WellPlan vs ML per operasi, persen titik ketika ML lebih dekat ke aktual.
-- Tab: Section × tipe, Section, Tipe, Kedalaman, Per sumur, Titik terburuk, Algoritma,
-  Tunggal vs kombinasi, Kurva belajar, SHAP.
-- Baris kuning = kombinasi dengan < 3 sumur (data sedikit).
-- **Laporan (.xlsx)** dan **Ringkasan PDF** untuk client.
+### 6. Monitoring
+Select **Well section** and **Well type**, optionally download the *Monitoring well template*,
+upload one file (T&D model, plus actual readings so far if available). The system imports, checks
+and forecasts with the active model, and shows a summary per operation (T&D model OHFF 0.3, ML
+forecast, P10–P90, ML − T&D model) with links to the dashboard, Excel and PDF. Upload the file again
+as drilling progresses. After the well is finished, **Promote to training** copies it into Training
+Data (it then goes through the data quality gate).
 
-**d. Blind test.** Setelah model final dipilih, klik **Jalankan blind test** (sekali saja per model;
-hasil dicatat apa adanya dan tidak bisa diulang).
+### 7. Dashboard
+- Filters: **Data group**, **Well section**, **Well type**, **Quality**, **Well**, **Units**
+  (imperial/SI), **Model**, **WellPlan curves** (Automatic / With DD Calibrate / As modelled).
+- Panels stacked: Hookload, Torque, Difference (Δ). Y axis `Depth (ft)`.
+- Standard series names: `PU - OHFF : 0.3`, `SO - OHFF : 0.5`, `ROT` (one curve),
+  `Torque On Bottom - OHFF : 0.3`, `Torque Off Bottom - OHFF : 0.5`; ML `PU - ML`, actual
+  `PU Actual`. PU and SO are told apart by name and position (as in the client's Excel); dashed
+  lines are reserved for the uncertainty band.
+- One fixed colour per OHFF in every chart (light → dark blue for 0.1 → 0.5); ML forecast orange;
+  actual readings green points; **uncertainty band (P10–P90) dashed**; **operating limits dotted**
+  red.
+- Defaults: **All OHFF curves** on, **Uncertainty band (P10–P90)** off.
+- Difference = A − B: right (+) = A is higher. Intervals with |Δ| above the threshold are shaded.
+- Training wells show an **unseen-well validation** forecast (a model that never saw that well).
 
-### 6. Dashboard
-- Filter **Section, Tipe, Kualitas**, pilih **Sumur**, **Satuan** (imperial/SI), dan **Model**
-  (aktif atau versi lain).
-- **Tiga panel ditumpuk ke bawah**: Hookload, Torque, Selisih. Warna: WellPlan biru, ML oranye,
-  Aktual titik hijau. Garis penuh = pick up / torque off bottom, putus-putus = slack off /
-  torque on bottom, titik-titik = rotating.
-- **Pita ketidakpastian ML** (arsiran oranye, 10–90%) bisa dimatikan.
-- **Zoom**: tarik kotak; klik dua kali = kembali; *Reset zoom* untuk semua panel. Dengan
-  "Samakan kedalaman saat zoom", zoom kedalaman berlaku di ketiga panel.
-- **Selisih** = A − B: kanan (+) A lebih tinggi, kiri (−) A lebih rendah. Pilih target dan mode
-  absolut/persen. Interval |selisih| > ambang diarsir kuning di ketiga panel.
-- Sumur latih memakai prediksi **out-of-fold** (model yang tidak pernah melihat sumur itu).
-- **Batas aman**: tambahkan batas (mis. pick up maks, torque on bottom maks = batas top drive,
-  slack off min) untuk sumur ini atau seluruh section. Tabel menunjukkan kedalaman pertama saat
-  ML, batas pita ML, dan WellPlan menyentuh batas; garis merah di grafik dan arsiran merah di
-  bawah kedalaman itu.
-- **Ekspor Excel**: sheet `Info`, `Drag`, `Torque`, `T&D Actual Reading` (struktur seperti file
-  roadmap + kolom ML, pita, selisih), `Selisih`, `Grafik` (3 grafik), `Batas aman`, `Metrik`.
-- **PDF**: ringkasan 2 halaman (status kualitas, versi model & dataset, metrik, batas aman,
-  tiga grafik).
+### 8. Forecast N ft ahead
+Dashboard → **Forecast ahead**: enter the distance (e.g. 300 ft); the start is the last actual depth
+(or the top of the T&D model). Optional **local bias correction** (median actual − ML of the last
+10 actual points within 1,000 ft; display only). Output per operation: ML forecast, P10–P90 and the
+T&D model per OHFF every 30 ft, plus **cause and effect**:
+- main drivers (local SHAP contributions to the change over the window),
+- plan changes (inclination, maximum dogleg, interval type),
+- operating limits reached by the forecast or the band, with the depth,
+- an automatic sentence, e.g. *"Pick up: from 8,450 to 8,750 ft the ML forecast is expected to rise
+  from 210.3 to 225.1 klbf (+14.8). Main drivers: T&D Model (+10.2), Inclination (+3.1)…"*.
 
-### 7. Prediksi sumur baru (dengan template)
-Data sumur → **Prediksi sumur baru**:
-1. **Unduh template** → *Template sumur baru (.xlsx)* (tanpa sheet data aktual).
-2. **Isi** `Info Sumur`, `Drag`, `Torque` dengan hasil WellPlan sumur yang akan dibor; `Survey`
-   bila ada (prediksi lebih baik).
-3. **Unggah** satu file. Sistem mengimpor, memeriksa, dan memprediksi dengan model aktif.
-4. **Hasil prediksi** langsung tampil: tabel per operasi di kedalaman akhir (WellPlan FF 0,3,
-   prediksi ML, rentang 10–90%, ML − WellPlan), peringatan (section/tipe jarang di data latih,
-   kedalaman di luar rentang latih, survey kosong), dan tombol **Buka dashboard**,
-   **Hasil prediksi (.xlsx)** (prediksi per kedalaman di sheet Drag/Torque + grafik), dan
-   **Ringkasan (PDF)**.
+The window is shaded in the charts. **⬇ Forecast (.xlsx)** exports it (Summary, one sheet per
+operation with a chart, Explanation). The forecast stops where the WellPlan results end.
 
-Bila file gagal diimpor, alasan per sheet/kolom ditampilkan; perbaiki lalu unggah lagi.
+### 9. Operating limits
+Add limits (e.g. pick up max, torque on bottom max = top drive limit, slack off min) for this well
+or the whole section. The table shows the first depth where ML, the ML band bound and the T&D model
+reach the limit, and the minimum margin.
 
-### 8. Evaluasi
-Saat file berisi data aktual sumur yang sudah diprediksi diimpor kemudian, prediksi lama otomatis
-dibandingkan dengan aktual dan WellPlan. Hasilnya di menu **Evaluasi**.
+### 10. Output
+- **Export Excel** (per well): `Info` (incl. DD Calibrate offsets), `Drag`, `Torque` (T&D model per
+  OHFF with standard names, ROT one column, ML, P10, P90, ML − T&D model), `T&D Actual Reading`,
+  `Difference`, `Operating limits`, `Charts` (one chart per operation + Difference), `Metrics`.
+- **PDF**: data quality, model & dataset versions, metrics, operating limits, six chart panels.
+- **Forecast (.xlsx)**, **model report (.xlsx / PDF)**, **data quality report (.xlsx)**.
+
+### 11. Evaluations
+When the actual data of a forecast monitoring well is uploaded later, the stored forecast is
+compared with the actual data and with the T&D model automatically.
 
 ---
 
-## B. Operasional (Docker)
+## B. Operations (Docker)
 
 ```bash
-make up                       # jalankan / perbarui (migrasi otomatis)
-make logs                     # log aplikasi
-make down                     # hentikan (data aman di volume)
-make password                 # ganti password admin + buka kunci login
-make inbox-training           # salin Training/ ke data/inbox
-make audit                    # laporan audit file -> data/audit/
-make backup                   # dump database manual -> backups/
+make up                       # start / update (migrations run automatically)
+make logs                     # application log
+make down                     # stop (data stays in the volumes)
+make password                 # change the admin password + remove the sign-in lock
+make inbox-training           # copy Training/ to data/inbox
+make practice-files           # synthetic practice files -> data/practice/{training,monitoring}
+make audit                    # file audit report -> data/audit/
+make backup                   # manual database dump -> backups/
+docker compose exec app python -m app.cli refresh-calibration   # re-read DD Calibrate offsets
+docker compose exec app python -m app.cli recompute-quality
 docker compose exec db psql -U tdml -d tdml
 ```
-**Jangan** `docker compose down -v` di server (menghapus database, unggahan, dan model).
+**Never** run `docker compose down -v` on the server (deletes the database, uploads and models).
 
-### Folder data
-| Folder | Isi | Di Git? |
+### Data folders
+| Folder | Content | In Git? |
 |---|---|---|
-| `Training/` | data sumur asli dari client | tidak |
-| `data/inbox/` | file menunggu dipindai | tidak |
-| `data/processed/`, `data/rejected/` | file setelah dipindai | tidak |
-| `data/audit/`, `data/reports/` | laporan berisi nama sumur | tidak |
-| volume `uploads`, `models` | salinan file terimpor, model `.joblib`, dataset beku | tidak |
+| `Training/` | the client's original well data | no |
+| `data/inbox/` | files waiting to be scanned | no |
+| `data/processed/`, `data/rejected/` | files after scanning | no |
+| `data/practice/` | synthetic practice files | no |
+| `data/audit/`, `data/reports/` | reports containing well names | no |
+| volumes `uploads`, `models` | imported file copies, `.joblib` models, frozen datasets | no |
 
-Folder `data/` harus bisa ditulis uid 1000 (user di dalam container) dan tertutup untuk pengguna
-lain: `sudo chown -R 1000:1000 data && chmod 750 data`.
+`data/` must be writable by uid 1000 (the user inside the container) and closed to other users:
+`sudo chown -R 1000:1000 data && chmod 750 data`.
 
-### Pemasangan server baru
-`DOMAIN=td.domain.com EMAIL=... bash deploy/setup_server.sh`, isi `ADMIN_*` dan
-`COOKIE_SECURE=true` di `.env`, `make up`, login, hapus `ADMIN_PASSWORD`, cabut basic auth nginx.
-Salin data ke `data/inbox/` server **setelah** HTTPS dan login berjalan.
+### Retraining when new data arrives
+1. Upload in Training Data or scan the folder (or Promote a finished monitoring well).
+2. Review status C in Data Quality.
+3. Models → **Freeze a new dataset** (the existing blind test stays locked).
+4. **Train model** with the new dataset. If it is worse than the active model, it is held.
 
-### Pelatihan ulang saat data baru datang
-1. Taruh file di `data/inbox/`, Pindai folder.
-2. Tinjau status C di Kualitas data.
-3. Model → **Bekukan dataset baru** (blind test lama tetap terkunci).
-4. **Latih model** dengan dataset baru. Bila lebih buruk dari model aktif, model ditahan.
+### Upgrading to this version (feedback #1)
+Migrations `0003` (Training/Monitoring) and `0004` (English status codes) run on `make up`.
+Migration 0004 clears the stored data quality, so afterwards run:
+```bash
+docker compose exec app python -m app.cli refresh-calibration
+docker compose exec app python -m app.cli recompute-quality
+```
+Then freeze a new dataset and train (the DD Calibrate feature group is tested automatically).
 
-### Backup dan pemulihan
-- Service `backup`: dump harian di `./backups` (7 hari).
-- Salin juga volume `uploads` dan `models`:
+### Backup and restore
+- Service `backup`: daily dump in `./backups` (7 days).
+- Also copy the `uploads` and `models` volumes:
   `docker run --rm -v td-ml_models:/m -v $PWD/backups:/b alpine tar czf /b/models.tgz -C /m .`
-- Uji pulihkan sekali sebelum serah terima:
+- Test a restore once before hand-over:
   ```bash
-  docker compose exec -T db createdb -U tdml tdml_uji
-  gunzip -c backups/last/tdml-*.sql.gz | docker compose exec -T db psql -q -U tdml -d tdml_uji
-  docker compose exec -T db dropdb -U tdml tdml_uji
+  docker compose exec -T db createdb -U tdml tdml_test
+  gunzip -c backups/last/tdml-*.sql.gz | docker compose exec -T db psql -q -U tdml -d tdml_test
+  docker compose exec -T db dropdb -U tdml tdml_test
   ```
 
-### Serah terima
-1. `make password` → password baru, serahkan lewat jalur aman.
-2. Pastikan `.env` tanpa `ADMIN_PASSWORD`.
-3. Uji alur penuh di server: Pindai folder → Kualitas → Latih → Blind test → Dashboard → Ekspor/PDF.
-4. Hapus salinan data client di laptop dalam 14 hari (Pasal 11 ayat 4).
+### Hand-over
+1. `make password` → new password, hand it over through a secure channel.
+2. Make sure `.env` has no `ADMIN_PASSWORD`.
+3. Test the full flow on the server: Training upload → Data Quality → Train → Blind test →
+   Monitoring upload → Forecast → Excel/PDF.
+4. Delete copies of client data on laptops within 14 days (Article 11(4)).

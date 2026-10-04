@@ -59,11 +59,13 @@ def parse_roadmap(wb, pw: ParsedWorkbook) -> None:
         else:
             pw.sheets.append(SheetInfo(ws.title, None, len(rows)))
     if "drag" not in names:
-        pw.error("Sheet 'Drag' tidak ada")
+        pw.error("Sheet 'Drag' is missing")
     if "torque" not in names:
-        pw.error("Sheet 'Torque' tidak ada")
+        pw.error("Sheet 'Torque' is missing")
     if not any(re.search(cm.ACTUAL_SHEET, n) for n in names):
-        pw.warn("Sheet 'T&D Actual Reading' tidak ada: file hanya berisi rencana WellPlan")
+        pw.warn(
+            "Sheet 'T&D Actual Reading' is missing: the file only contains the WellPlan T&D model"
+        )
     if pw.plan:
         pw.kinds.add("plan")
     if pw.actual:
@@ -75,7 +77,7 @@ def parse_roadmap(wb, pw: ParsedWorkbook) -> None:
 
 
 def _parse_info(rows, pw, sheet) -> dict:
-    """Sheet 'Info Sumur' dari template: label di kolom A, nilai di kolom B."""
+    """Sheet 'Well Info' (dulu 'Info Sumur') dari template: label di kolom A, nilai di kolom B."""
     out: dict = {"template": True}
     for r in rows:
         label, val = norm(cell(r, 0)), cell(r, 1)
@@ -87,14 +89,14 @@ def _parse_info(rows, pw, sheet) -> dict:
             if key in ("section_template", "block_weight_klbf", "casing_shoe", "mud_weight_ppg"):
                 num = first_number(val)
                 if num is None:
-                    pw.error(f"Nilai '{val}' untuk '{cell(r, 0)}' bukan angka", sheet)
+                    pw.error(f"Value '{val}' for '{cell(r, 0)}' is not a number", sheet)
                 else:
                     out[key] = num
             elif key == "well_type_template":
                 t = str(val).strip().lower()
                 mapped = {"j": "J", "s": "S", "horizontal": "Horizontal", "h": "Horizontal"}.get(t)
                 if mapped is None:
-                    pw.error(f"Tipe sumur '{val}' harus J, S, atau Horizontal", sheet)
+                    pw.error(f"Well type '{val}' must be J, S or Horizontal", sheet)
                 else:
                     out[key] = mapped
             else:
@@ -115,7 +117,7 @@ def _parse_block_sheet(rows, pw, sheet, op_patterns, default_unit) -> None:
         None,
     )
     if hdr is None:
-        pw.error("Header 'Run Measured Depth' tidak ditemukan", sheet)
+        pw.error("Header 'Run Measured Depth' not found", sheet)
         return
     head = rows[hdr]
     ffrow = rows[hdr + 1] if hdr + 1 < len(rows) else ()
@@ -132,7 +134,7 @@ def _parse_block_sheet(rows, pw, sheet, op_patterns, default_unit) -> None:
         if re.search(cm.ROADMAP_DEPTH_HEADER, norm(c)) and (gcol is None or j < gcol)
     ]
     if not starts:
-        pw.error("Tidak ada blok WellPlan sebelum 'Graph reference'", sheet)
+        pw.error("No WellPlan block before 'Graph reference'", sheet)
         return
     data_start = hdr + 2
     if all(to_float(c) is None for c in unitrow if c not in (None, "")):
@@ -154,7 +156,7 @@ def _parse_block_sheet(rows, pw, sheet, op_patterns, default_unit) -> None:
             unit = unit_in(cell(unitrow, j)) or default_unit
             cols.append((j, op, col_ff, unit))
         if ff is None and cols:
-            pw.warn(f"Nilai FF blok kolom {c0 + 1} tidak terbaca", sheet)
+            pw.warn(f"OHFF value of the block at column {c0 + 1} cannot be read", sheet)
         for r in rows[data_start:]:
             d = to_float(cell(r, c0))
             if d is None:
@@ -165,7 +167,7 @@ def _parse_block_sheet(rows, pw, sheet, op_patterns, default_unit) -> None:
                     pw.plan.append(Row(op, d, depth_unit, v, unit, sheet, col_ff))
                     found += 1
     if not found:
-        pw.error("Tidak ada nilai WellPlan yang terbaca", sheet)
+        pw.error("No WellPlan values could be read", sheet)
 
 
 def _ff(text) -> float | None:
@@ -192,13 +194,30 @@ def _parse_drag_calibration(rows, pw) -> None:
 
 
 def _parse_torque_calibration(rows, pw) -> None:
+    """Baris "Calibrate On Bot Torque" (nilai di kolom C) dan baris tepat di bawahnya = off bottom.
+
+    Label baris kedua ("Calibrate Off Bot Torque") kadang tertimpa angka, jadi dibaca menurut posisi.
+    """
     cal = {}
-    for r in rows[:5]:
+    for i, r in enumerate(rows[:6]):
         label = norm(cell(r, 0))
-        if label.startswith("calibrate"):
-            v = next((to_float(c) for c in r[1:] if to_float(c) is not None), None)
+        if not label.startswith("calibrate"):
+            continue
+        if "off" in label:
+            v = to_float(cell(r, 2))
             if v is not None:
-                cal["on_bottom" if "on bot" in label else "off_bottom"] = v
+                cal["off_bottom"] = v
+            continue
+        v = to_float(cell(r, 2))
+        if v is not None:
+            cal["on_bottom"] = v
+        if i + 1 < len(rows) and "off_bottom" not in cal:
+            nxt = rows[i + 1]
+            nl = cell(nxt, 0)
+            if not isinstance(nl, str) or "off" in norm(nl):
+                v = to_float(cell(nxt, 2))
+                if v is not None:
+                    cal["off_bottom"] = v
     if cal:
         pw.meta["calibration_torque_ftlbf"] = cal
 
@@ -208,7 +227,7 @@ def _parse_actual(rows, pw, sheet) -> None:
         (i for i, r in enumerate(rows[:30]) if any(norm(c).startswith("depth") for c in r)), None
     )
     if hdr is None:
-        pw.warn("Header 'Depth' data aktual tidak ditemukan", sheet)
+        pw.warn("Header 'Depth' of the actual data not found", sheet)
         return
     # meta di atas header
     for r in rows[:hdr]:
@@ -249,7 +268,7 @@ def _parse_actual(rows, pw, sheet) -> None:
         unit = unit_in(c) or default
         cols.append((j, op, unit))
     if not cols:
-        pw.warn("Kolom data aktual tidak dikenali", sheet)
+        pw.warn("Actual data columns not recognised", sheet)
         return
     for r in rows[hdr + 1 :]:
         d = to_float(cell(r, depth_col))

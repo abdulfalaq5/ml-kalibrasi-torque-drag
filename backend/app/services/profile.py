@@ -1,7 +1,11 @@
-"""Data tiga grafik dashboard (Hookload, Torque, Selisih) untuk satu sumur.
+"""Data grafik dashboard (Hookload, Torque, Difference) untuk satu sumur.
 
-Konvensi selisih: A - B. Positif = A lebih tinggi = ke KANAN pada grafik Selisih.
+Konvensi selisih: A - B. Positif = A lebih tinggi = ke KANAN pada grafik Difference.
 Selisih terhadap Aktual hanya dihitung pada kedalaman yang punya data aktual.
+
+Kurva WellPlan "calibrated" = WellPlan + offset Calibrate DD (sama dengan kolom
+"Graph reference" di Excel client); default bila file punya offset Calibrate.
+ROT (rotating weight) ditampilkan satu kurva saja (OHFF baseline).
 """
 
 import numpy as np
@@ -11,9 +15,17 @@ from sqlalchemy.orm import Session
 from app.db.models import MLModel, PredictionPoint, Well, WellQuality
 from app.services import dataset as dsm
 from app.services import units
+from app.services.calibration import has_calibration, offsets_si
 from app.services.limits import applicable_limits, first_crossing, margin
 from app.services.metrics import all_metrics
-from app.services.operations import BASELINE_FF, OP_DIMENSION, OP_LABELS, OPERATIONS
+from app.services.operations import (
+    BASELINE_FF,
+    OP_DIMENSION,
+    OP_LABELS,
+    OPERATIONS,
+    SINGLE_CURVE_OPS,
+    series_name,
+)
 from app.services.predict import coverage_warnings, load_bundle, prediction_for_dashboard
 from app.services.quality import effective_status, latest_review
 from app.services.training import active_model
@@ -37,9 +49,17 @@ def _depth_or_none(d, conv_depth):
 
 
 def well_profile(
-    db: Session, well: Well, unit_system: str = "imperial", model: MLModel | None = None
+    db: Session,
+    well: Well,
+    unit_system: str = "imperial",
+    model: MLModel | None = None,
+    calibration: str | None = None,
 ) -> dict:
+    """calibration: "calibrated" | "raw" | None (otomatis: calibrated bila ada offset Calibrate)."""
     disp = units.DISPLAY_UNITS[unit_system]
+    cal_available = has_calibration(well)
+    mode = calibration or ("calibrated" if cal_available else "raw")
+    offsets = offsets_si(well) if mode == "calibrated" else {}
     len_u = disp["length"]
 
     def conv_depth(a):
@@ -76,26 +96,41 @@ def well_profile(
                 well.well_type,
             )
     elif model is None:
-        warnings.append("Belum ada model aktif: grafik hanya menampilkan WellPlan dan aktual")
+        warnings.append(
+            "No active model yet: charts show only the WellPlan T&D model and actual data"
+        )
     else:
-        warnings.append("Sumur belum diprediksi dengan model aktif. Klik 'Prediksi'.")
+        warnings.append(
+            "This well has not been forecast with the active model yet. Click 'Forecast'."
+        )
 
     has_actual = not actual.empty
     limits = applicable_limits(db, well)
     wq = db.scalar(select(WellQuality).where(WellQuality.well_id == well.id))
     review = latest_review(db, well.id)
     if not has_actual:
-        warnings.append("Belum ada data aktual: grafik Selisih hanya menampilkan ML - WellPlan")
+        warnings.append("No actual data yet: the Difference chart shows only ML - T&D Model")
 
     ops_out = {}
     for op in OPERATIONS:
-        curves = dsm.plan_curves(plan, well.id, op)
+        off = offsets.get(op, 0.0)
+        curves = {ff: (d, v + off) for ff, (d, v) in dsm.plan_curves(plan, well.id, op).items()}
+        # kurva baseline: OHFF 0.3, atau satu-satunya kurva (laporan WellPlan), atau kurva pertama
+        base_key = next((k for k in (BASELINE_FF, None) if k in curves), next(iter(curves), None))
+        base = curves.get(base_key)
         wp_series = []
-        for ff, (d, v) in sorted(curves.items(), key=lambda kv: (kv[0] is None, kv[0] or 0)):
-            wp_series.append({"ff": ff, "depth": _r(conv_depth(d), 2), "value": _r(conv(v, op))})
-        base = curves.get(BASELINE_FF) or curves.get(None)
-        if base is None and curves:
-            base = next(iter(curves.values()))
+        items = sorted(curves.items(), key=lambda kv: (kv[0] is None, kv[0] or 0))
+        if op in SINGLE_CURVE_OPS and base is not None:
+            items = [(base_key, base)]  # ROT: satu kurva
+        for ff, (d, v) in items:
+            wp_series.append(
+                {
+                    "ff": ff,
+                    "name": series_name(op, ff),
+                    "depth": _r(conv_depth(d), 2),
+                    "value": _r(conv(v, op)),
+                }
+            )
 
         ml = sorted((p.depth_m, p.ml_si) for p in pts if p.operation == op)
         ml_d = np.array([p[0] for p in ml])
@@ -149,7 +184,7 @@ def well_profile(
                 {
                     "id": lim.id,
                     "kind": lim.kind,
-                    "scope": "sumur" if lim.well_id else "section",
+                    "scope": "well" if lim.well_id else "section",
                     "value": round(units.from_si(lim.value_si, disp_u), 3),
                     "note": lim.note,
                     "cross_ml": _depth_or_none(
@@ -177,6 +212,9 @@ def well_profile(
             "unit": units.UNIT_LABELS[disp[OP_DIMENSION[op]]],
             "wellplan": wp_series,
             "wellplan_baseline_ff": BASELINE_FF if BASELINE_FF in curves else None,
+            "calibration_offset": None
+            if op not in offsets_si(well)
+            else round(units.from_si(offsets_si(well)[op], disp[OP_DIMENSION[op]]), 3),
             "ml": {
                 "depth": _r(conv_depth(ml_d), 2),
                 "value": _r(conv(ml_v, op)),
@@ -213,7 +251,9 @@ def well_profile(
             "name": well.name,
             "section_in": well.section_in,
             "well_type": well.well_type,
+            "purpose": well.purpose,
         },
+        "calibration": {"available": cal_available, "mode": mode},
         "unit_system": unit_system,
         "depth_unit": units.UNIT_LABELS[len_u],
         "has_actual": has_actual,
@@ -232,12 +272,12 @@ def well_profile(
             "status": effective_status(wq, review),
             "auto_status": wq.status if wq else None,
             "score": wq.score if wq else None,
-            "issues": [c for c in (wq.checks if wq else []) if c["level"] != "lolos"],
+            "issues": [c for c in (wq.checks if wq else []) if c["level"] != "pass"],
             "review": None
             if review is None
             else {"decision": review.decision, "reason": review.reason},
         },
         "warnings": warnings,
-        "sign_convention": "Selisih = A - B. Kanan (+) = A lebih tinggi, kiri (-) = A lebih rendah.",
+        "sign_convention": "Difference = A - B. Right (+) = A is higher, left (-) = A is lower.",
         "operations": ops_out,
     }

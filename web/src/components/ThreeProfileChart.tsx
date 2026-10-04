@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as Plotly from "plotly.js";
 import PlotlyChart from "./PlotlyChart";
-import { Op, OP_LABEL, Profile } from "../api";
-import { COLOR, DASH, DIFF_COLOR, DIFF_KEYS, DIFF_LABEL, DiffKey, SYMBOL } from "./chartTheme";
+import { Forecast, Op, OP_LABEL, Profile, SERIES_PREFIX } from "../api";
+import { COLOR, DIFF_COLOR, DIFF_KEYS, DIFF_LABEL, DiffKey, ohffColor, SYMBOL } from "./chartTheme";
 
 export const HOOKLOAD_OPS: Op[] = ["pick_up", "slack_off", "rotating_weight"];
 export const TORQUE_OPS: Op[] = ["torque_off_bottom", "torque_on_bottom"];
@@ -26,7 +26,7 @@ const CONFIG: Partial<Plotly.Config> = {
   toImageButtonOptions: { format: "png", scale: 2 },
 };
 
-/** Interval kedalaman dengan |selisih| > ambang. Batas = titik tengah ke tetangga. */
+/** Depth intervals with |difference| > threshold. Bounds = midpoint to the neighbour. */
 export function flaggedIntervals(depth: number[], vals: number[], threshold: number): Interval[] {
   if (!depth.length || !(threshold > 0)) return [];
   const idx = depth.map((_, i) => i).sort((a, b) => depth[a] - depth[b]);
@@ -86,7 +86,7 @@ function nearest(depth: number[], value: number[], at: number, tol: number): num
   return best;
 }
 
-/** Ambil rentang sumbu Y dari event relayout Plotly. null = autorange, undefined = bukan perubahan Y. */
+/** Y-axis range from a Plotly relayout event. null = autorange, undefined = not a Y change. */
 function yRangeFromRelayout(e: Plotly.PlotRelayoutEvent): [number, number] | null | undefined {
   const r = e as Record<string, unknown>;
   if (r["yaxis.autorange"]) return null;
@@ -103,14 +103,16 @@ export default function ThreeProfileChart({
   profile,
   options,
   intervals,
+  forecast,
 }: {
   profile: Profile;
   options: ChartOptions;
   intervals: Interval[];
+  forecast?: Forecast | null;
 }) {
   const narrow = useNarrow();
   const [hoverDepth, setHoverDepth] = useState<number | null>(null);
-  // Rentang kedalaman bersama (null = otomatis) + revisi untuk mereset zoom sumbu X
+  // Shared depth range (null = automatic) + revision to reset the X zoom
   const [yRange, setYRange] = useState<[number, number] | null>(null);
   const [syncDepth, setSyncDepth] = useState(true);
   const [panelY, setPanelY] = useState<Record<PanelKey, [number, number] | null>>({
@@ -125,7 +127,7 @@ export default function ThreeProfileChart({
   const tqUnit = profile.operations.torque_off_bottom.unit;
   const target = profile.operations[options.diffTarget];
 
-  // Reset zoom saat sumur / satuan berganti
+  // Reset zoom when the well / unit system changes
   useEffect(() => {
     setYRange(null);
     setPanelY({ hookload: null, torque: null, diff: null });
@@ -138,45 +140,39 @@ export default function ThreeProfileChart({
       for (const op of ops) {
         if (!options.ops[op]) continue;
         const o = profile.operations[op];
-        const label = OP_LABEL[op];
+        const p = SERIES_PREFIX[op];
         for (const s of o.wellplan) {
           const isBase = s.ff === o.wellplan_baseline_ff || o.wellplan.length === 1;
           if (!isBase && !options.showFF) continue;
-          const name = `WellPlan ${label}${s.ff !== null ? ` FF ${s.ff}` : ""}`;
+          // standard names from the API: "PU - OHFF : 0.3", "SO - OHFF : 0.5", "ROT"
           out.push({
             type: "scatter",
             mode: "lines",
             x: s.value,
             y: s.depth,
-            name,
-            line: { color: COLOR.wellplan, width: isBase ? 2 : 1, dash: DASH[op] },
-            opacity: isBase ? 1 : 0.45,
-            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${name}</extra>`,
+            name: s.name,
+            line: { color: ohffColor(s.ff), width: 1.75 },
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${s.name}</extra>`,
           });
         }
         if (o.ml.depth.length && options.showBand && o.ml.lo?.length) {
-          // pita ketidakpastian 10-90%: dua kurva, area di antaranya diarsir
-          out.push({
-            type: "scatter",
-            mode: "lines",
-            x: o.ml.lo,
-            y: o.ml.depth,
-            line: { width: 0 },
-            hoverinfo: "skip",
-            showlegend: false,
-            name: `ML ${label} 10%`,
-          });
-          out.push({
-            type: "scatter",
-            mode: "lines",
-            x: o.ml.hi,
-            y: o.ml.depth,
-            line: { width: 0 },
-            fill: "tonextx",
-            fillcolor: "rgba(235, 104, 52, 0.13)",
-            hoverinfo: "skip",
-            name: `Pita ML ${label} (10–90%)`,
-          });
+          // uncertainty band P10–P90: two dashed bound lines
+          for (const [k, xs] of [
+            ["P10", o.ml.lo],
+            ["P90", o.ml.hi],
+          ] as const) {
+            out.push({
+              type: "scatter",
+              mode: "lines",
+              x: xs,
+              y: o.ml.depth,
+              name: `${p} - ML P10–P90`,
+              legendgroup: `band-${op}`,
+              showlegend: k === "P10",
+              line: { color: COLOR.ml, width: 1, dash: "dash" },
+              hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} - ML ${k}</extra>`,
+            });
+          }
         }
         if (o.ml.depth.length) {
           out.push({
@@ -184,9 +180,21 @@ export default function ThreeProfileChart({
             mode: "lines",
             x: o.ml.value,
             y: o.ml.depth,
-            name: `ML ${label}`,
-            line: { color: COLOR.ml, width: 2, dash: DASH[op] },
-            hovertemplate: `%{x:,.1f} ${o.unit}<extra>ML ${label}</extra>`,
+            name: `${p} - ML`,
+            line: { color: COLOR.ml, width: 2.5 },
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} - ML</extra>`,
+          });
+        }
+        const fo = forecast?.operations[op];
+        if (fo?.ml_corrected) {
+          out.push({
+            type: "scatter",
+            mode: "lines",
+            x: fo.ml_corrected,
+            y: fo.depth,
+            name: `${p} - ML forecast (bias-corrected)`,
+            line: { color: COLOR.mlMinusWp, width: 2.5 },
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} - ML forecast (bias-corrected)</extra>`,
           });
         }
         if (o.actual.depth.length) {
@@ -195,14 +203,14 @@ export default function ThreeProfileChart({
             mode: "markers",
             x: o.actual.value,
             y: o.actual.depth,
-            name: `Aktual ${label}`,
+            name: `${p} Actual`,
             marker: {
               color: COLOR.actual,
               size: 8,
               symbol: SYMBOL[op] as "circle",
               line: { color: COLOR.surface, width: 1.5 },
             },
-            hovertemplate: `%{x:,.1f} ${o.unit}<extra>Aktual ${label}</extra>`,
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} Actual</extra>`,
           });
         }
       }
@@ -245,9 +253,9 @@ export default function ThreeProfileChart({
       diff,
       diffRange: [-m, m] as [number, number],
     };
-  }, [profile, options, target]);
+  }, [profile, options, target, forecast]);
 
-  // Rentang kedalaman penuh yang sama untuk ketiga panel (terbalik: dalam di bawah)
+  // Same full depth range for all panels (reversed: deeper is lower)
   const fullRange = useMemo((): [number, number] | null => {
     let lo = Infinity;
     let hi = -Infinity;
@@ -279,7 +287,7 @@ export default function ThreeProfileChart({
           x1: lim.value,
           y0: 0,
           y1: 1,
-          line: { color: COLOR.limit, width: 2, dash: "dashdot" },
+          line: { color: COLOR.limit, width: 2, dash: "dot" },
         });
         limitNotes.push({
           x: lim.value,
@@ -288,7 +296,7 @@ export default function ThreeProfileChart({
           y: 1,
           yanchor: "bottom",
           showarrow: false,
-          text: `${lim.kind === "max" ? "maks" : "min"} ${OP_LABEL[op]}`,
+          text: `${lim.kind === "max" ? "max" : "min"} ${SERIES_PREFIX[op]}`,
           font: { size: 10, color: COLOR.limit },
         });
         if (lim.cross_ml !== null) {
@@ -307,6 +315,37 @@ export default function ThreeProfileChart({
         }
       }
     }
+    const zone: Partial<Plotly.Shape>[] = forecast
+      ? [
+          {
+            type: "rect",
+            xref: "paper",
+            yref: "y",
+            x0: 0,
+            x1: 1,
+            y0: forecast.start_depth,
+            y1: forecast.end_depth,
+            fillcolor: COLOR.forecastZone,
+            line: { width: 0 },
+            layer: "below",
+          },
+        ]
+      : [];
+    const zoneNote: Partial<Plotly.Annotations>[] = forecast
+      ? [
+          {
+            x: 0,
+            xref: "paper",
+            y: forecast.start_depth,
+            yref: "y",
+            yanchor: "top",
+            xanchor: "left",
+            showarrow: false,
+            text: `Forecast ${forecast.distance_ft} ft ahead`,
+            font: { size: 10, color: COLOR.mlMinusWp },
+          },
+        ]
+      : [];
     const shapes: Partial<Plotly.Shape>[] = intervals.map((iv) => ({
       type: "rect",
       xref: "paper",
@@ -335,12 +374,12 @@ export default function ThreeProfileChart({
       hovermode: "y unified",
       hoverlabel: { bgcolor: "#ffffff", bordercolor: COLOR.grid, font: { color: COLOR.text } },
       dragmode: "zoom",
-      // revisi UI: zoom sumbu X per panel bertahan saat hover/penandaan berubah
+      // UI revision: per-panel X zoom survives hover/flag changes
       uirevision: `${key}-${zoomRev}-${options.diffTarget}-${options.diffMode}`,
       showlegend: !narrow,
       legend: { orientation: "v", x: 1.02, y: 1, font: { size: 11, color: COLOR.textMuted } },
-      shapes: [...shapes, ...limitShapes] as Plotly.Shape[],
-      annotations: limitNotes as Plotly.Annotations[],
+      shapes: [...zone, ...shapes, ...limitShapes] as Plotly.Shape[],
+      annotations: [...zoneNote, ...limitNotes] as Plotly.Annotations[],
       xaxis: {
         ...axisBase,
         title: { text: xTitle, font: { color: COLOR.textMuted, size: 12 } },
@@ -351,10 +390,10 @@ export default function ThreeProfileChart({
       yaxis: {
         ...axisBase,
         zeroline: false,
-        title: { text: `Kedalaman (${du})`, font: { color: COLOR.textMuted, size: 12 } },
-        // kedalaman dikendalikan state aplikasi: revisi berubah setiap rentang berubah
+        title: { text: `Depth (${du})`, font: { color: COLOR.textMuted, size: 12 } },
+        // depth is controlled by app state: the revision changes whenever the range changes
         uirevision: `${range ? range.join(",") : "auto"}-${zoomRev}`,
-        // salinan: Plotly menulis hasil zoom langsung ke array range yang diberikan
+        // copy: Plotly writes the zoom result into the range array it is given
         ...(range ? { range: [...range], autorange: false } : { autorange: "reversed" }),
       },
     };
@@ -366,18 +405,18 @@ export default function ThreeProfileChart({
     { key: "torque", title: `Torque (${tqUnit})`, data: traces.torque, xTitle: `Torque (${tqUnit})` },
     {
       key: "diff",
-      title: `Selisih: ${OP_LABEL[options.diffTarget]} (${diffUnit})`,
+      title: `Difference (Δ): ${OP_LABEL[options.diffTarget]} (${diffUnit})`,
       data: traces.diff,
-      xTitle: `← lebih rendah (−)   Selisih (${diffUnit})   lebih tinggi (+) →`,
+      xTitle: `← lower (−)   Difference Δ (${diffUnit})   higher (+) →`,
     },
   ];
-  // layout dibuat ulang hanya bila input berubah (Plotly.react murah bila sama)
+  // layouts are rebuilt only when inputs change (Plotly.react is cheap when equal)
   const layouts = useMemo(
     () => Object.fromEntries(panels.map((p) => [p.key, makeLayout(p.key, p.xTitle)])) as Record<
       PanelKey,
       Partial<Plotly.Layout>
     >,
-    [narrow, intervals, yRange, fullRange, panelY, syncDepth, zoomRev, traces, options, du, hkUnit, tqUnit, target],
+    [narrow, intervals, yRange, fullRange, panelY, syncDepth, zoomRev, traces, options, du, hkUnit, tqUnit, target, forecast],
   );
 
   const onHover = (e: Plotly.PlotHoverEvent) => {
@@ -397,7 +436,7 @@ export default function ThreeProfileChart({
     const r = yRangeFromRelayout(e);
     if (r === undefined) return;
     if (r === null) {
-      // klik dua kali: kembali ke rentang penuh bersama (tetap terbalik, sejajar)
+      // double click: back to the shared full range (still reversed, aligned)
       resetZoom();
       return;
     }
@@ -405,7 +444,7 @@ export default function ThreeProfileChart({
     else setPanelY((p) => ({ ...p, [key]: r }));
   };
 
-  // Pembacaan tersinkron: nilai semua profil di kedalaman penuntun
+  // Synchronised readout: values of all profiles at the guide depth
   const readout = useMemo(() => {
     if (hoverDepth === null) return null;
     const tol = du === "ft" ? 60 : 20;
@@ -415,7 +454,7 @@ export default function ThreeProfileChart({
       const o = profile.operations[op];
       const base = o.wellplan.find((s) => s.ff === o.wellplan_baseline_ff) ?? o.wellplan[0];
       rows.push({
-        label: OP_LABEL[op],
+        label: SERIES_PREFIX[op],
         wp: base ? interpAt(base.depth, base.value, hoverDepth) : null,
         ml: interpAt(o.ml.depth, o.ml.value, hoverDepth),
         act: nearest(o.actual.depth, o.actual.value, hoverDepth, tol),
@@ -430,7 +469,7 @@ export default function ThreeProfileChart({
     return { rows, diffs };
   }, [hoverDepth, profile, options.ops, target, du]);
 
-  const f = (v: number | null) => (v === null ? "–" : v.toLocaleString("id-ID", { maximumFractionDigits: 1 }));
+  const f = (v: number | null) => (v === null ? "–" : v.toLocaleString("en-US", { maximumFractionDigits: 1 }));
   const zoomed = yRange !== null || Object.values(panelY).some((r) => r !== null);
 
   return (
@@ -445,10 +484,10 @@ export default function ThreeProfileChart({
               setPanelY({ hookload: null, torque: null, diff: null });
             }}
           />
-          Samakan kedalaman saat zoom (ketiga panel)
+          Same depth in all panels when zooming
         </label>
         <span className="muted small">
-          Zoom: tarik kotak pada grafik · geser: ikon tangan di toolbar grafik · klik dua kali: kembali penuh
+          Zoom: drag a box on a chart · pan: hand icon in the chart toolbar · double click: full view
         </span>
         <div className="spacer" />
         <button className="btn small" onClick={resetZoom} disabled={!zoomed}>
@@ -469,7 +508,7 @@ export default function ThreeProfileChart({
               guideY={hoverDepth}
             />
           ) : (
-            <p className="muted">Tidak ada data untuk panel ini (periksa kotak centang operasi).</p>
+            <p className="muted">No data for this panel (check the operation checkboxes).</p>
           )}
         </section>
       ))}
@@ -478,16 +517,16 @@ export default function ThreeProfileChart({
         {readout ? (
           <>
             <b>
-              Kedalaman {hoverDepth!.toLocaleString("id-ID", { maximumFractionDigits: 0 })} {du}
+              Depth {hoverDepth!.toLocaleString("en-US", { maximumFractionDigits: 0 })} {du}
             </b>
             {readout.rows.map((r) => (
               <span key={r.label}>
                 {r.label}: <i className="k wp">WP</i> {f(r.wp)} · <i className="k ml">ML</i> {f(r.ml)} ·{" "}
-                <i className="k act">Akt</i> {f(r.act)} {r.unit}
+                <i className="k act">Act</i> {f(r.act)} {r.unit}
               </span>
             ))}
             <span>
-              Selisih {OP_LABEL[options.diffTarget]}:{" "}
+              Δ {OP_LABEL[options.diffTarget]}:{" "}
               {readout.diffs.map((d) => (
                 <span key={d.key} className="nowrap">
                   {DIFF_LABEL[d.key]} {d.v === null ? "–" : `${d.v > 0 ? "+" : ""}${f(d.v)}`};{" "}
@@ -498,8 +537,8 @@ export default function ThreeProfileChart({
           </>
         ) : (
           <span className="muted">
-            Arahkan kursor ke salah satu grafik: garis penuntun muncul di ketiga panel pada kedalaman yang sama, dan
-            nilainya tampil di sini.
+            Hover over any chart: a guide line appears in all panels at the same depth and the values are shown
+            here.
           </span>
         )}
       </div>

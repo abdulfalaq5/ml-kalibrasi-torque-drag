@@ -24,7 +24,7 @@ def classify_section(hole_in: float | None, tolerance: float = 0.4) -> float | N
 def classify_well_type(md: list[float], inc: list[float]) -> tuple[str | None, str | None]:
     """Kembalikan (tipe, peringatan)."""
     if len(inc) < 3:
-        return None, "Survey terlalu sedikit untuk menentukan tipe sumur"
+        return None, "Too few survey points to determine the well type"
     pairs = sorted(zip(md, inc, strict=True))
     incs = [i for _, i in pairs]
     max_inc = max(incs)
@@ -34,5 +34,5 @@ def classify_well_type(md: list[float], inc: list[float]) -> tuple[str | None, s
     if max_inc >= 10 and max_inc - final_inc >= S_MIN_DROP:
         return "S", None
     if max_inc < NEAR_VERTICAL_INC:
-        return "J", f"Sumur hampir vertikal (inklinasi maks {max_inc:.1f}°), dicatat sebagai J"
+        return "J", f"Near-vertical well (max inclination {max_inc:.1f}°), recorded as J"
     return "J", None

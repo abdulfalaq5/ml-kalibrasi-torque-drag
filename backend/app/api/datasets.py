@@ -62,8 +62,8 @@ class ResetIn(BaseModel):
 @router.post("/blind/reset")
 def reset_blind(body: ResetIn, db: Session = Depends(get_db)):
     """Buka kunci blind test (mis. data berubah total). Wajib konfirmasi tertulis."""
-    if body.confirm != "BUKA KUNCI":
-        raise HTTPException(400, "Ketik 'BUKA KUNCI' untuk mengonfirmasi")
+    if body.confirm.strip().upper() not in ("UNLOCK", "BUKA KUNCI"):
+        raise HTTPException(400, "Type 'UNLOCK' to confirm")
     db.execute(update(BlindSet).values(active=False))
     db.commit()
     return {"ok": True}
@@ -73,7 +73,7 @@ def reset_blind(body: ResetIn, db: Session = Depends(get_db)):
 def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
     d = db.get(Dataset, dataset_id)
     if d is None:
-        raise HTTPException(404, "Dataset tidak ditemukan")
+        raise HTTPException(404, "Dataset not found")
     return ds_out(d, full=True)
 
 
@@ -81,7 +81,7 @@ def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
 def download(dataset_id: int, db: Session = Depends(get_db)):
     d = db.get(Dataset, dataset_id)
     if d is None:
-        raise HTTPException(404, "Dataset tidak ditemukan")
+        raise HTTPException(404, "Dataset not found")
     with open(d.path, "rb") as fh:
         data = fh.read()
     return Response(

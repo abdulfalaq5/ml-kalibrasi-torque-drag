@@ -1,8 +1,10 @@
-"""Impor satu file Excel ke database: parse, validasi, klasifikasi, simpan.
+"""Import one Excel file into the database: parse, validate, classify, store.
 
-Dipakai oleh unggah manual (api/files.py) dan impor massal folder (services/inbox.py).
-Setelah impor: kualitas data sumur dihitung ulang, dan prediksi lama sumur itu
-dievaluasi otomatis bila data aktualnya baru masuk.
+Used by manual upload (api/files.py) and folder scan (services/inbox.py).
+Every file belongs to one group (purpose): "training" (ML reference) or "monitoring"
+(calculated/forecast only, never used for training). The groups never mix.
+After import: the well's data quality is recomputed and earlier forecasts are evaluated
+when actual data arrives.
 """
 
 import hashlib
@@ -16,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.models import (
+    PURPOSES,
     ActualReading,
     PlanResult,
     Survey,
@@ -31,6 +34,7 @@ from app.services.classify import classify_section, classify_well_type
 log = logging.getLogger(__name__)
 
 ALLOWED_EXT = {".xlsx", ".xlsm"}
+OK_STATUSES = ("ok", "warning")
 META_KEYS = (
     "field",
     "client",
@@ -84,11 +88,13 @@ def store_upload(src: Path, original_name: str) -> tuple[Path, str]:
     return dest, checksum
 
 
-def find_by_checksum(db: Session, checksum: str) -> UploadedFile | None:
+def find_by_checksum(db: Session, checksum: str, purpose: str = "training") -> UploadedFile | None:
+    """Identical file already imported in the same group (training/monitoring)."""
     return db.scalar(
         select(UploadedFile).where(
             UploadedFile.checksum == checksum,
-            UploadedFile.status.in_(["ok", "peringatan"]),
+            UploadedFile.purpose == purpose,
+            UploadedFile.status.in_(OK_STATUSES),
         )
     )
 
@@ -103,8 +109,11 @@ def import_file(
     rel_path: str | None = None,
     source: str = "upload",
     well_type: str | None = None,
+    purpose: str = "training",
 ) -> UploadedFile:
-    existing = find_by_checksum(db, checksum)
+    if purpose not in PURPOSES:
+        raise ValueError(f"Unknown purpose '{purpose}'")
+    existing = find_by_checksum(db, checksum, purpose)
     if existing is not None:
         return existing
 
@@ -112,9 +121,10 @@ def import_file(
         filename=original_name,
         path=str(path),
         checksum=checksum,
-        status="diproses",
+        status="processing",
         source=source,
         rel_path=rel_path,
+        purpose=purpose,
     )
     db.add(uf)
     db.flush()
@@ -126,51 +136,57 @@ def import_file(
     name = (
         well_name
         or meta.get("well_folder")
-        or (meta.get("well_name") if meta.get("template") else None)
         or meta.get("well_name")
         or _name_from_filename(original_name)
     ).strip()
     if meta.get("template") and not (well_name or meta.get("well_name")):
-        pw.warn("Nama sumur di sheet 'Info Sumur' kosong; dipakai nama file")
-    section = classify_section(
-        section_in
-        or meta.get("section_template")
+        pw.warn("Well name in sheet 'Well Info' is empty; the file name is used")
+
+    file_section = classify_section(
+        meta.get("section_template")
         or meta.get("section_from_filename")
         or meta.get("hole_size_in")
         or meta.get("bit_size_in")
         or meta.get("section_meta_in")
     )
+    section = classify_section(section_in) if section_in else file_section
+    if section_in and file_section and classify_section(section_in) != file_section:
+        pw.warn(
+            f'Selected section ({classify_section(section_in):g}") differs from the file '
+            f'({file_section:g}"); the selected section is used'
+        )
     meta_sec = classify_section(meta.get("section_meta_in"))
     if section and meta_sec and meta_sec != section:
         pw.warn(
-            f'Section di sheet aktual ({meta.get("section_meta")}) berbeda dengan nama file '
-            f'({section:g}"); dipakai nilai dari nama file'
+            f'Section in the actual sheet ({meta.get("section_meta")}) differs from {section:g}"; '
+            f'{section:g}" is used'
         )
     if not pw.has_errors and section is None:
-        pw.error("Section (ukuran lubang) tidak ditemukan; isi kolom Section saat unggah")
+        pw.error("Section (hole size) not found; select the Section before uploading")
 
     if pw.has_errors:
-        uf.status = "gagal"
+        uf.status = "failed"
         _save_issues(db, uf, pw)
         uf.summary = _summary(pw)
         db.commit()
         return uf
 
-    well = _get_or_create_well(db, name, section)
+    well = _get_or_create_well(db, name, section, purpose)
     uf.well_id = well.id
     uf.version = _replace_previous(db, well, uf)
     _save_data(db, well, uf, pw)
     _classify(well, pw, well_type)
 
-    uf.status = "peringatan" if pw.issues else "ok"
+    uf.status = "warning" if pw.issues else "ok"
     _save_issues(db, uf, pw)
     uf.summary = _summary(pw)
-    has_actual = _has_actual(db, well)
-    well.status = "siap" if has_actual else "tanpa aktual"
+    well.status = "ready" if _has_actual(db, well) else "no_actual"
     db.commit()
-    log.info("Impor %s -> sumur %s (%s): %s", original_name, well.name, section, uf.status)
+    log.info(
+        "Import %s -> %s well %s (%s): %s", original_name, purpose, well.name, section, uf.status
+    )
 
-    # setelah impor: kualitas data + evaluasi prediksi lama (impor lokal agar tidak siklik)
+    # after import: data quality + evaluate earlier forecasts (local import avoids cycles)
     from app.services.evaluation import evaluate_well_predictions
     from app.services.quality import evaluate_well
 
@@ -188,31 +204,31 @@ def _name_from_filename(filename: str) -> str:
     return re.split(r"[_\s]+", stem)[0] or stem
 
 
-def _get_or_create_well(db: Session, name: str, section: float | None) -> Well:
-    q = select(Well).where(Well.name == name)
+def _get_or_create_well(db: Session, name: str, section: float | None, purpose: str) -> Well:
+    q = select(Well).where(Well.name == name, Well.purpose == purpose)
     q = q.where(Well.section_in.is_(None) if section is None else Well.section_in == section)
     well = db.scalar(q)
     if well is None:
-        well = Well(name=name, section_in=section, meta={})
+        well = Well(name=name, section_in=section, purpose=purpose, meta={})
         db.add(well)
         db.flush()
     return well
 
 
 def _replace_previous(db: Session, well: Well, uf: UploadedFile) -> int:
-    """File baru untuk sumur-section yang sama menggantikan file lama (versi naik)."""
+    """A new file for the same well section replaces the previous one (version + 1)."""
     olds = db.scalars(
         select(UploadedFile).where(
             UploadedFile.well_id == well.id,
             UploadedFile.id != uf.id,
-            UploadedFile.status.in_(["ok", "peringatan"]),
+            UploadedFile.status.in_(OK_STATUSES),
         )
     ).all()
     version = 1
     for old in olds:
         for model in (Survey, PlanResult, ActualReading):
             db.execute(delete(model).where(model.file_id == old.id))
-        old.status = "diganti"
+        old.status = "replaced"
         version = max(version, (old.version or 1) + 1)
     return version
 
@@ -233,7 +249,7 @@ def _save_data(db: Session, well: Well, uf: UploadedFile, pw: ParsedWorkbook) ->
                 else None,
             )
         )
-    # kedalaman duplikat dalam satu seri: nilai terakhir dipakai (dicatat oleh gerbang kualitas)
+    # duplicated depth within one series: last value wins (flagged by the quality gate)
     for rows, model in ((pw.plan, PlanResult), (pw.actual, ActualReading)):
         dedup: dict[tuple, object] = {}
         for r in rows:
@@ -258,22 +274,28 @@ def _save_data(db: Session, well: Well, uf: UploadedFile, pw: ParsedWorkbook) ->
         if k in pw.meta:
             meta[k] = pw.meta[k]
     if pw.fmt == "roadmap" and "casing_shoe" not in pw.meta and pw.meta.get("plan_depth_m"):
-        # roadmap tidak memuat kedalaman shoe; puncak section ~ shoe section sebelumnya (K-18)
+        # roadmap has no shoe depth; top of section ~ shoe of the previous section (K-18)
         top_m = pw.meta["plan_depth_m"][0]
         meta["casing_shoe"] = round(top_m / units.FT_TO_M, 1)
         meta["casing_shoe_unit"] = "ft"
-        meta["casing_shoe_source"] = "puncak rencana section"
+        meta["casing_shoe_source"] = "top of section plan"
     elif "casing_shoe" in pw.meta:
-        meta["casing_shoe_source"] = "wellbore WellPlan"
+        meta["casing_shoe_source"] = "WellPlan wellbore" if pw.fmt == "wellplan" else "Well Info"
     well.meta = meta
     db.flush()
 
 
 def _classify(well: Well, pw: ParsedWorkbook, override: str | None = None) -> None:
+    file_type = pw.meta.get("well_type_template") or pw.meta.get("well_type_folder")
     if override:
-        well.well_type, well.type_source = override, "manual"
+        if file_type and file_type != override:
+            pw.warn(
+                f"Selected well type ({override}) differs from the file ({file_type}); "
+                "the selected type is used"
+            )
+        well.well_type, well.type_source = override, "selected"
         return
-    if well.type_source == "manual":
+    if well.type_source in ("manual", "selected"):
         return
     if pw.meta.get("well_type_template"):
         well.well_type, well.type_source = pw.meta["well_type_template"], "template"
@@ -285,21 +307,19 @@ def _classify(well: Well, pw: ParsedWorkbook, override: str | None = None) -> No
             t, _ = classify_well_type([s.md for s in pw.survey], [s.inc for s in pw.survey])
             if t and t != well.well_type and well.well_type != "Horizontal":
                 pw.warn(
-                    f"Tipe dari folder ({well.well_type}) berbeda dengan survey ({t}); "
-                    "dipakai tipe dari folder"
+                    f"Well type from folder ({well.well_type}) differs from the survey ({t}); "
+                    "the folder type is used"
                 )
         return
     if pw.survey:
         t, warn = classify_well_type([s.md for s in pw.survey], [s.inc for s in pw.survey])
         if t:
             well.well_type = t
-            well.type_source = "otomatis"
+            well.type_source = "auto"
         if warn:
             pw.warn(warn)
     elif well.well_type is None:
-        pw.warn(
-            "Tipe sumur tidak diketahui (roadmap tanpa survey, bukan dari folder tipe); isi manual"
-        )
+        pw.warn("Well type unknown (roadmap file without survey); select the well type")
 
 
 def _has_actual(db: Session, well: Well) -> bool:

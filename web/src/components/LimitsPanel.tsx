@@ -44,25 +44,26 @@ export default function LimitsPanel({ profile }: { profile: Profile }) {
 
   return (
     <section className="card">
-      <h3>Batas aman dan deteksi interval</h3>
+      <h3>Operating limits</h3>
       <p className="muted small">
-        Batas dari client (mis. kapasitas hookload, batas torsi top drive, slack off minimum). Berlaku untuk sumur ini saja atau untuk
-        semua sumur di section {profile.well.section_in}". Sistem menghitung kedalaman pertama ketika kurva ML, batas atas/bawah pita
-        ketidakpastian, dan WellPlan melewati batas. Area di bawah kedalaman itu diarsir merah di grafik.
+        Limits from the client (e.g. hookload capacity, top drive torque limit, minimum slack off), for this well only or for
+        all wells in section {profile.well.section_in}". The system finds the first depth where the ML forecast, the
+        P10–P90 band bound, and the T&amp;D Model reach the limit. Limits are dotted red lines in the charts; the area below the ML
+        crossing depth is shaded red.
       </p>
       {rows.length > 0 ? (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Operasi</th>
-                <th>Batas</th>
-                <th>Berlaku</th>
-                <th className="num">ML menyentuh ({du})</th>
-                <th className="num">Pita ML menyentuh ({du})</th>
-                <th className="num">WellPlan menyentuh ({du})</th>
-                <th className="num">Margin minimum ML</th>
-                <th>Catatan</th>
+                <th>Operation</th>
+                <th>Limit</th>
+                <th>Applies to</th>
+                <th className="num">ML reaches ({du})</th>
+                <th className="num">ML band reaches ({du})</th>
+                <th className="num">T&amp;D Model reaches ({du})</th>
+                <th className="num">Minimum ML margin</th>
+                <th>Note</th>
                 <th></th>
               </tr>
             </thead>
@@ -71,17 +72,17 @@ export default function LimitsPanel({ profile }: { profile: Profile }) {
                 <tr key={r.id} className={r.cross_ml !== null ? "row-bad" : ""}>
                   <td>{OP_LABEL[r.op]}</td>
                   <td>
-                    {r.kind === "max" ? "maks" : "min"} {fmt(r.value)} {profile.operations[r.op].unit}
+                    {r.kind === "max" ? "max" : "min"} {fmt(r.value)} {profile.operations[r.op].unit}
                   </td>
-                  <td>{r.scope === "sumur" ? "sumur ini" : `section ${profile.well.section_in}"`}</td>
-                  <td className="num">{r.cross_ml === null ? "aman" : fmt(r.cross_ml, 0)}</td>
-                  <td className="num">{r.cross_ml_band === null ? "aman" : fmt(r.cross_ml_band, 0)}</td>
-                  <td className="num">{r.cross_wellplan === null ? "aman" : fmt(r.cross_wellplan, 0)}</td>
+                  <td>{r.scope === "well" ? "this well" : `section ${profile.well.section_in}"`}</td>
+                  <td className="num">{r.cross_ml === null ? "not reached" : fmt(r.cross_ml, 0)}</td>
+                  <td className="num">{r.cross_ml_band === null ? "not reached" : fmt(r.cross_ml_band, 0)}</td>
+                  <td className="num">{r.cross_wellplan === null ? "not reached" : fmt(r.cross_wellplan, 0)}</td>
                   <td className="num">{fmt(r.margin_ml)}</td>
                   <td className="small">{r.note ?? ""}</td>
                   <td>
-                    <button className="btn small ghost" onClick={() => confirm("Hapus batas ini?") && del.mutate(r.id)}>
-                      Hapus
+                    <button className="btn small ghost" onClick={() => confirm("Delete this limit?") && del.mutate(r.id)}>
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -90,25 +91,25 @@ export default function LimitsPanel({ profile }: { profile: Profile }) {
           </table>
         </div>
       ) : (
-        <p className="muted small">Belum ada batas untuk sumur/section ini.</p>
+        <p className="muted small">No limits for this well/section yet.</p>
       )}
       <form className="row gap wrap" onSubmit={submit} style={{ marginTop: 8 }}>
         <select value={op} onChange={(e) => setOp(e.target.value as Op)}>
           {OPS.map((o) => (
             <option key={o} value={o}>
-              {OP_LABEL[o]} ({DEFAULT_KIND[o] === "max" ? "maks" : "min"})
+              {OP_LABEL[o]} ({DEFAULT_KIND[o] === "max" ? "max" : "min"})
             </option>
           ))}
         </select>
-        <input type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} placeholder="nilai" required style={{ width: 110 }} />
+        <input type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" required style={{ width: 110 }} />
         <span className="small">{profile.operations[op].unit}</span>
         <select value={scope} onChange={(e) => setScope(e.target.value as "well" | "section")}>
-          <option value="section">semua sumur section {profile.well.section_in}"</option>
-          <option value="well">sumur ini saja</option>
+          <option value="section">all wells in section {profile.well.section_in}"</option>
+          <option value="well">this well only</option>
         </select>
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="catatan (opsional)" />
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
         <button className="btn small primary" disabled={add.isPending}>
-          Tambah batas
+          Add limit
         </button>
       </form>
     </section>

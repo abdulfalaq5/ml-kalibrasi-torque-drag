@@ -632,6 +632,56 @@ def section_spec(spec: WellSpec, section: float) -> WellSpec:
     )
 
 
+def make_practice(out: Path, seed: int = 21) -> None:
+    """File latihan untuk sesi pengenalan (sintetis, bukan data client).
+
+    out/training/   : 6 sumur x section dengan data aktual -> menu Training Data
+    out/monitoring/ : 1 sumur yang "sedang dibor" (aktual hanya ~60% interval atas)
+                      -> menu Monitoring, lalu Forecast 300 ft ke depan
+    out/README.txt  : section dan tipe yang harus dipilih saat upload tiap file
+    """
+    lines = [
+        "Practice files (synthetic data, not client data)",
+        "",
+        "Upload each file with the Well section and Well type below.",
+        "IMPORTANT: training practice files become ML reference data. Use them on a practice",
+        "installation only, or delete the PRACTICE wells afterwards (Well Data -> Delete) before",
+        "the next training run. Monitoring files never affect training.",
+        "",
+    ]
+    specs = well_specs(7, seed)
+    for i, spec in enumerate(specs):
+        monitoring = i == len(specs) - 1
+        group = "monitoring" if monitoring else "training"
+        sec = SECTIONS_BY_TYPE[spec.well_type][-1]  # 8.5"
+        sspec = section_spec(spec, sec)
+        data = build_well(sspec)
+        folder = out / group
+        folder.mkdir(parents=True, exist_ok=True)
+        if i % 2 == 0:
+            ffs = [0.3, 0.4, 0.5]
+            _compute_plan(data, ffs)
+            if monitoring:
+                data["actual"] = data["actual"][: max(8, int(len(data["actual"]) * 0.6))]
+            name = f"P_PRACTICE{i + 1:02d}_{sec:g}in TnD Roadmap.xlsx"
+            write_roadmap_file(data, folder / name, ffs)
+        else:
+            _compute_plan(data, [0.2, 0.3, 0.4, 0.5])
+            if monitoring:
+                data["actual"] = data["actual"][: max(8, int(len(data["actual"]) * 0.6))]
+            name = f"P_PRACTICE{i + 1:02d}_BHA_{sec:g}in_TnD.xlsm"
+            write_wellplan_file(data, folder / name)
+        lines.append(f"{group}/{name}: Well section {sec:g} in, Well type {spec.well_type}")
+        print(f"{group}/{name}: actual points={len(data['actual'])}")
+    lines += [
+        "",
+        "Order: 1) Training Data -> Upload all training files, 2) Data Quality -> Recompute,",
+        "3) Models -> Freeze dataset -> Train, 4) Monitoring -> Upload the monitoring file,",
+        "5) Dashboard -> Forecast 300 ft ahead.",
+    ]
+    (out / "README.txt").write_text("\n".join(lines) + "\n")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", type=Path, default=Path("data/sample"))
@@ -643,7 +693,13 @@ def main() -> None:
         default=2,
         help="Jumlah sumur 'baru' (WellPlan tanpa data aktual) untuk uji prediksi",
     )
+    ap.add_argument(
+        "--practice", action="store_true", help="Buat file latihan training/ + monitoring/"
+    )
     args = ap.parse_args()
+    if args.practice:
+        make_practice(args.out)
+        return
     args.out.mkdir(parents=True, exist_ok=True)
     specs = well_specs(args.wells + args.new_wells, args.seed)
     for i, spec in enumerate(specs):

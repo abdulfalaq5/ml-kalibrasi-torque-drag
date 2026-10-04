@@ -83,14 +83,16 @@ TYPE_FOLDERS = {
 }
 
 # ---------------------------------------------------------------- Template unggah (format A + Info)
-TEMPLATE_INFO_SHEET = r"^info sumur"
+TEMPLATE_INFO_SHEET = (
+    r"^(well info|info sumur)"  # nama Inggris (baru) atau Indonesia (template lama)
+)
 TEMPLATE_SURVEY_SHEET = r"^survey$"
 TEMPLATE_INFO_KEYS = {
-    "well_name": r"^nama sumur",
-    "section_template": r"^section",
-    "well_type_template": r"^tipe sumur",
+    "well_name": r"^(well name|nama sumur)",
+    "section_template": r"^(well )?section",
+    "well_type_template": r"^(well type|tipe sumur)",
     "block_weight_klbf": r"^block weight",
     "casing_shoe": r"^casing shoe",
     "mud_weight_ppg": r"^mud weight",
-    "field": r"^lapangan",
+    "field": r"^(field|lapangan)",
 }

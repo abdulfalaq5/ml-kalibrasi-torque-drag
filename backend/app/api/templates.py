@@ -5,13 +5,15 @@ from app.services.templates import build_template
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
-NAMES = {"data-latih": "template_data_latih_TnD.xlsx", "sumur-baru": "template_sumur_baru_TnD.xlsx"}
+NAMES = {"training": "TnD_template_training.xlsx", "monitoring": "TnD_template_monitoring.xlsx"}
+ALIASES = {"data-latih": "training", "sumur-baru": "monitoring"}  # tautan lama
 
 
 @router.get("/{kind}.xlsx")
 def template(kind: str):
+    kind = ALIASES.get(kind, kind)
     if kind not in NAMES:
-        raise HTTPException(404, "Template tidak dikenal (data-latih | sumur-baru)")
+        raise HTTPException(404, "Unknown template (training | monitoring)")
     return Response(
         build_template(kind),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

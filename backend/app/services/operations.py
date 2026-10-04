@@ -28,3 +28,20 @@ BASELINE_FF = 0.3
 
 WELL_TYPES = ["J", "S", "Horizontal"]
 SECTIONS_IN = [26.0, 22.0, 17.5, 12.25, 8.5, 6.125]
+
+# Nama seri standar (sama dengan Excel client): "PU - OHFF : 0.3", "SO - OHFF : 0.5", "ROT",
+# "Torque On Bottom - OHFF : 0.3". ROT satu kurva (tanpa OHFF).
+SERIES_PREFIX = {
+    PICK_UP: "PU",
+    SLACK_OFF: "SO",
+    ROTATING: "ROT",
+    TORQUE_ON: "Torque On Bottom",
+    TORQUE_OFF: "Torque Off Bottom",
+}
+SINGLE_CURVE_OPS = {ROTATING}
+
+
+def series_name(op: str, ff: float | None) -> str:
+    if op in SINGLE_CURVE_OPS or ff is None:
+        return SERIES_PREFIX[op]
+    return f"{SERIES_PREFIX[op]} - OHFF : {ff:g}"

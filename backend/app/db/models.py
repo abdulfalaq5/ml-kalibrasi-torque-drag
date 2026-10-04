@@ -50,19 +50,27 @@ class LoginAttempt(Base):
     )
 
 
+# Kelompok data: "training" = sumur historis, satu-satunya acuan ML.
+# "monitoring" = sumur yang sedang/akan dibor; hanya dihitung & diprediksi, TIDAK PERNAH melatih model.
+PURPOSES = ("training", "monitoring")
+
+
 class Well(Base):
-    """Satu baris = satu sumur pada satu section (satu run WellPlan)."""
+    """Satu baris = satu sumur pada satu section (satu run WellPlan) dalam satu kelompok (purpose)."""
 
     __tablename__ = "wells"
-    __table_args__ = (UniqueConstraint("name", "section_in", name="uq_well_name_section"),)
+    __table_args__ = (
+        UniqueConstraint("name", "section_in", "purpose", name="uq_well_name_section_purpose"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
     section_in: Mapped[float | None] = mapped_column(Float)
     well_type: Mapped[str | None] = mapped_column(String(16))  # J, S, Horizontal
-    section_source: Mapped[str] = mapped_column(String(16), default="otomatis")
-    type_source: Mapped[str] = mapped_column(String(16), default="otomatis")
-    status: Mapped[str] = mapped_column(String(32), default="baru")
+    section_source: Mapped[str] = mapped_column(String(16), default="auto")
+    type_source: Mapped[str] = mapped_column(String(16), default="auto")
+    status: Mapped[str] = mapped_column(String(32), default="new")
+    purpose: Mapped[str] = mapped_column(String(16), default="training", index=True)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -78,9 +86,12 @@ class UploadedFile(Base):
     kind: Mapped[str | None] = mapped_column(String(32))  # wellplan, roadmap, actual
     path: Mapped[str] = mapped_column(String(512))
     checksum: Mapped[str] = mapped_column(String(64), index=True)
-    status: Mapped[str] = mapped_column(String(16), default="diproses")  # ok, peringatan, gagal
+    status: Mapped[str] = mapped_column(
+        String(16), default="processing"
+    )  # ok, warning, failed, replaced
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
     source: Mapped[str] = mapped_column(String(16), default="upload")  # upload | folder
+    purpose: Mapped[str] = mapped_column(String(16), default="training")
     rel_path: Mapped[str | None] = mapped_column(String(512))  # jalur relatif di inbox
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -212,8 +223,8 @@ class MLModel(Base):
     dataset_id: Mapped[int | None] = mapped_column(ForeignKey("datasets.id"))
     algorithm: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(
-        String(16), default="antri"
-    )  # antri, berjalan, selesai, gagal
+        String(16), default="queued"
+    )  # queued, running, done, held, failed
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     metrics: Mapped[dict] = mapped_column(JSON, default=dict)
     path: Mapped[str | None] = mapped_column(String(512))
@@ -290,7 +301,7 @@ class ScanRun(Base):
     __tablename__ = "scan_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    status: Mapped[str] = mapped_column(String(16), default="berjalan")
+    status: Mapped[str] = mapped_column(String(16), default="running")
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

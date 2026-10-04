@@ -1,4 +1,8 @@
-"""Impor massal dari folder inbox (tombol "Pindai folder", bukan pemantau otomatis).
+"""Bulk import from the inbox folder ("Scan folder" button, not a continuous watcher).
+
+Folder scan always imports into the TRAINING group (ML reference). Monitoring files are
+uploaded separately and never pass through this folder.
+
 
 Struktur yang diterima (kode sumur = nama folder):
     inbox/<sumur>/<file>.xlsx|.xlsm
@@ -58,7 +62,7 @@ def _move(src: Path, root: Path, rel: Path, reason: str | None = None) -> None:
         dest = dest.with_name(f"{dest.stem}_{int(time.time())}{dest.suffix}")
     shutil.move(str(src), dest)
     if reason:
-        dest.with_name(dest.name + ".alasan.txt").write_text(reason, encoding="utf-8")
+        dest.with_name(dest.name + ".reason.txt").write_text(reason, encoding="utf-8")
 
 
 def scan(db: Session, run: ScanRun) -> ScanRun:
@@ -72,23 +76,24 @@ def scan(db: Session, run: ScanRun) -> ScanRun:
         try:
             if now - path.stat().st_mtime < s.inbox_min_age_s:
                 item.update(
-                    status="dilewati", message="Baru diubah < 1 menit, mungkin masih disalin"
+                    status="skipped",
+                    message="Modified less than 1 minute ago, may still be copying",
                 )
                 results.append(item)
                 continue
             if path.stat().st_size > limit:
-                item.update(status="ditolak", message=f"Ukuran > {s.max_upload_mb} MB")
+                item.update(status="rejected", message=f"File larger than {s.max_upload_mb} MB")
                 if s.inbox_move:
                     _move(path, s.rejected_dir, rel, item["message"])
                 results.append(item)
                 continue
             checksum = sha256(path)
-            dup = find_by_checksum(db, checksum)
+            dup = find_by_checksum(db, checksum, "training")
             if dup is not None:
                 item.update(
-                    status="duplikat",
+                    status="duplicate",
                     well=dup.well.name if dup.well else None,
-                    message=f"Isi file sama dengan '{dup.filename}' yang sudah diimpor",
+                    message=f"Same content as '{dup.filename}' already imported",
                 )
                 if s.inbox_move:
                     _move(path, s.processed_dir, rel)
@@ -96,20 +101,26 @@ def scan(db: Session, run: ScanRun) -> ScanRun:
                 continue
             dest, checksum = store_upload(path, path.name)
             uf: UploadedFile = import_file(
-                db, dest, path.name, checksum, rel_path=str(rel), source="folder"
+                db,
+                dest,
+                path.name,
+                checksum,
+                rel_path=str(rel),
+                source="folder",
+                purpose="training",
             )
             item["well"] = uf.well.name if uf.well else None
             item["section"] = uf.well.section_in if uf.well else None
             item["version"] = uf.version
             errs = [i.message for i in uf.issues if i.level == "error"]
             warns = [i.message for i in uf.issues if i.level == "warning"]
-            if uf.status == "gagal":
-                item.update(status="ditolak", message="; ".join(errs))
+            if uf.status == "failed":
+                item.update(status="rejected", message="; ".join(errs))
                 if s.inbox_move:
                     _move(path, s.rejected_dir, rel, "\n".join(errs))
             else:
                 item.update(
-                    status="diterima" if not warns else "diterima dengan peringatan",
+                    status="accepted" if not warns else "accepted with warnings",
                     message="; ".join(warns),
                 )
                 if s.inbox_move:
@@ -117,14 +128,16 @@ def scan(db: Session, run: ScanRun) -> ScanRun:
         except Exception as exc:  # satu file rusak tidak menghentikan pemindaian
             db.rollback()
             log.error("Gagal memindai %s: %s\n%s", rel, exc, traceback.format_exc())
-            item.update(status="ditolak", message=f"Galat: {exc}")
+            item.update(status="rejected", message=f"Error: {exc}")
         results.append(item)
 
     counts = recompute_all(db)
     from app.db.models import Well, WellQuality
 
     wells = []
-    for w in db.query(Well).order_by(Well.name, Well.section_in).all():
+    for w in (
+        db.query(Well).filter(Well.purpose == "training").order_by(Well.name, Well.section_in).all()
+    ):
         wq = db.query(WellQuality).filter(WellQuality.well_id == w.id).first()
         if any(r.get("well") == w.name for r in results):
             wells.append(
@@ -134,7 +147,7 @@ def scan(db: Session, run: ScanRun) -> ScanRun:
                     "type": w.well_type,
                     "quality": wq.status if wq else None,
                     "reasons": [
-                        c["message"] for c in (wq.checks if wq else []) if c["level"] != "lolos"
+                        c["message"] for c in (wq.checks if wq else []) if c["level"] != "pass"
                     ],
                 }
             )
@@ -142,7 +155,7 @@ def scan(db: Session, run: ScanRun) -> ScanRun:
     for r in results:
         by_status[r["status"]] = by_status.get(r["status"], 0) + 1
     run.summary = {"files": results, "wells": wells, "counts": by_status, "quality": counts}
-    run.status = "selesai"
+    run.status = "done"
     run.finished_at = datetime.now(UTC)
     db.commit()
     return run
@@ -159,7 +172,7 @@ def run_scan_job(run_id: int) -> None:
         except Exception as exc:
             db.rollback()
             run = db.get(ScanRun, run_id)
-            run.status = "gagal"
+            run.status = "failed"
             run.summary = {"error": str(exc)}
             run.finished_at = datetime.now(UTC)
             db.commit()

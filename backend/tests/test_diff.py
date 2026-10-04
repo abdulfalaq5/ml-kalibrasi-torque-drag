@@ -18,7 +18,7 @@ from sqlalchemy import update
 def tiny_well(db):
     db.execute(update(MLModel).values(active=False))
     w = Well(name="CEK", section_in=8.5, well_type="J", meta={})
-    m = MLModel(algorithm="uji", status="selesai", active=True, path=None)
+    m = MLModel(algorithm="uji", status="done", active=True, path=None)
     db.add_all([w, m])
     db.flush()
     # WellPlan FF 0.3 (klbf): 100 ft -> 100, 200 ft -> 110, 300 ft -> 120

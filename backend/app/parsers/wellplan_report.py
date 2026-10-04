@@ -66,11 +66,11 @@ def parse_wellplan(wb, pw: ParsedWorkbook) -> None:
         ("off_bottom_torque", "Off Bottom Torque analysis"),
     ):
         if role not in seen:
-            pw.error(f"Sheet '{label}' tidak ada")
+            pw.error(f"Sheet '{label}' is missing")
     if "rotary_drill" not in seen:
-        pw.warn("Sheet 'Rotary Drill Buckling Outputs' tidak ada: rencana torque on bottom kosong")
+        pw.warn("Sheet 'Rotary Drill Buckling Outputs' is missing: no modelled torque on bottom")
     if "survey" not in seen:
-        pw.warn("Sheet 'Survey Outputs' tidak ada")
+        pw.warn("Sheet 'Survey Outputs' is missing")
     if pw.plan:
         pw.kinds.add("plan")
     if pw.actual:
@@ -229,7 +229,7 @@ def _bitdepth_table(rows, pw, sheet, first: str = "bit depth"):
         None,
     )
     if i is None:
-        pw.error(f"Header '{first.title()}' tidak ditemukan", sheet)
+        pw.error(f"Header '{first.title()}' not found", sheet)
         return None
     head = rows[i]
     unitrow = rows[i + 1] if i + 1 < len(rows) else ()
@@ -258,7 +258,7 @@ def _parse_tripping(rows, pw, sheet) -> None:
             cols.append((j, "rotating_weight", None, unit))
     _collect(rows[i + 2 :], dcol, du, cols, pw.plan, sheet)
     if not cols:
-        pw.error("Kolom Trip IN / Trip Out / Rotate Off Bottom tidak dikenali", sheet)
+        pw.error("Columns Trip IN / Trip Out / Rotate Off Bottom not recognised", sheet)
 
 
 def _parse_offbottom(rows, pw, sheet) -> None:
@@ -281,7 +281,7 @@ def _parse_offbottom(rows, pw, sheet) -> None:
             )
     _collect(rows[i + 2 :], dcol, du, cols, pw.plan, sheet)
     if not cols:
-        pw.error("Kolom 'CSG x OPH y' tidak dikenali", sheet)
+        pw.error("Columns 'CSG x OPH y' not recognised", sheet)
 
 
 def _parse_rotary(rows, pw, sheet) -> None:
@@ -292,7 +292,7 @@ def _parse_rotary(rows, pw, sheet) -> None:
     du = unit_in(cell(unitrow, dcol)) or "ft"
     j = next((k for k, c in enumerate(head) if norm(c) == "surface torque"), None)
     if j is None:
-        pw.warn("Kolom 'Surface Torque' tidak ditemukan", sheet)
+        pw.warn("Column 'Surface Torque' not found", sheet)
         return
     ff = (pw.meta.get("base_ff") or {}).get("oh_rot")
     _collect(
@@ -324,7 +324,7 @@ def _parse_survey(rows, pw, sheet) -> None:
         (k for k, r in enumerate(rows[:60]) if any(norm(c) == "measured depth" for c in r)), None
     )
     if i is None:
-        pw.warn("Tabel survey (Measured Depth) tidak ditemukan", sheet)
+        pw.warn("Survey table (Measured Depth) not found", sheet)
         return
     head = rows[i]
     unitrow = rows[i + 1] if i + 1 < len(rows) else ()
@@ -342,7 +342,7 @@ def _parse_survey(rows, pw, sheet) -> None:
         elif h.startswith("true vertical") or h == "tvd":
             col["tvd"] = j
     if "md" not in col or "inc" not in col:
-        pw.warn("Kolom MD/Inclination survey tidak lengkap", sheet)
+        pw.warn("Survey MD/Inclination columns incomplete", sheet)
         return
     pw.survey_units = {
         "md": unit_in(cell(unitrow, col["md"])) or "ft",
@@ -371,7 +371,7 @@ def _parse_survey(rows, pw, sheet) -> None:
 def _parse_drilling(rows, pw, sheet) -> None:
     i = next((k for k, r in enumerate(rows[:15]) if norm(cell(r, 0)) == "depth"), None)
     if i is None:
-        pw.warn("Header 'Depth' Drilling Data tidak ditemukan", sheet)
+        pw.warn("Header 'Depth' of Drilling Data not found", sheet)
         return
     head = rows[i]
     cols = []

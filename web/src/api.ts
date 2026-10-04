@@ -22,7 +22,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
       const j = await res.json();
       msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
     } catch {
-      /* bukan JSON */
+      /* not JSON */
     }
     throw new ApiError(res.status, msg);
   }
@@ -37,13 +37,56 @@ export const api = {
 };
 
 export type Issue = { level: "error" | "warning"; message: string; location: string | null };
+export type Purpose = "training" | "monitoring";
+export const PURPOSE_LABEL: Record<Purpose, string> = { training: "Training Data", monitoring: "Monitoring" };
+export const SECTIONS = [26, 22, 17.5, 12.25, 8.5, 6.125];
+export const TYPES = ["J", "S", "Horizontal"];
+
+export const FILE_STATUS_LABEL: Record<string, string> = {
+  ok: "OK",
+  warning: "Warning",
+  failed: "Failed",
+  replaced: "Replaced",
+  deleted: "Deleted",
+  processing: "Processing",
+};
+export const WELL_STATUS_LABEL: Record<string, string> = { ready: "Ready", no_actual: "No actual data", new: "New" };
+export const MODEL_STATUS_LABEL: Record<string, string> = {
+  queued: "Queued",
+  running: "Running",
+  done: "Done",
+  held: "Held",
+  failed: "Failed",
+};
+export const SCAN_STATUS_LABEL: Record<string, string> = {
+  accepted: "Accepted",
+  "accepted with warnings": "Accepted with warnings",
+  duplicate: "Duplicate",
+  skipped: "Skipped",
+  rejected: "Rejected",
+  running: "Running",
+  done: "Done",
+  failed: "Failed",
+};
+export const statusTone = (s: string) =>
+  ["ok", "ready", "done", "accepted"].includes(s)
+    ? "ok"
+    : ["failed", "rejected"].includes(s)
+      ? "bad"
+      : ["warning", "no_actual", "held", "accepted with warnings", "duplicate", "skipped"].includes(s)
+        ? "warn"
+        : "";
+
 export type FileItem = {
   id: number;
+  purpose: Purpose;
   filename: string;
   kind: string | null;
   status: string;
   well_id: number | null;
   well_name: string | null;
+  section_in: number | null;
+  well_type: string | null;
   created_at: string;
   issues: Issue[];
   summary: { kinds?: string[]; plan_points?: number; actual_points?: number; survey_points?: number };
@@ -51,6 +94,7 @@ export type FileItem = {
 export type WellItem = {
   id: number;
   name: string;
+  purpose: Purpose;
   quality: QStatus;
   quality_score: number | null;
   plan_format: string | null;
@@ -68,15 +112,16 @@ export type WellItem = {
 };
 export type QStatus = "A" | "B" | "C" | "X";
 export const Q_LABEL: Record<QStatus, string> = {
-  A: "Layak",
-  B: "Layak + peringatan",
-  C: "Ditahan",
-  X: "Dikecualikan",
+  A: "Accepted",
+  B: "Accepted with warnings",
+  C: "On hold",
+  X: "Excluded",
 };
-export type Check = { code: string; level: "kritis" | "peringatan" | "lolos"; message: string };
+export type Check = { code: string; level: "critical" | "warning" | "pass"; message: string };
 export type QualityRow = {
   well_id: number;
   well: string;
+  purpose: Purpose;
   section_in: number | null;
   well_type: string | null;
   auto_status: QStatus | null;
@@ -152,7 +197,7 @@ export type GroupRow = {
 export type OpMetrics = {
   chosen: string;
   chosen_label?: string;
-  strategy?: { combo: string; n_wells: number; rmse_single: number; rmse_combo?: number; dipakai: string }[];
+  strategy?: { combo: string; n_wells: number; rmse_single: number; rmse_combo?: number; used: string }[];
   by_depth?: { depth_from_m: number; depth_to_m: number; wellplan: Metric; ml: Metric; ml_better_frac: number }[];
   worst_points?: { well_name: string; section: string; depth_m: number; actual: number; wellplan: number; ml: number }[];
   learning_curve?: { label: string; n_wells: number; rmse_ml: number; rmse_wp: number }[];
@@ -187,7 +232,7 @@ export type ModelItem = {
     operations: Record<string, OpMetrics>;
     notes: string[];
     skill?: number;
-    feature_selection?: { grup: string; skor: number; dipakai: boolean; keterangan: string }[];
+    feature_selection?: { group: string; score: number; used: boolean; note: string }[];
     dataset?: { version: number; hash: string; rows_train: number; wells_train: number; rows_blind: number; wells_blind: number };
   };
 };
@@ -196,8 +241,9 @@ export type DiffSeries = { depth: number[]; abs: number[]; pct: number[] };
 export type OpProfile = {
   label: string;
   unit: string;
-  wellplan: { ff: number | null; depth: number[]; value: number[] }[];
+  wellplan: { ff: number | null; name: string; depth: number[]; value: number[] }[];
   wellplan_baseline_ff: number | null;
+  calibration_offset: number | null;
   ml: Series & { lo: number[]; hi: number[] };
   actual: Series;
   limits: {
@@ -215,7 +261,8 @@ export type OpProfile = {
   metrics: { wellplan: Metric | null; ml: Metric | null } | null;
 };
 export type Profile = {
-  well: { id: number; name: string; section_in: number | null; well_type: string | null };
+  well: { id: number; name: string; section_in: number | null; well_type: string | null; purpose: Purpose };
+  calibration: { available: boolean; mode: "calibrated" | "raw" };
   unit_system: "imperial" | "si";
   depth_unit: string;
   has_actual: boolean;
@@ -244,4 +291,50 @@ export const OP_LABEL: Record<Op, string> = {
 };
 
 export const fmt = (v: number | null | undefined, d = 2) =>
-  v === null || v === undefined || Number.isNaN(v) ? "–" : v.toLocaleString("id-ID", { maximumFractionDigits: d, minimumFractionDigits: d });
+  v === null || v === undefined || Number.isNaN(v) ? "–" : v.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+
+export const fmtDate = (s: string) =>
+  new Date(s).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/* Standard series names (same as the client's Excel): "PU - OHFF : 0.3", "SO - OHFF : 0.5", "ROT". */
+export const SERIES_PREFIX: Record<Op, string> = {
+  pick_up: "PU",
+  slack_off: "SO",
+  rotating_weight: "ROT",
+  torque_off_bottom: "Torque Off Bottom",
+  torque_on_bottom: "Torque On Bottom",
+};
+
+export type ForecastOp = {
+  label: string;
+  unit: string;
+  depth: number[];
+  ml: (number | null)[];
+  p10: (number | null)[];
+  p90: (number | null)[];
+  ml_corrected: (number | null)[] | null;
+  bias: number | null;
+  wellplan: { ff: number | null; name: string; value: (number | null)[] }[];
+  change: number;
+  explanation: {
+    method: string;
+    drivers: { feature: string; label: string; delta: number }[];
+    plan_changes: { inclination_deg?: [number, number]; max_dls_deg_100ft?: number; intervals?: { type: string; from: number }[] };
+    limit_crossings: { kind: string; value: number; scope: string; cross_ml: number | null; cross_band: number | null }[];
+    sentence: string;
+  };
+};
+export type Forecast = {
+  well: { id: number; name: string; section_in: number | null; well_type: string | null; purpose: Purpose };
+  model_id: number;
+  depth_unit: string;
+  start_depth: number;
+  end_depth: number;
+  last_actual_depth: number | null;
+  distance_ft: number;
+  bias_correction: boolean;
+  calibration: "calibrated" | "raw";
+  warnings: string[];
+  summary: string;
+  operations: Partial<Record<Op, ForecastOp>>;
+};

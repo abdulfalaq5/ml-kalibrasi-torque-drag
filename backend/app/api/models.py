@@ -60,17 +60,17 @@ def list_models(db: Session = Depends(get_db)):
 @router.post("/train")
 def train(
     background: BackgroundTasks,
-    algorithm: str = Query("semua", pattern="^(semua|ridge|xgboost|random_forest|svr|mlp)$"),
+    algorithm: str = Query("all", pattern="^(all|ridge|xgboost|random_forest|svr|mlp)$"),
     include_mlp: bool = False,
     dataset_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    running = db.scalar(select(MLModel).where(MLModel.status.in_(["antri", "berjalan"])))
+    running = db.scalar(select(MLModel).where(MLModel.status.in_(["queued", "running"])))
     if running:
-        raise HTTPException(409, f"Model #{running.id} masih dilatih")
+        raise HTTPException(409, f"Model #{running.id} is still training")
     if dataset_id is not None and db.get(Dataset, dataset_id) is None:
-        raise HTTPException(404, "Dataset tidak ditemukan")
-    m = MLModel(algorithm=algorithm, status="antri", dataset_id=dataset_id)
+        raise HTTPException(404, "Dataset not found")
+    m = MLModel(algorithm=algorithm, status="queued", dataset_id=dataset_id)
     db.add(m)
     db.commit()
     background.add_task(run_training_job, m.id, algorithm, include_mlp, dataset_id)
@@ -80,7 +80,7 @@ def train(
 def _get(db: Session, model_id: int) -> MLModel:
     m = db.get(MLModel, model_id)
     if m is None:
-        raise HTTPException(404, "Model tidak ditemukan")
+        raise HTTPException(404, "Model not found")
     return m
 
 
@@ -108,14 +108,16 @@ def get_model(model_id: int, db: Session = Depends(get_db)):
 @router.post("/{model_id}/activate")
 def activate(model_id: int, db: Session = Depends(get_db)):
     m = _get(db, model_id)
-    if m.status not in ("selesai", "ditahan"):
-        raise HTTPException(400, "Hanya model yang selesai dilatih yang bisa diaktifkan")
+    if m.status not in ("done", "held"):
+        raise HTTPException(400, "Only a model that has finished training can be activated")
     db.execute(update(MLModel).values(active=False))
-    if m.status == "ditahan":
+    if m.status == "held":
         cmp = dict(m.comparison or {})
-        cmp["decision"] = (cmp.get("decision", "") + " | Diaktifkan manual oleh admin.").strip(" |")
+        cmp["decision"] = (cmp.get("decision", "") + " | Activated manually by the admin.").strip(
+            " |"
+        )
         m.comparison = cmp
-    m.status = "selesai"
+    m.status = "done"
     m.active = True
     db.commit()
     return model_out(m)
@@ -132,22 +134,22 @@ def blind_test(model_id: int, db: Session = Depends(get_db)):
 @router.get("/{model_id}/report.xlsx")
 def report(model_id: int, db: Session = Depends(get_db)):
     m = _get(db, model_id)
-    if m.status not in ("selesai", "ditahan"):
-        raise HTTPException(400, "Model belum selesai dilatih")
+    if m.status not in ("done", "held"):
+        raise HTTPException(400, "The model has not finished training")
     return Response(
         export_model_report(m, db.get(Dataset, m.dataset_id) if m.dataset_id else None),
         media_type=XLSX,
-        headers={"Content-Disposition": f'attachment; filename="laporan_model_{m.id}.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="model_report_{m.id}.xlsx"'},
     )
 
 
 @router.get("/{model_id}/report.pdf")
 def report_pdf(model_id: int, db: Session = Depends(get_db)):
     m = _get(db, model_id)
-    if m.status not in ("selesai", "ditahan"):
-        raise HTTPException(400, "Model belum selesai dilatih")
+    if m.status not in ("done", "held"):
+        raise HTTPException(400, "The model has not finished training")
     return Response(
         model_pdf(db, m),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="ringkasan_model_{m.id}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="model_summary_{m.id}.pdf"'},
     )

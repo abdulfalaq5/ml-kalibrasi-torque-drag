@@ -36,7 +36,7 @@ CORE_OPS = ["pick_up", "slack_off"]
 
 PENALTY_CRIT, PENALTY_WARN = 25, 8
 
-DECISIONS = {"terima", "kecualikan", "perbaiki"}
+DECISIONS = {"accept", "exclude", "fix"}
 
 
 def _load(db: Session, well_ids: list[int]) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -109,13 +109,13 @@ def evaluate_well(
     checks: list[dict] = []
 
     def crit(code, msg):
-        checks.append({"code": code, "level": "kritis", "message": msg})
+        checks.append({"code": code, "level": "critical", "message": msg})
 
     def warn(code, msg):
-        checks.append({"code": code, "level": "peringatan", "message": msg})
+        checks.append({"code": code, "level": "warning", "message": msg})
 
     def ok(code, msg):
-        checks.append({"code": code, "level": "lolos", "message": msg})
+        checks.append({"code": code, "level": "pass", "message": msg})
 
     st = well_stats(well, plan, act)
 
@@ -129,12 +129,12 @@ def evaluate_well(
     if plan.empty or core_missing:
         crit(
             "K1",
-            f"Rencana WellPlan tidak lengkap: tidak ada {', '.join(core_missing or OPERATIONS)}",
+            f"Incomplete T&D model (WellPlan): missing {', '.join(core_missing or OPERATIONS)}",
         )
     elif missing:
-        warn("K1", f"Rencana WellPlan tanpa operasi: {', '.join(missing)}")
+        warn("K1", f"T&D model (WellPlan) without operation: {', '.join(missing)}")
     else:
-        ok("K1", "Format dikenali, rencana kelima operasi ada")
+        ok("K1", "Format recognised, T&D model has all five operations")
 
     # K2 satuan: dicek saat impor (satuan tak dikenal -> file gagal). Cek kewajaran rasio.
     bad_unit, odd_torque = [], []
@@ -144,20 +144,22 @@ def evaluate_well(
             continue
         if op in HOOKLOAD_OPS:
             if not (UNIT_RATIO_RANGE[0] <= r <= UNIT_RATIO_RANGE[1]):
-                bad_unit.append(f"{op} (aktual/WellPlan = {r:.2f})")
+                bad_unit.append(f"{op} (actual/model = {r:.2f})")
         elif not (UNIT_RATIO_TORQUE_HARD[0] <= r <= UNIT_RATIO_TORQUE_HARD[1]):
-            bad_unit.append(f"{op} (aktual/WellPlan = {r:.3g}, faktor ~1000x)")
+            bad_unit.append(f"{op} (actual/model = {r:.3g}, ~1000x factor)")
         elif not (TORQUE_RATIO_WARN[0] <= r <= TORQUE_RATIO_WARN[1]):
             odd_torque.append(f"{op} = {r:.2f}")
     if bad_unit:
-        crit("K2", "Kemungkinan salah satuan atau salah kolom: " + "; ".join(bad_unit))
+        crit("K2", "Possible wrong unit or wrong column: " + "; ".join(bad_unit))
     else:
-        ok("K2", "Satuan dikenali dan rasio aktual/WellPlan wajar")
+        ok("K2", "Units recognised and actual/model ratio is plausible")
     if odd_torque:
         warn(
             "S5",
-            "Rasio torsi aktual/WellPlan jauh dari 1 (" + "; ".join(odd_torque) + "): torsi kecil "
-            "di section dangkal atau asumsi bit torque WellPlan berbeda; periksa dengan engineer",
+            "Torque actual/model ratio far from 1 ("
+            + "; ".join(odd_torque)
+            + "): small torque in a "
+            "shallow section or different WellPlan bit-torque assumption; review with the engineer",
         )
 
     # K3 kedalaman naik, tanpa duplikat bertentangan
@@ -174,26 +176,26 @@ def evaluate_well(
             g = g.sort_values("id")
             unsorted += int((np.diff(g.depth_m.to_numpy()) < -1e-6).sum())
     if dup_conflict:
-        crit("K3", f"{dup_conflict} kedalaman WellPlan duplikat dengan nilai berbeda")
+        crit("K3", f"{dup_conflict} duplicated T&D model depths with different values")
     elif unsorted:
-        warn("K3", f"{unsorted} kali urutan kedalaman turun di file (data diurutkan ulang)")
+        warn("K3", f"Depth order decreases {unsorted} times in the file (data re-sorted)")
     else:
-        ok("K3", "Kedalaman naik dan tanpa duplikat")
+        ok("K3", "Depth increasing, no duplicates")
 
     # K4 nilai wajar fisik: hookload > 0, torsi >= 0
     if act.empty:
-        crit("K4", "Tidak ada data aktual")
+        crit("K4", "No actual data")
     else:
         hk = act[act.operation.isin(HOOKLOAD_OPS)]
         tq = act[~act.operation.isin(HOOKLOAD_OPS)]
         bad = int((hk.value_si <= 0).sum() + (tq.value_si < 0).sum())
         frac = bad / max(len(act), 1)
         if frac > NONPHYS_FAIL_FRAC:
-            crit("K4", f"{bad} titik aktual tidak wajar (hookload <= 0 atau torsi < 0), {frac:.0%}")
+            crit("K4", f"{bad} implausible actual points (hookload <= 0 or torque < 0), {frac:.0%}")
         elif bad:
-            warn("K4", f"{bad} titik aktual tidak wajar dibuang dari dataset")
+            warn("K4", f"{bad} implausible actual points removed from the dataset")
         else:
-            ok("K4", "Nilai aktual wajar secara fisik")
+            ok("K4", "Actual values are physically plausible")
 
     # K5 urutan slack off <= rotating <= pick up (di kedalaman yang sama)
     if not act.empty:
@@ -212,15 +214,15 @@ def evaluate_well(
             if frac > ORDER_FAIL_FRAC:
                 crit(
                     "K5",
-                    f"Urutan slack off <= rotating <= pick up dilanggar di {frac:.0%} kedalaman",
+                    f"Order slack off <= rotating <= pick up violated at {frac:.0%} of depths",
                 )
             elif viol.any():
                 warn(
                     "K5",
-                    f"Urutan slack off <= rotating <= pick up dilanggar di {int(viol.sum())} kedalaman",
+                    f"Order slack off <= rotating <= pick up violated at {int(viol.sum())} depths",
                 )
             else:
-                ok("K5", "Urutan slack off <= rotating <= pick up wajar")
+                ok("K5", "Order slack off <= rotating <= pick up is plausible")
 
     # K6/K7 tumpang rentang & jumlah titik minimum
     n_in = st.get("n_in_range_pick_up", 0)
@@ -229,24 +231,24 @@ def evaluate_well(
     elif n_in < MIN_ACTUAL_POINTS:
         crit(
             "K6",
-            f"Hanya {n_in} titik aktual pick up di dalam rentang kedalaman WellPlan "
+            f"Only {n_in} actual pick-up points within the T&D model depth range "
             f"(minimum {MIN_ACTUAL_POINTS})",
         )
     else:
-        ok("K6", f"{n_in} titik aktual pick up di dalam rentang WellPlan")
+        ok("K6", f"{n_in} actual pick-up points within the T&D model depth range")
 
     # K8 section & tipe
     if well.section_in is None or well.well_type is None:
-        crit("K8", "Section atau tipe sumur belum teridentifikasi")
+        crit("K8", "Section or well type not identified")
     else:
-        ok("K8", f'Section {well.section_in:g}" tipe {well.well_type}')
+        ok("K8", f'Section {well.section_in:g}", type {well.well_type}')
 
     # K9 duplikat sumur lain (data aktual pick up identik)
     dup = _duplicate_of(db, well, act)
     if dup:
-        crit("K9", f"Data aktual identik dengan sumur {dup}")
+        crit("K9", f"Actual data identical to well {dup}")
     elif not act.empty:
-        ok("K9", "Bukan duplikat sumur lain")
+        ok("K9", "Not a duplicate of another well")
 
     # ---- statistik
     if not act.empty:
@@ -260,7 +262,7 @@ def evaluate_well(
                 ).sum()
             )
             if jumps:
-                warn("S2", f"{jumps} lompatan tak wajar antar titik pick up berurutan")
+                warn("S2", f"{jumps} implausible jumps between consecutive pick-up points")
         wide = act.pivot_table(
             index="depth_m", columns="operation", values="value_si", aggfunc="mean"
         ).sort_index()
@@ -273,13 +275,15 @@ def evaluate_well(
             if best + 1 >= REPEAT_RUN:
                 warn(
                     "S3",
-                    f"{best + 1} baris aktual berurutan bernilai persis sama (kemungkinan salin tempel)",
+                    f"{best + 1} consecutive actual rows with identical values (possible copy-paste)",
                 )
+    if peers is None:
+        peers = _stored_training_peers(db)
     if peers:
         _peer_checks(well, st, peers, warn)
 
-    n_crit = sum(c["level"] == "kritis" for c in checks)
-    n_warn = sum(c["level"] == "peringatan" for c in checks)
+    n_crit = sum(c["level"] == "critical" for c in checks)
+    n_warn = sum(c["level"] == "warning" for c in checks)
     status = "C" if n_crit else ("B" if n_warn else "A")
     score = max(0, 100 - PENALTY_CRIT * n_crit - PENALTY_WARN * n_warn)
 
@@ -294,6 +298,16 @@ def evaluate_well(
     return wq
 
 
+def _stored_training_peers(db: Session) -> dict:
+    """Peer statistics of training wells from the last stored evaluation (cheap)."""
+    rows = db.execute(
+        select(Well.id, Well.section_in, Well.well_type, WellQuality.stats)
+        .join(WellQuality, WellQuality.well_id == Well.id)
+        .where(Well.purpose == "training")
+    ).all()
+    return {wid: {"key": f"{sec}|{wt}", "stats": st or {}} for wid, sec, wt, st in rows}
+
+
 def _peer_checks(well: Well, st: dict, peers: dict, warn) -> None:
     key = f"{well.section_in}|{well.well_type}"
     group = [p for wid, p in peers.items() if wid != well.id and p["key"] == key]
@@ -306,15 +320,15 @@ def _peer_checks(well: Well, st: dict, peers: dict, warn) -> None:
         if abs(z) > PEER_Z:
             warn(
                 "S1",
-                f"Rasio aktual/WellPlan pick up ({r:.2f}) menyimpang dari sumur sekelas "
+                f"Pick-up actual/model ratio ({r:.2f}) deviates from similar wells "
                 f"(median {med:.2f}, z={z:+.1f})",
             )
     counts = [p["stats"].get("n_actual_depths", 0) for p in group]
     if len(counts) >= 4 and st.get("n_actual_depths", 0) < FEW_POINTS_FRAC * np.median(counts):
         warn(
             "S4",
-            f"Titik aktual ({st.get('n_actual_depths', 0)}) jauh lebih sedikit dari sumur "
-            f"sekelas (median {np.median(counts):.0f})",
+            f"Far fewer actual points ({st.get('n_actual_depths', 0)}) than similar wells "
+            f"(median {np.median(counts):.0f})",
         )
 
 
@@ -325,7 +339,9 @@ def _duplicate_of(db: Session, well: Well, act: pd.DataFrame) -> str | None:
     sig = sorted(zip(pu.depth_m.round(1), pu.value_si.round(2), strict=True))
     others = db.execute(
         select(ActualReading.well_id, ActualReading.depth_m, ActualReading.value_si).where(
-            ActualReading.operation == "pick_up", ActualReading.well_id != well.id
+            ActualReading.operation == "pick_up",
+            ActualReading.well_id != well.id,
+            ActualReading.well_id.in_(select(Well.id).where(Well.purpose == well.purpose)),
         )
     ).all()
     by: dict[int, list] = {}
@@ -339,16 +355,22 @@ def _duplicate_of(db: Session, well: Well, act: pd.DataFrame) -> str | None:
 
 
 def recompute_all(db: Session) -> dict:
-    """Hitung ulang semua sumur (dua lintasan: statistik dulu, lalu banding sesama kelas)."""
+    """Recompute every well (two passes: stats first, then comparison with similar wells).
+
+    Peer statistics come from TRAINING wells only; monitoring wells are checked against them
+    but never influence them.
+    """
     wells = db.scalars(select(Well)).all()
-    peers = {}
+    stats = {}
     for w in wells:
         plan, act = _load(db, [w.id])
-        peers[w.id] = {"key": f"{w.section_in}|{w.well_type}", "stats": well_stats(w, plan, act)}
+        stats[w.id] = {"key": f"{w.section_in}|{w.well_type}", "stats": well_stats(w, plan, act)}
+    peers = {wid: v for wid, v in stats.items() if db.get(Well, wid).purpose == "training"}
     counts = {"A": 0, "B": 0, "C": 0}
     for w in wells:
         wq = evaluate_well(db, w, peers=peers, commit=False)
-        counts[wq.status] += 1
+        if w.purpose == "training":
+            counts[wq.status] += 1
     db.commit()
     return counts
 
@@ -367,19 +389,22 @@ def effective_status(wq: WellQuality | None, review: QualityReview | None) -> st
         return "C"
     if review is None:
         return wq.status
-    if review.decision == "kecualikan":
+    if review.decision == "exclude":
         return "X"
-    if review.decision == "terima" and wq.status == "C":
+    if review.decision == "accept" and wq.status == "C":
         return "B"
-    if review.decision == "perbaiki":
+    if review.decision == "fix":
         return "C"
     return wq.status
 
 
 def eligible_well_ids(db: Session) -> tuple[list[int], dict[int, str]]:
-    """Sumur yang boleh masuk training (status efektif A/B) + status semua sumur."""
+    """TRAINING wells allowed into the dataset (effective status A/B) + status of training wells.
+
+    Monitoring wells are never eligible, whatever their quality status.
+    """
     status = {}
-    for w in db.scalars(select(Well)).all():
+    for w in db.scalars(select(Well).where(Well.purpose == "training")).all():
         wq = db.scalar(select(WellQuality).where(WellQuality.well_id == w.id))
         status[w.id] = effective_status(wq, latest_review(db, w.id))
     return [wid for wid, s in status.items() if s in ("A", "B")], status

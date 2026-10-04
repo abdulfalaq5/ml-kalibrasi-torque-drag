@@ -84,7 +84,7 @@ XGB_FIXED = {
     "n_jobs": 2,
     "random_state": 42,
 }
-ABLATION_SPEC = {"algo": "xgboost", "form": "selisih", "params": ALGO_GRID["xgboost"][0]}
+ABLATION_SPEC = {"algo": "xgboost", "form": "residual", "params": ALGO_GRID["xgboost"][0]}
 
 
 # ---------------------------------------------------------------- model
@@ -140,7 +140,7 @@ def make_pipeline(spec: dict, num: list[str], cat: list[str]) -> Pipeline:
             transformer=StandardScaler(),
         )
         return Pipeline([("prep", _preprocess(num, cat, True)), ("model", est)])
-    raise ValueError(f"Algoritma tidak dikenal: {algo}")
+    raise ValueError(f"Unknown algorithm: {algo}")
 
 
 class CalibrationModel:
@@ -155,13 +155,13 @@ class CalibrationModel:
         return self.num + self.cat
 
     def fit(self, df: pd.DataFrame) -> "CalibrationModel":
-        y = df.target - df.wp_base if self.spec["form"] == "selisih" else df.target
+        y = df.target - df.wp_base if self.spec["form"] == "residual" else df.target
         self.pipeline.fit(df[self.features], y)
         return self
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
         p = np.asarray(self.pipeline.predict(df[self.features]), dtype=float)
-        if self.spec["form"] == "selisih":
+        if self.spec["form"] == "residual":
             p = p + df.wp_base.to_numpy()
         return p
 
@@ -184,13 +184,13 @@ class RoutedModel:
 
 
 def candidates(algorithm: str, include_mlp: bool) -> dict[str, dict]:
-    algos = list(ALGO_GRID) if algorithm == "semua" else [algorithm]
-    if not include_mlp and algorithm == "semua":
+    algos = list(ALGO_GRID) if algorithm == "all" else [algorithm]
+    if not include_mlp and algorithm == "all":
         algos = [a for a in algos if a != "mlp"]
     out = {}
     for algo in algos:
         for k, params in enumerate(ALGO_GRID[algo], start=1):
-            for form in ("langsung", "selisih"):
+            for form in ("direct", "residual"):
                 out[f"{algo}{k}_{form}"] = {"algo": algo, "form": form, "params": params}
     return out
 
@@ -263,16 +263,16 @@ def select_feature_groups(train: pd.DataFrame) -> tuple[list[str], list[dict]]:
     """Greedy: tambahkan grup fitur satu per satu, pertahankan bila skor turun >= 1%."""
     chosen: list[str] = []
     base = _score_groups(train, chosen)
-    log_rows = [{"grup": "dasar", "skor": base, "dipakai": True, "keterangan": "fitur dasar"}]
+    log_rows = [{"group": "base", "score": base, "used": True, "note": "base features"}]
     for g in dsm.FEATURE_GROUPS:
         s = _score_groups(train, chosen + [g])
         keep = s < base * (1 - FEATURE_MIN_GAIN)
         log_rows.append(
             {
-                "grup": g,
-                "skor": s,
-                "dipakai": bool(keep),
-                "keterangan": f"{(base - s) / base:+.1%} vs tanpa grup ini",
+                "group": g,
+                "score": s,
+                "used": bool(keep),
+                "note": f"{(base - s) / base:+.1%} vs without this group",
             }
         )
         if keep:
@@ -308,7 +308,7 @@ def learning_curve(d: pd.DataFrame, op: str, spec: dict, num, cat) -> list[dict]
         out.append(
             {
                 "n_wells": int(size or len(d.well_name.unique()) * (N_FOLDS - 1) // N_FOLDS),
-                "label": "semua" if size is None else str(size),
+                "label": "all" if size is None else str(size),
                 "rmse_ml": rmse(y, p),
                 "rmse_wp": rmse(y, wp),
             }
@@ -343,7 +343,7 @@ def explain(model: CalibrationModel, d: pd.DataFrame) -> dict:
         ]
     except Exception:
         method = "permutation importance"
-        y = sample.target - sample.wp_base if model.spec["form"] == "selisih" else sample.target
+        y = sample.target - sample.wp_base if model.spec["form"] == "residual" else sample.target
         r = permutation_importance(model.pipeline, X, y, n_repeats=5, random_state=42)
         imp, names, signed = r.importances_mean, model.features, [0.0] * len(model.features)
     agg: dict[str, list[float]] = {}
@@ -366,31 +366,31 @@ def explain(model: CalibrationModel, d: pd.DataFrame) -> dict:
         "open_hole_len_m",
         "depth_from_kop_m",
     }
-    if model.spec["form"] == "selisih":
+    if model.spec["form"] == "residual":
         # target = koreksi terhadap WellPlan: wajar bila geometri sumur / kedalaman yang dominan
         physics_ok = any(f.startswith("wp_") or f in physical for f in top)
         note = (
-            "Target berupa koreksi terhadap WellPlan. Wajar: fitur geometri/kedalaman atau WellPlan "
-            "termasuk 4 terpenting."
+            "Target is a correction to the T&D model. Plausible: well geometry/depth or T&D model "
+            "features are among the top 4."
             if physics_ok
-            else "PERIKSA: 4 fitur terpenting bukan fitur fisik (WellPlan, inklinasi, kedalaman)."
+            else "CHECK: the top 4 features are not physical (T&D model, inclination, depth)."
         )
     else:
         physics_ok = any(f.startswith("wp_") for f in top)
         note = (
-            "Wajar: nilai WellPlan (fungsi friction factor) termasuk fitur terpenting."
+            "Plausible: T&D model values (function of friction factor) are among the top features."
             if physics_ok
-            else "PERIKSA: nilai WellPlan tidak termasuk 4 fitur terpenting; model mungkin bergantung "
-            "pada fitur non-fisik."
+            else "CHECK: T&D model values are not among the top 4 features; the model may rely on "
+            "non-physical features."
         )
     if "plan_format" in top:
         note += (
-            " Format file (roadmap vs laporan WellPlan) ikut berpengaruh: ada perbedaan sistematis "
-            "antara dua sumber rencana."
+            " File format (roadmap vs WellPlan report) also matters: there is a systematic difference "
+            "between the two model sources."
         )
     if "inc_deg" in agg:
         rank = [r["feature"] for r in rows].index("inc_deg") + 1
-        note += f" Inklinasi peringkat {rank}."
+        note += f" Inclination ranks #{rank}."
     return {
         "method": method,
         "features": rows,
@@ -437,12 +437,12 @@ def latest_dataset(db: Session) -> Dataset | None:
 def train(
     db: Session,
     model_row: MLModel,
-    algorithm: str = "semua",
+    algorithm: str = "all",
     include_mlp: bool = False,
     dataset_id: int | None = None,
 ) -> MLModel:
     settings = get_settings()
-    model_row.status = "berjalan"
+    model_row.status = "running"
     db.commit()
 
     dataset = db.get(Dataset, dataset_id) if dataset_id else latest_dataset(db)
@@ -455,7 +455,7 @@ def train(
     n_wells = train_df.well_name.nunique()
     if n_wells < MIN_WELLS:
         raise ValueError(
-            f"Butuh minimal {MIN_WELLS} sumur latih (di luar blind test), baru {n_wells}"
+            f"At least {MIN_WELLS} training wells needed (excluding blind test), got {n_wells}"
         )
 
     groups, feature_log = select_feature_groups(train_df)
@@ -474,7 +474,7 @@ def train(
     for op in OPERATIONS:
         d = train_df[train_df.operation == op].reset_index(drop=True)
         if d.well_name.nunique() < MIN_WELLS:
-            metrics["notes"].append(f"{op}: sumur latih < {MIN_WELLS}, tidak dilatih")
+            metrics["notes"].append(f"{op}: training wells < {MIN_WELLS}, not trained")
             continue
         fidx = folds(d)
         scores, preds = {}, {}
@@ -498,13 +498,13 @@ def train(
                 p = oof(gg, op, spec, num, cat)
                 row["rmse_combo"] = rmse(gg.target, p)
                 if row["rmse_combo"] < row["rmse_single"] * (1 - COMBO_MIN_GAIN):
-                    row["dipakai"] = "per kombinasi"
+                    row["used"] = "per combination"
                     combo_specs[key] = spec
                     d.loc[gg["index"], "ml_oof"] = p
                 else:
-                    row["dipakai"] = "tunggal"
+                    row["used"] = "single"
             else:
-                row["dipakai"] = f"tunggal (< {COMBO_MIN_WELLS} sumur)"
+                row["used"] = f"single (< {COMBO_MIN_WELLS} wells)"
             strategy.append(row)
 
         final_single = CalibrationModel(op, spec, num, cat).fit(d)
@@ -569,7 +569,7 @@ def train(
         log.info("Model %s %s: %s", model_row.id, op, best)
 
     if not bundle["operations"]:
-        raise ValueError("Tidak ada operasi yang bisa dilatih. " + "; ".join(metrics["notes"]))
+        raise ValueError("No operation could be trained. " + "; ".join(metrics["notes"]))
 
     wells_tbl = train_df.drop_duplicates(["well_name", "section"])[
         ["well_name", "section", "well_type"]
@@ -646,23 +646,23 @@ def _compare_and_activate(db: Session, row: MLModel) -> None:
         cmp.update({"active_id": active.id, "active_skill": old})
         if old is not None and new is not None and new > old * (1 + HOLD_TOLERANCE):
             cmp["decision"] = (
-                f"Ditahan: rasio RMSE ML/WellPlan {new:.3f} lebih buruk dari model aktif "
-                f"#{active.id} ({old:.3f}). Bisa diaktifkan manual bila perlu."
+                f"Held: RMSE ratio ML/model {new:.3f} is worse than the active model "
+                f"#{active.id} ({old:.3f}). It can be activated manually if needed."
             )
             row.comparison = cmp
-            row.status = "ditahan"
+            row.status = "held"
             row.active = False
             return
         cmp["decision"] = (
-            f"Diaktifkan: rasio {new:.3f} vs model aktif #{active.id} "
+            f"Activated: ratio {new:.3f} vs active model #{active.id} "
             f"({old if old is None else round(old, 3)})"
         )
     else:
-        cmp["decision"] = "Diaktifkan: belum ada model aktif"
+        cmp["decision"] = "Activated: no active model yet"
     row.comparison = cmp
     db.execute(update(MLModel).values(active=False))
     row.active = True
-    row.status = "selesai"
+    row.status = "done"
 
 
 def _save_oof(db: Session, model_row: MLModel, oof_df: pd.DataFrame, bundle: dict) -> None:
@@ -699,7 +699,7 @@ def _save_oof(db: Session, model_row: MLModel, oof_df: pd.DataFrame, bundle: dic
                 if f.empty:
                     continue
                 for c in ("section", "well_type", "plan_format", "interval_type"):
-                    f[c] = f[c].fillna("tidak diketahui").astype(str)
+                    f[c] = f[c].fillna("unknown").astype(str)
                 yhat = routed.predict(f)
                 pred = preds.get(int(wid))
                 if pred is None:
@@ -725,14 +725,16 @@ def _save_oof(db: Session, model_row: MLModel, oof_df: pd.DataFrame, bundle: dic
 def run_blind_test(db: Session, model: MLModel) -> dict:
     """Uji sekali pada sumur blind test (tidak pernah dipakai untuk tuning)."""
     if model.blind_result:
-        raise ValueError("Blind test model ini sudah pernah dijalankan; hasilnya tidak diulang.")
-    if model.status not in ("selesai", "ditahan") or not model.path:
-        raise ValueError("Model belum selesai dilatih")
+        raise ValueError(
+            "The blind test of this model has already been run; it cannot be repeated."
+        )
+    if model.status not in ("done", "held") or not model.path:
+        raise ValueError("Model has not finished training")
     dataset = db.get(Dataset, model.dataset_id)
     df = dsm.load_frozen(dataset)
     blind = df[df.is_blind].reset_index(drop=True)
     if blind.empty:
-        raise ValueError("Dataset ini tidak memiliki sumur blind test")
+        raise ValueError("This dataset has no blind-test wells")
     bundle = joblib.load(model.path)
     res: dict = {
         "operations": {},
@@ -802,7 +804,7 @@ def run_training_job(
         except Exception as exc:
             db.rollback()
             row = db.get(MLModel, model_id)
-            row.status = "gagal"
+            row.status = "failed"
             row.message = str(exc)
             row.finished_at = datetime.now(UTC)
             db.commit()
@@ -812,4 +814,4 @@ def run_training_job(
 
 
 def active_model(db: Session) -> MLModel | None:
-    return db.scalar(select(MLModel).where(MLModel.active.is_(True), MLModel.status == "selesai"))
+    return db.scalar(select(MLModel).where(MLModel.active.is_(True), MLModel.status == "done"))

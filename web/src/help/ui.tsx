@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
-/** Komponen kecil untuk halaman panduan. */
+/** Small components for the How-to Guide pages. */
 
 export function Steps({ children }: { children: ReactNode }) {
   return <ol className="steps">{children}</ol>;
@@ -19,7 +19,7 @@ export function Step({ n, title, children }: { n: number | string; title: string
   );
 }
 
-/** Nama tombol / menu di layar. */
+/** Name of an on-screen button / menu. */
 export function Ui({ children }: { children: ReactNode }) {
   return <span className="ui-label">{children}</span>;
 }
@@ -38,7 +38,7 @@ export function Tip({ children, kind = "tip" }: { children: ReactNode; kind?: "t
 
 export type FlowNode = { title: string; desc?: string; to?: string; tone?: "user" | "system" | "out" };
 
-/** Diagram alur sederhana: kotak bersambung panah, membungkus di layar kecil. */
+/** Simple flow diagram: boxes joined by arrows, wraps on small screens. */
 export function Flow({ nodes, title }: { nodes: FlowNode[]; title?: string }) {
   return (
     <figure className="flow">
@@ -51,7 +51,7 @@ export function Flow({ nodes, title }: { nodes: FlowNode[]; title?: string }) {
               {n.desc && <span>{n.desc}</span>}
               {n.to && (
                 <Link to={n.to} className="small">
-                  buka
+                  open
                 </Link>
               )}
             </div>
@@ -60,8 +60,8 @@ export function Flow({ nodes, title }: { nodes: FlowNode[]; title?: string }) {
         ))}
       </div>
       <div className="flow-legend small muted">
-        <span className="flow-dot user" /> tindakan pengguna <span className="flow-dot system" /> proses sistem{" "}
-        <span className="flow-dot out" /> keluaran
+        <span className="flow-dot user" /> user action <span className="flow-dot system" /> system process{" "}
+        <span className="flow-dot out" /> output
       </div>
     </figure>
   );

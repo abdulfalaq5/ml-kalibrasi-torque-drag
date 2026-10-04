@@ -33,11 +33,11 @@ def status():
 
 @router.post("/scan")
 def scan(background: BackgroundTasks, db: Session = Depends(get_db)):
-    if db.scalar(select(ScanRun).where(ScanRun.status == "berjalan")):
-        raise HTTPException(409, "Pemindaian lain masih berjalan")
+    if db.scalar(select(ScanRun).where(ScanRun.status == "running")):
+        raise HTTPException(409, "Another scan is still running")
     if inbox_status()["pending"] == 0:
-        raise HTTPException(400, "Folder inbox kosong")
-    run = ScanRun(status="berjalan")
+        raise HTTPException(400, "The inbox folder is empty")
+    run = ScanRun(status="running")
     db.add(run)
     db.commit()
     background.add_task(run_scan_job, run.id)
@@ -53,5 +53,5 @@ def runs(db: Session = Depends(get_db)):
 def run_detail(run_id: int, db: Session = Depends(get_db)):
     r = db.get(ScanRun, run_id)
     if r is None:
-        raise HTTPException(404, "Riwayat pindai tidak ditemukan")
+        raise HTTPException(404, "Scan run not found")
     return run_out(r, full=True)

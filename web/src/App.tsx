@@ -27,7 +27,7 @@ export default function App() {
     return () => window.removeEventListener("tdml:unauthorized", onUnauth);
   }, [qc]);
 
-  if (me.isLoading) return <div className="center muted">Memuat…</div>;
+  if (me.isLoading) return <div className="center muted">Loading…</div>;
   if (!me.data) return <LoginPage onLogin={() => me.refetch()} />;
 
   const logout = async () => {
@@ -40,34 +40,42 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">Kalibrasi Torque &amp; Drag ML</div>
+        <div className="brand">Torque &amp; Drag ML Calibration</div>
         <nav>
-          <NavLink to="/sumur">Data sumur</NavLink>
-          <NavLink to="/kualitas">Kualitas data</NavLink>
-          <NavLink to="/model">Model</NavLink>
+          <NavLink to="/training">Training Data</NavLink>
+          <NavLink to="/monitoring">Monitoring</NavLink>
+          <NavLink to="/quality">Data Quality</NavLink>
+          <NavLink to="/models">Models</NavLink>
           <NavLink to="/dashboard">Dashboard</NavLink>
-          <NavLink to="/evaluasi">Evaluasi</NavLink>
-          <NavLink to="/panduan">Panduan</NavLink>
+          <NavLink to="/evaluations">Evaluations</NavLink>
+          <NavLink to="/help">How-to Guide</NavLink>
         </nav>
         <div className="user">
           <span className="muted">{me.data.username}</span>
           <button className="btn ghost" onClick={logout}>
-            Keluar
+            Sign out
           </button>
         </div>
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<Navigate to="/sumur" replace />} />
-          <Route path="/sumur" element={<WellsPage />} />
-          <Route path="/kualitas" element={<QualityPage />} />
-          <Route path="/model" element={<ModelsPage />} />
-          <Route path="/evaluasi" element={<EvaluationsPage />} />
-          <Route path="/panduan" element={<HelpPage />} />
-          <Route path="/panduan/:topic" element={<HelpPage />} />
+          <Route path="/" element={<Navigate to="/training" replace />} />
+          <Route path="/training" element={<WellsPage key="training" purpose="training" />} />
+          <Route path="/monitoring" element={<WellsPage key="monitoring" purpose="monitoring" />} />
+          <Route path="/quality" element={<QualityPage />} />
+          <Route path="/models" element={<ModelsPage />} />
+          <Route path="/evaluations" element={<EvaluationsPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/help/:topic" element={<HelpPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/dashboard/:wellId" element={<DashboardPage />} />
-          <Route path="*" element={<Navigate to="/sumur" replace />} />
+          {/* old links */}
+          <Route path="/sumur" element={<Navigate to="/training" replace />} />
+          <Route path="/kualitas" element={<Navigate to="/quality" replace />} />
+          <Route path="/model" element={<Navigate to="/models" replace />} />
+          <Route path="/evaluasi" element={<Navigate to="/evaluations" replace />} />
+          <Route path="/panduan/*" element={<Navigate to="/help" replace />} />
+          <Route path="*" element={<Navigate to="/training" replace />} />
         </Routes>
       </main>
     </div>

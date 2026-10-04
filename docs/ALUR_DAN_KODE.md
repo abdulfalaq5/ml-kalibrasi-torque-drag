@@ -37,6 +37,7 @@ Dokumen terkait: `README.md` (setup), `docs/panduan.md` (panduan pengguna),
 22. [Tes](#22-tes)
 23. [Cara mengembangkan (resep)](#23-cara-mengembangkan-resep)
 24. [Glosarium](#24-glosarium)
+25. [Perubahan feedback client #1: Training/Monitoring, Calibrate DD, forecast N ft, bahasa Inggris](#25-perubahan-feedback-client-1)
 
 ---
 
@@ -80,7 +81,7 @@ Konversi hanya di `backend/app/services/units.py`.
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # membuat app FastAPI, middleware sesi, daftar router, SPA
-│   │   ├── cli.py                  # python -m app.cli set-admin-password
+│   │   ├── cli.py                  # set-admin-password, refresh-calibration, recompute-quality
 │   │   ├── api/                    # router HTTP (satu file per area)
 │   │   │   ├── auth.py  health.py  files.py  inbox.py  wells.py  quality.py
 │   │   │   ├── datasets.py  models.py  limits.py  evaluations.py  templates.py
@@ -88,7 +89,7 @@ Konversi hanya di `backend/app/services/units.py`.
 │   │   ├── db/                     # models.py (tabel)  session.py (get_db)
 │   │   ├── parsers/                # pembaca Excel
 │   │   │   ├── workbook.py         # pintu masuk: deteksi format + section/tipe dari nama
-│   │   │   ├── roadmap.py          # format A (+ template Info Sumur/Survey)
+│   │   │   ├── roadmap.py          # format A (+ Calibrate DD, template Well Info/Survey)
 │   │   │   ├── wellplan_report.py  # format B
 │   │   │   ├── common.py           # struktur hasil parse + helper angka/teks
 │   │   │   └── column_map.py       # SEMUA pola nama sheet/kolom (ubah di sini bila ada varian)
@@ -96,13 +97,14 @@ Konversi hanya di `backend/app/services/units.py`.
 │   │       ├── importer.py   inbox.py   classify.py   units.py   operations.py
 │   │       ├── quality.py    dataset.py training.py   predict.py metrics.py
 │   │       ├── profile.py    limits.py  evaluation.py export.py  pdf.py  templates.py
-│   ├── alembic/versions/           # migrasi skema (0001 skema awal, 0002 paket 6 minggu)
+│   │       ├── calibration.py (offset Calibrate DD)   forecast.py (forecast N ft + sebab-akibat)
+│   ├── alembic/versions/           # 0001 skema awal, 0002 paket 6 minggu, 0003 purpose, 0004 kode status Inggris
 │   ├── tests/                      # pytest + fixtures sintetis
 │   └── requirements*.txt
 ├── web/src/                        # React + TypeScript + Vite
 │   ├── api.ts  App.tsx  main.tsx  styles.css
 │   ├── pages/                      # LoginPage, WellsPage, QualityPage, ModelsPage, DashboardPage, EvaluationsPage
-│   └── components/                 # UploadPanels, InboxPanel, ThreeProfileChart, PlotlyChart, LimitsPanel, ...
+│   └── components/                 # UploadPanels, InboxPanel, ThreeProfileChart, ForecastPanel, PlotlyChart, LimitsPanel, ...
 ├── scripts/                        # audit_files.py  anonymize_files.py  make_sample_data.py
 ├── deploy/                         # nginx/*.conf  setup_server.sh
 ├── docs/                           # panduan.md  keputusan.md  ALUR_DAN_KODE.md (ini)  utang_teknis.md
@@ -121,14 +123,14 @@ File: `backend/app/db/models.py`. Migrasi: `backend/alembic/versions/`.
 |---|---|---|
 | `admin_user` (`AdminUser`) | satu akun admin, password hash argon2 | `main.py` → `ensure_admin()`, `cli.py` |
 | `login_attempts` (`LoginAttempt`) | riwayat login untuk penguncian | `api/auth.py` → `login()` |
-| `wells` (`Well`) | **satu baris = satu sumur × section**; nama, section, tipe, `meta` (block weight, shoe, format, …) | `services/importer.py` |
-| `uploaded_files` (`UploadedFile`) | file terimpor: checksum, status, versi, sumber (upload/folder) | `services/importer.py` |
+| `wells` (`Well`) | **satu baris = satu sumur × section × purpose** (`training`/`monitoring`); nama, section, tipe, `meta` (block weight, shoe, format, offset Calibrate DD, …) | `services/importer.py` |
+| `uploaded_files` (`UploadedFile`) | file terimpor: checksum, `purpose`, status (`processing/ok/warning/failed/replaced/deleted`), versi, sumber (upload/folder/promote) | `services/importer.py` |
 | `validation_issues` (`ValidationIssue`) | galat/peringatan per file | `services/importer.py` → `_save_issues()` |
 | `survey` (`Survey`) | MD, inklinasi, azimuth, DLS (SI) | `importer._save_data()` |
 | `plan_results` (`PlanResult`) | rencana WellPlan: operasi, FF, kedalaman, nilai | `importer._save_data()` |
 | `actual_readings` (`ActualReading`) | pembacaan aktual | `importer._save_data()` |
 | `well_quality` (`WellQuality`) | status A/B/C, skor, daftar pemeriksaan | `services/quality.py` → `evaluate_well()` |
-| `quality_reviews` (`QualityReview`) | keputusan tinjauan (terima/kecualikan/perbaiki) | `api/quality.py` → `review()` |
+| `quality_reviews` (`QualityReview`) | keputusan tinjauan (`accept`/`exclude`/`fix`) | `api/quality.py` → `review()` |
 | `blind_sets` (`BlindSet`) | sumur blind test terkunci | `services/dataset.py` → `ensure_blind_set()` |
 | `datasets` (`Dataset`) | versi dataset beku: daftar sumur, hash, jalur snapshot | `dataset.freeze_dataset()` |
 | `models` (`MLModel`) | model terlatih: metrik, parameter, versi dataset, status, hasil blind test | `services/training.py` |
@@ -166,7 +168,7 @@ flowchart LR
   C --> D[background: services/inbox.py<br/>run_scan_job → scan]
   D --> E[per file: sha256 → find_by_checksum<br/>store_upload → import_file]
   E --> F{status}
-  F -->|ok/peringatan| G[pindah ke data/processed]
+  F -->|ok/warning| G[pindah ke data/processed]
   F -->|gagal| H[pindah ke data/rejected<br/>+ .alasan.txt]
   D --> I[quality.recompute_all]
   I --> J[ScanRun.summary<br/>per file + per sumur]
@@ -196,12 +198,12 @@ Aturan nama: `data/inbox/<J|S|Horizontal>/<nama sumur>/<file>`. Nama folder = ko
 
 | Langkah | File | Fungsi |
 |---|---|---|
-| Panel **Impor file Excel** (4 langkah) | `web/src/components/UploadPanels.tsx` | `ImportPanel()` |
-| Panel **Prediksi sumur baru** (4 langkah) | `web/src/components/UploadPanels.tsx` | `PredictPanel()` |
+| Panel **Upload training data** (5 langkah) | `web/src/components/UploadPanels.tsx` | `TrainingUploadPanel()` |
+| Panel **Upload a monitoring well** (5 langkah, lalu prediksi) | `web/src/components/UploadPanels.tsx` | `MonitoringUploadPanel()` |
+| Langkah 1 wajib: Well section + Well type (+ nama opsional); dropzone nonaktif sebelum dipilih | `UploadPanels.tsx` | `WellChoiceFields()`, `useDrop(…, disabled)` |
 | Catatan file asli WellPlan | `UploadPanels.tsx` | `RawFileNote()` |
-| Isian manual nama/section/tipe | `UploadPanels.tsx` | `Overrides()` |
-| Unduh template | `backend/app/api/templates.py` → `template()` | `services/templates.py` → `build_template("data-latih" \| "sumur-baru")` |
-| `POST /api/files` (multipart: file, well_name, section_in, well_type) | `backend/app/api/files.py` → `upload()` | cek ekstensi `.xlsx/.xlsm`, ukuran, tanda ZIP → `importer.store_upload()` → `importer.import_file()` |
+| Unduh template | `backend/app/api/templates.py` → `template()` | `services/templates.py` → `build_template("training" \| "monitoring")` (alias lama `data-latih`/`sumur-baru`) |
+| `POST /api/files` (multipart: file, **purpose**, **section_in**, **well_type** wajib; well_name opsional) | `backend/app/api/files.py` → `upload()` | validasi purpose/section/tipe, cek ekstensi, ukuran, tanda ZIP → `importer.store_upload()` → `importer.import_file(…, purpose=)` |
 | Respons (status impor, sumur, section, tipe, kualitas) | `api/files.py` | `file_out()` |
 | Riwayat impor | `api/files.py` | `list_files()`, `get_file()`, `download()` |
 
@@ -435,13 +437,14 @@ API: `api/wells.py` → `predict()`.
 
 | Bagian | File | Fungsi |
 |---|---|---|
-| Halaman + filter (section, tipe, kualitas, sumur, satuan, model) | `web/src/pages/DashboardPage.tsx` | `DashboardPage()` |
-| Tiga panel bertumpuk, zoom tersinkron, garis penuntun, pita, batas | `web/src/components/ThreeProfileChart.tsx` | `ThreeProfileChart()`, `flaggedIntervals()` |
+| Halaman + filter (data group, section, tipe, kualitas, sumur, satuan, model, kurva WellPlan calibrated/raw) | `web/src/pages/DashboardPage.tsx` | `DashboardPage()` |
+| Tiga panel bertumpuk, zoom tersinkron, garis penuntun, band P10–P90 (putus-putus), batas (titik-titik), zona forecast | `web/src/components/ThreeProfileChart.tsx` | `ThreeProfileChart()`, `flaggedIntervals()` |
+| Panel forecast N ft | `web/src/components/ForecastPanel.tsx` | `ForecastPanel()` |
 | Pembungkus Plotly (overlay garis penuntun, event zoom) | `web/src/components/PlotlyChart.tsx` | `PlotlyChart()` |
-| Warna dan gaya garis | `web/src/components/chartTheme.ts` | `COLOR`, `DASH`, `SYMBOL` |
+| Warna (satu warna per OHFF) dan simbol | `web/src/components/chartTheme.ts` | `COLOR`, `OHFF_COLOR`, `ohffColor()`, `SYMBOL` |
 | Panel batas aman | `web/src/components/LimitsPanel.tsx` | `LimitsPanel()` |
-| `GET /api/wells/{id}/profile?units=&model_id=` | `backend/app/api/wells.py` | `profile()` |
-| Data profil: WellPlan per FF, ML (+pita), aktual, selisih, metrik, batas, kualitas | `backend/app/services/profile.py` | `well_profile()` |
+| `GET /api/wells/{id}/profile?units=&model_id=&calibration=` | `backend/app/api/wells.py` | `profile()` |
+| Data profil: WellPlan per OHFF (nama seri baku, + offset Calibrate bila `calibrated`), ROT satu kurva, ML (+band), aktual, selisih, metrik, batas, kualitas | `backend/app/services/profile.py` | `well_profile()` |
 
 Konvensi selisih: **A − B**, kanan (+) = A lebih tinggi. Persen memakai `profile._pct()`.
 
@@ -480,7 +483,7 @@ Konvensi selisih: **A − B**, kanan (+) = A lebih tinggi. Persen memakai `profi
 | Laporan model Excel | `GET /api/models/{id}/report.xlsx` | `export.export_model_report()` |
 | Ringkasan model PDF | `GET /api/models/{id}/report.pdf` | `pdf.model_pdf()` |
 | Laporan kualitas data | `GET /api/quality/report.xlsx` | `export.export_quality_report()` |
-| Template data latih / sumur baru | `GET /api/templates/{data-latih\|sumur-baru}.xlsx` | `services/templates.py` → `build_template()` (`_petunjuk`, `_info`, `_drag`, `_torque`, `_actual`, `_survey`, `_contoh`) |
+| Template training / monitoring | `GET /api/templates/{training\|monitoring}.xlsx` | `services/templates.py` → `build_template()` (`_instructions`, `_info`, `_drag`, `_torque`, `_actual`, `_survey`, `_examples`) |
 | Dataset beku | `GET /api/datasets/{id}/download.csv.gz` | `api/datasets.py` → `download()` |
 
 Excel ditulis dengan XlsxWriter (tanpa macro). PDF: ReportLab + grafik matplotlib (font DejaVu).
@@ -507,10 +510,11 @@ Semua kecuali `health` dan `auth/login` wajib login. `/docs` (Swagger) hanya akt
 | `GET /api/health` | `api/health.py` → `health()` |
 | `POST /api/auth/login` · `POST /api/auth/logout` · `GET /api/auth/me` | `api/auth.py` → `login()`, `logout()`, `me()` |
 | `GET /api/inbox/status` · `POST /api/inbox/scan` · `GET /api/inbox/runs` · `GET /api/inbox/runs/{id}` | `api/inbox.py` → `status()`, `scan()`, `runs()`, `run_detail()` |
-| `POST /api/files` · `GET /api/files` · `GET /api/files/{id}` · `GET /api/files/{id}/download` | `api/files.py` → `upload()`, `list_files()`, `get_file()`, `download()` |
+| `POST /api/files` · `GET /api/files?purpose=` · `GET /api/files/{id}` · `GET /api/files/{id}/download` | `api/files.py` → `upload()`, `list_files()`, `get_file()`, `download()` |
 | `GET /api/templates/{kind}.xlsx` | `api/templates.py` → `template()` |
-| `GET /api/wells` · `GET /api/wells/matrix` · `GET/PATCH/DELETE /api/wells/{id}` | `api/wells.py` → `list_wells()`, `matrix()`, `get_well()`, `patch_well()`, `delete_well()` |
-| `POST /api/wells/{id}/predict` · `GET /api/wells/{id}/profile` | `api/wells.py` → `predict()`, `profile()` |
+| `GET /api/wells?purpose=` · `GET /api/wells/matrix` · `GET/PATCH/DELETE /api/wells/{id}` | `api/wells.py` → `list_wells()`, `matrix()`, `get_well()`, `patch_well()`, `delete_well()` |
+| `POST /api/wells/{id}/predict` · `GET /api/wells/{id}/profile` · `POST /api/wells/{id}/promote` | `api/wells.py` → `predict()`, `profile()`, `promote()` |
+| `POST /api/wells/{id}/forecast` · `POST /api/wells/{id}/forecast.xlsx` | `api/wells.py` → `forecast()`, `forecast_xlsx()` → `services/forecast.py` |
 | `GET /api/wells/{id}/export.xlsx` · `GET /api/wells/{id}/report.pdf` · `POST /api/wells/{id}/evaluate` | `api/wells.py` → `export()`, `report_pdf()`, `evaluate()` |
 | `GET /api/quality` · `POST /api/quality/recompute` · `POST /api/quality/{well_id}/review` · `GET /api/quality/report.xlsx` | `api/quality.py` → `list_quality()`, `recompute()`, `review()`, `report()` |
 | `GET /api/datasets` · `POST /api/datasets/freeze` · `GET /api/datasets/blind` · `POST /api/datasets/blind/reset` · `GET /api/datasets/{id}` · `GET /api/datasets/{id}/download.csv.gz` | `api/datasets.py` → `list_datasets()`, `freeze()`, `blind()`, `reset_blind()`, `get_dataset()`, `download()` |
@@ -526,16 +530,16 @@ Semua kecuali `health` dan `auth/login` wajib login. `/docs` (Swagger) hanya akt
 | File | Isi |
 |---|---|
 | `web/src/main.tsx` | bootstrap React, TanStack Query, router |
-| `web/src/App.tsx` | cek login, menu (Data sumur, Kualitas data, Model, Dashboard, Evaluasi, Panduan), rute |
+| `web/src/App.tsx` | cek login, menu (Training Data, Monitoring, Data Quality, Models, Dashboard, Evaluations, How-to Guide), rute (`/training`, `/monitoring`, `/quality`, `/models`, `/evaluations`, `/help`; rute lama diarahkan) |
 | `web/src/api.ts` | `api.get/post/patch/del`, tipe data (`WellItem`, `Profile`, `ModelItem`, `QualityRow`, …), `OPS`, `fmt()` |
 | `web/src/pages/LoginPage.tsx` | form login + tombol tampil/sembunyi password |
-| `web/src/pages/WellsPage.tsx` | `InboxPanel`, `ImportPanel`, `PredictPanel`, daftar sumur (koreksi section/tipe), matriks, riwayat impor |
+| `web/src/pages/WellsPage.tsx` | `WellsPage({purpose})`: training = `InboxPanel` + `TrainingUploadPanel`, monitoring = `MonitoringUploadPanel` (+ Promote to training); daftar sumur dengan filter & grouping (section, tipe, kualitas), matriks, riwayat impor |
 | `web/src/pages/QualityPage.tsx` | status A/B/C/X, detail pemeriksaan, `ReviewForm` |
 | `web/src/pages/ModelsPage.tsx` | `DatasetPanel`, form latih, riwayat model, `ModelDetail` (tab laporan, blind test, kurva belajar, SHAP) |
-| `web/src/pages/DashboardPage.tsx` | filter, `ThreeProfileChart`, `LimitsPanel`, tabel 5 selisih terbesar, metrik |
+| `web/src/pages/DashboardPage.tsx` | filter, `ThreeProfileChart`, `ForecastPanel`, `LimitsPanel`, tabel 5 selisih terbesar, metrik; bawaan All OHFF curves ✓, band ✗ |
 | `web/src/pages/EvaluationsPage.tsx` | evaluasi prediksi vs aktual |
-| `web/src/pages/HelpPage.tsx` | menu **Panduan**: sub-menu per grup, pencarian, navigasi sebelumnya/berikutnya (`/panduan/:topik`) |
-| `web/src/help/content.tsx` | **isi panduan** (`TOPICS`, `GROUPS`): langkah demi langkah, use case, alur sistem, keluaran, FAQ |
+| `web/src/pages/HelpPage.tsx` | menu **How-to Guide**: sub-menu per grup, pencarian, navigasi (`/help/:topic`) |
+| `web/src/help/content.tsx` | **isi How-to Guide** (bahasa Inggris; `TOPICS`, `GROUPS`): What This System Does (teks client), Quick Start, langkah demi langkah, use case, alur sistem, keluaran, FAQ |
 | `web/src/help/ui.tsx` | komponen panduan: `Steps`, `Step`, `Flow` (diagram alur), `Tip`, `Ui` (label tombol), `Go`, `Table` |
 | `web/src/components/*.tsx` | komponen di atas + `QualityBadge` |
 | `web/src/styles.css` | gaya (warna token di `:root`) |
@@ -611,3 +615,66 @@ Setiap keputusan/asumsi baru dicatat di `docs/keputusan.md` dengan kode K-xx.
 | Dataset beku | snapshot dataset dengan hash, agar hasil model bisa diulang |
 | Target "selisih" | model memprediksi koreksi terhadap WellPlan, bukan nilai langsung |
 | Pita 10–90% | rentang ketidakpastian dari kuantil residu validasi |
+
+---
+
+## 25. Perubahan feedback client #1
+
+Rincian dan status: `TODO_Feedback_Client_01.md`; alasan: `docs/keputusan.md` K-05, K-33 … K-41.
+
+### 25.1 Training vs Monitoring (tidak pernah dicampur)
+
+| Bagian | File → fungsi |
+|---|---|
+| Kolom `purpose` (`training` \| `monitoring`) di `wells` dan `uploaded_files`; unik (nama, section, purpose) | `db/models.py`, migrasi `0003_purpose_training_monitoring.py` |
+| Impor menyimpan purpose; sumur dicari per (nama, section, purpose) | `services/importer.py` → `import_file(…, purpose)`, `_get_or_create_well()`, `find_by_checksum()` |
+| Hanya training: sumur layak dataset, pembanding statistik, ringkasan pindai, matriks | `services/quality.py` → `eligible_well_ids()`, `recompute_all()`, `_stored_training_peers()`; `api/wells.py` → `matrix()` |
+| Promote to training (salin file terakhir sebagai training) | `api/wells.py` → `promote()` |
+| Tes pemisahan (monitoring berkualitas A tidak masuk dataset) | `tests/test_feedback.py` → `test_monitoring_upload_never_enters_training()` |
+
+### 25.2 Offset Calibrate DD dan kurva terkalibrasi
+
+| Bagian | File → fungsi |
+|---|---|
+| Baca Drag (label baris 1 + nilai baris 2) | `parsers/roadmap.py` → `_parse_drag_calibration()` |
+| Baca Torque menurut posisi (C2 on bottom, C3 off bottom; label baris 3 bisa tertimpa angka) | `parsers/roadmap.py` → `_parse_torque_calibration()` |
+| Offset per operasi dalam SI | `services/calibration.py` → `offset_si()`, `offsets_si()`, `has_calibration()` |
+| Kurva calibrated (= "Graph reference" Excel) di dashboard/ekspor/PDF | `services/profile.py` → `well_profile(…, calibration)` |
+| Grup fitur `calibration` (`dd_calibration`) | `services/dataset.py` → `FEATURE_GROUPS`, `features_frame()` |
+| Baca ulang data lama | `python -m app.cli refresh-calibration` |
+
+### 25.3 Forecast N ft ke depan + sebab-akibat
+
+```mermaid
+flowchart LR
+  U[Dashboard: Forecast ahead<br/>distance, from depth, bias] --> A[POST /api/wells/id/forecast]
+  A --> F[forecast.forecast_well]
+  F --> G[grid tiap 30 ft dari aktual terakhir<br/>berhenti di akhir rencana]
+  G --> P[predict_frame: ML, P10, P90]
+  P --> B[bias lokal opsional]
+  P --> E[local_contributions: SHAP awal vs akhir]
+  G --> C[_plan_changes: inklinasi, DLS, interval]
+  P --> L[first_crossing: operating limits]
+  E & C & L --> S[_sentence: kalimat otomatis]
+  S --> R[JSON / export_forecast .xlsx]
+```
+
+| Bagian | File → fungsi |
+|---|---|
+| Hitung forecast | `services/forecast.py` → `forecast_well()` |
+| Kontribusi lokal (SHAP pohon, linear Ridge, tukar fitur SVR/MLP) | `forecast.py` → `local_contributions()` |
+| Ekspor | `forecast.py` → `export_forecast()` |
+| UI + zona diarsir | `web/src/components/ForecastPanel.tsx`, `ThreeProfileChart.tsx` (prop `forecast`) |
+
+### 25.4 Bahasa Inggris dan label baku
+
+- Semua teks layar, pesan API, Excel, PDF, template: bahasa Inggris. Kode status database Inggris
+  (migrasi `0004_english_status_codes.py` memetakan kode lama dan mengosongkan `well_quality`;
+  jalankan `python -m app.cli recompute-quality`).
+- Nama seri: `services/operations.py` → `series_name()` (`PU - OHFF : 0.3`, `SO - OHFF : 0.5`, `ROT`).
+- Warna per OHFF: `services/export.py` → `OHFF_COLORS`/`ohff_color()` (Excel & PDF) dan
+  `web/src/components/chartTheme.ts` → `OHFF_COLOR` (dashboard) — nilainya harus sama.
+- Template Inggris (`Instructions`, `Well Info`, `Example …`); parser tetap menerima `Info Sumur`:
+  `parsers/column_map.py` → `TEMPLATE_INFO_SHEET`, `TEMPLATE_INFO_KEYS`.
+- File latihan sesi pengenalan: `scripts/make_sample_data.py --practice` (`make practice-files`).
+

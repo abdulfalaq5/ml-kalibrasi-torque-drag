@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { api, EvaluationItem, fmt, Op, OP_LABEL, OPS } from "../api";
+import { api, EvaluationItem, fmt, fmtDate, Op, OP_LABEL, OPS } from "../api";
 
 export default function EvaluationsPage() {
   const q = useQuery({ queryKey: ["evaluations"], queryFn: () => api.get<EvaluationItem[]>("/api/evaluations") });
@@ -8,13 +8,13 @@ export default function EvaluationsPage() {
   return (
     <div className="page">
       <section className="card">
-        <h2>Evaluasi prediksi vs aktual</h2>
+        <h2>Forecast vs actual evaluation</h2>
         <p className="muted small">
-          Untuk sumur baru: prediksi dibuat dari file WellPlan sebelum data aktual ada. Saat file berisi data aktual sumur itu
-          diimpor kemudian, sistem otomatis membandingkan prediksi yang tersimpan dengan aktual dan dengan WellPlan. "ML lebih dekat"
-          = persen titik ketika prediksi ML lebih dekat ke aktual daripada WellPlan.
+          For monitoring wells: the forecast is made from the WellPlan file before actual data exists. When a file with that
+          well's actual data is uploaded later, the system automatically compares the stored forecast with the actual data and
+          with the T&amp;D Model. "ML closer" = share of points where the ML forecast is closer to actual than the T&amp;D Model.
         </p>
-        {!list.length && <p className="muted">Belum ada evaluasi. Alurnya: Prediksi sumur baru → impor data aktualnya → hasil muncul di sini.</p>}
+        {!list.length && <p className="muted">No evaluations yet. Flow: forecast a monitoring well → upload its actual data later → the result appears here.</p>}
         {list.map((e) => (
           <div key={e.id} className="eval-card">
             <div className="row space wrap">
@@ -24,20 +24,19 @@ export default function EvaluationsPage() {
                 </Link>
               </b>
               <span className="muted small">
-                model #{e.model_id} · diprediksi {new Date(e.predicted_at).toLocaleString("id-ID")} · dievaluasi{" "}
-                {new Date(e.evaluated_at).toLocaleString("id-ID")}
+                model #{e.model_id} · forecast {fmtDate(e.predicted_at)} · evaluated {fmtDate(e.evaluated_at)}
               </span>
             </div>
             <table>
               <thead>
                 <tr>
-                  <th>Operasi</th>
-                  <th className="num">Titik</th>
-                  <th className="num">RMSE WellPlan (SI)</th>
+                  <th>Operation</th>
+                  <th className="num">Points</th>
+                  <th className="num">RMSE T&amp;D Model (SI)</th>
                   <th className="num">RMSE ML (SI)</th>
-                  <th className="num">MAPE WellPlan</th>
+                  <th className="num">MAPE T&amp;D Model</th>
                   <th className="num">MAPE ML</th>
-                  <th className="num">ML lebih dekat</th>
+                  <th className="num">ML closer</th>
                 </tr>
               </thead>
               <tbody>

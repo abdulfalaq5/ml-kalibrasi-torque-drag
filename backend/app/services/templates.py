@@ -1,11 +1,12 @@
-"""Template Excel untuk diisi pengguna lalu diunggah.
+"""Template Excel untuk diisi pengguna lalu diunggah (semua teks dalam bahasa Inggris).
 
 Struktur sheet sama dengan format A (roadmap) yang dibaca parser, ditambah sheet
-'Info Sumur' (nama, section, tipe, block weight, casing shoe) dan 'Survey' opsional.
-Sheet 'Petunjuk' dan 'Contoh' diabaikan saat impor.
+'Well Info' (nama, section, tipe, block weight, casing shoe) dan 'Survey' opsional.
+Baris "Calibrate" (koreksi DD) di sheet Drag/Torque opsional, posisinya sama dengan file roadmap.
+Sheet 'Instructions' dan 'Example ...' diabaikan saat impor.
 
-kind = "data-latih" : rencana WellPlan + data aktual (untuk melatih model)
-kind = "sumur-baru" : rencana WellPlan saja (untuk prediksi)
+kind = "training"   : rencana WellPlan + data aktual (data acuan ML)
+kind = "monitoring" : rencana WellPlan (+ aktual sejauh sudah dibor), hanya untuk forecast
 """
 
 import io
@@ -16,7 +17,7 @@ N_ROWS = 300  # baris isian per tabel
 FFS = [0.1, 0.3, 0.5]
 SECTIONS = ["26", "22", "17.5", "12.25", "8.5", "6.125"]
 
-# Contoh kecil (sintetis, satuan imperial) untuk sheet Contoh
+# Contoh kecil (sintetis, satuan imperial) untuk sheet Example
 EX_MD = [3000, 4000, 5000, 6000, 7000]
 EX_PU = {
     0.1: [110, 128, 146, 165, 183],
@@ -45,7 +46,7 @@ EX_ACT = [
 
 
 def build_template(kind: str) -> bytes:
-    with_actual = kind == "data-latih"
+    with_actual = kind in ("training", "data-latih")
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True})
     F = {
@@ -65,54 +66,64 @@ def build_template(kind: str) -> bytes:
         "wrap": wb.add_format({"text_wrap": True, "valign": "top"}),
         "muted": wb.add_format({"font_color": "#52514e", "italic": True}),
     }
-    _petunjuk(wb, F, with_actual)
+    _instructions(wb, F, with_actual)
     _info(wb, F)
     _drag(wb, F, example=False)
     _torque(wb, F, example=False)
     if with_actual:
         _actual(wb, F, example=False)
     _survey(wb, F)
-    _contoh(wb, F, with_actual)
+    _examples(wb, F, with_actual)
     wb.close()
     return buf.getvalue()
 
 
-def _petunjuk(wb, F, with_actual: bool) -> None:
-    ws = wb.add_worksheet("Petunjuk")
+def _instructions(wb, F, with_actual: bool) -> None:
+    ws = wb.add_worksheet("Instructions")
     ws.set_column(0, 0, 4)
     ws.set_column(1, 1, 110)
     title = (
-        "Template data latih (rencana WellPlan + data aktual)"
+        "Training data template (WellPlan T&D model + actual field data)"
         if with_actual
-        else "Template sumur baru (rencana WellPlan, untuk prediksi)"
+        else "Monitoring well template (WellPlan T&D model, for forecasting)"
     )
     ws.write(0, 1, title, F["title"])
     steps = [
-        'Satu file = satu section sumur (mis. section 8,5"). Buat file terpisah untuk section lain.',
-        "Isi sheet 'Info Sumur': nama sumur, section, tipe sumur (J / S / Horizontal), block weight. "
-        "Casing shoe dan mud weight opsional.",
-        "Isi sheet 'Drag': kedalaman (ft) di kolom 'Run Measured Depth', lalu hookload (kip = 1000 lbf) "
-        "Tripping In (slack off), Tripping Out (pick up), Rotating Off Bottom (rotating weight) untuk "
-        "setiap skenario friction factor. Nilai FF di baris kedua boleh diubah (mis. 0.30/0.40/0.50); "
-        "sertakan FF 0.30 dan 0.50.",
-        "Isi sheet 'Torque': kedalaman (ft), torque Rotating On Bottom dan Rotating Off Bottom (ft-lbf) per FF.",
+        'One file = one well section (e.g. 8.5" section). Use a separate file for each section.',
+        "Fill in sheet 'Well Info': well name, well section, well type (J / S / Horizontal), "
+        "block weight. Casing shoe and mud weight are optional.",
+        "Fill in sheet 'Drag': depth (ft) in column 'Run Measured Depth', then hookload (kip = 1000 lbf) "
+        "for Tripping In (slack off), Tripping Out (pick up) and Rotating Off Bottom (rotating weight) "
+        "for each open hole friction factor (OHFF). The OHFF value in the second header row may be "
+        "changed (e.g. 0.30 / 0.40 / 0.50); include OHFF 0.30 and 0.50.",
+        "Fill in sheet 'Torque': depth (ft), Rotating On Bottom and Rotating Off Bottom torque (ft-lbf) "
+        "for each OHFF.",
+        "Optional: the DD 'Calibrate' offsets at the top of 'Drag' (PICK UP / SLACK OFF / ROTATE, klbf) "
+        "and 'Torque' (On Bot / Off Bot, ft-lbf). Leave empty or 0 when there is no calibration.",
     ]
     if with_actual:
         steps.append(
-            "Isi sheet 'T&D Actual Reading': pembacaan lapangan per kedalaman (ft): pick up, slack off, "
-            "rotating weight (Klbs), torque off/on bottom (Lbs-ft). Sel boleh kosong bila tidak dibaca. "
-            "Minimal 8 kedalaman di dalam rentang kedalaman WellPlan agar dipakai melatih model."
+            "Fill in sheet 'T&D Actual Reading': field readings per depth (ft): pick up, slack off, "
+            "rotating weight (Klbs), torque off/on bottom (Lbs-ft). Leave a cell empty if it was not read. "
+            "At least 8 depths inside the WellPlan depth range are needed to use the well for training."
+        )
+    else:
+        steps.append(
+            "Actual readings are not required. If the well is already being drilled, add a sheet "
+            "'T&D Actual Reading' (same layout as the training template) to compare and forecast ahead."
         )
     steps += [
-        "Sheet 'Survey' opsional (MD ft, inklinasi, azimuth, DLS deg/100ft). Bila diisi, prediksi lebih baik.",
-        "Angka saja (titik sebagai desimal), jangan ubah judul kolom, jangan sisipkan kolom. Baris kosong diabaikan.",
-        "Lihat sheet 'Contoh' untuk contoh isian. Sheet 'Petunjuk' dan 'Contoh' tidak ikut diimpor.",
-        "Simpan sebagai .xlsx lalu unggah di aplikasi: "
+        "Sheet 'Survey' is optional (MD ft, inclination, azimuth, DLS deg/100ft). It improves the forecast.",
+        "Numbers only (dot as decimal separator); do not rename headers or insert columns. "
+        "Empty rows are ignored.",
+        "See the 'Example ...' sheets for a filled-in example. 'Instructions' and 'Example ...' sheets "
+        "are not imported.",
+        "Save as .xlsx and upload in the application: "
         + (
-            "Data sumur -> Impor file Excel."
+            "Training Data -> Upload. Select the well section and well type first."
             if with_actual
-            else "Data sumur -> Prediksi sumur baru. Sistem mengimpor, memprediksi dengan model aktif, "
-            "lalu menampilkan hasil (dashboard, Excel, PDF)."
+            else "Monitoring -> Upload. Select the well section and well type first. The system imports "
+            "the file, forecasts with the active model and shows the result (dashboard, Excel, PDF)."
         ),
     ]
     for i, t in enumerate(steps, start=2):
@@ -123,23 +134,23 @@ def _petunjuk(wb, F, with_actual: bool) -> None:
 
 
 def _info(wb, F) -> None:
-    ws = wb.add_worksheet("Info Sumur")
+    ws = wb.add_worksheet("Well Info")
     ws.set_column(0, 0, 34)
     ws.set_column(1, 1, 28)
     ws.set_column(2, 2, 60)
-    ws.write(0, 0, "Info Sumur", F["title"])
+    ws.write(0, 0, "Well Info", F["title"])
     rows = [
-        ("Nama sumur", "", "Wajib. Kode sumur, mis. P_MINA25_0025"),
-        ("Section (inci)", "", "Wajib. Pilih: 26, 22, 17.5, 12.25, 8.5, 6.125"),
-        ("Tipe sumur", "", "Wajib. Pilih: J, S, Horizontal"),
-        ("Block weight (klbf)", "", "Disarankan. Berat blok (Klbs)"),
+        ("Well name", "", "Required. Well code, e.g. P_MINA25_0025"),
+        ("Well section (in)", "", "Required. One of: 26, 22, 17.5, 12.25, 8.5, 6.125"),
+        ("Well type", "", "Required. One of: J, S, Horizontal"),
+        ("Block weight (klbf)", "", "Recommended. Block weight (Klbs)"),
         (
-            "Casing shoe section sebelumnya (ft)",
+            "Casing shoe of previous section (ft)",
             "",
-            "Opsional. Kedalaman shoe; bila kosong dipakai puncak rencana",
+            "Optional. Shoe depth; if empty the top of the plan is used",
         ),
-        ("Mud weight (ppg)", "", "Opsional"),
-        ("Lapangan", "", "Opsional"),
+        ("Mud weight (ppg)", "", "Optional"),
+        ("Field", "", "Optional"),
     ]
     for i, (lab, val, note) in enumerate(rows, start=2):
         ws.write(i, 0, lab, F["label"])
@@ -157,7 +168,7 @@ def _info(wb, F) -> None:
                 "validate": "decimal",
                 "criteria": ">=",
                 "value": 0,
-                "error_message": "Isi angka >= 0",
+                "error_message": "Enter a number >= 0",
             },
         )
 
@@ -173,8 +184,8 @@ def _number_validation(ws, r0, c0, r1, c1) -> None:
             "criteria": "between",
             "minimum": -1e6,
             "maximum": 1e7,
-            "error_title": "Bukan angka",
-            "error_message": "Isi angka (titik sebagai desimal).",
+            "error_title": "Not a number",
+            "error_message": "Enter a number (dot as decimal separator).",
         },
     )
 
@@ -203,12 +214,14 @@ def _blocks(
 
 def _drag(wb, F, example: bool, name: str = "Drag") -> None:
     ws = wb.add_worksheet(name)
-    ws.write(0, 0, "WellPlan Result - Drag (hookload)", F["bold"])
+    # baris 1-2: offset Calibrate DD (opsional), posisi sama dengan file roadmap client
+    ws.write_row(0, 0, ["Calibrate", None, "PICK UP", "SLACK OFF", "ROTATE"], F["label"])
+    ws.write_row(1, 2, [0, 0, 0] if example else ["", "", ""], F["input"])
     ws.write(
-        1,
+        2,
         0,
-        "Hookload dalam kip (1000 lbf), kedalaman dalam ft. Nilai FF di baris 'open hole friction "
-        "factor' boleh diubah.",
+        "WellPlan Result - Drag (hookload). Hookload in kip (1000 lbf), depth in ft. Calibrate = "
+        "optional DD offsets (klbf). The OHFF value in the 'open hole friction factor' row may be changed.",
         F["muted"],
     )
     data = None
@@ -230,7 +243,14 @@ def _drag(wb, F, example: bool, name: str = "Drag") -> None:
 def _torque(wb, F, example: bool, name: str = "Torque") -> None:
     ws = wb.add_worksheet(name)
     ws.write(0, 0, "WellPlan Result - Torque", F["bold"])
-    ws.write(1, 0, "Torsi dalam ft-lbf, kedalaman dalam ft.", F["muted"])
+    # offset Calibrate DD (opsional) di kolom C, posisi sama dengan file roadmap client
+    ws.write(1, 0, "Calibrate On Bot Torque", F["label"])
+    ws.write(2, 0, "Calibrate Off Bot Torque", F["label"])
+    ws.write(1, 2, 0 if example else "", F["input"])
+    ws.write(2, 2, 0 if example else "", F["input"])
+    ws.write(
+        1, 4, "Torque in ft-lbf, depth in ft. Calibrate = optional DD offsets (ft-lbf).", F["muted"]
+    )
     data = None
     if example:
         data = [
@@ -248,8 +268,8 @@ def _torque(wb, F, example: bool, name: str = "Torque") -> None:
 
 def _actual(wb, F, example: bool, name: str = "T&D Actual Reading") -> None:
     ws = wb.add_worksheet(name)
-    ws.write(0, 0, "T&D Actual Reading - pembacaan lapangan", F["bold"])
-    ws.write(1, 0, "Sel boleh kosong bila tidak dibaca. Satuan: ft, Klbs, Lbs-ft.", F["muted"])
+    ws.write(0, 0, "T&D Actual Reading - field readings", F["bold"])
+    ws.write(1, 0, "Leave a cell empty if it was not read. Units: ft, Klbs, Lbs-ft.", F["muted"])
     head = [
         "Depth (ft)",
         "Actual Pick Up Weight (Klbs)",
@@ -271,8 +291,8 @@ def _actual(wb, F, example: bool, name: str = "T&D Actual Reading") -> None:
 
 def _survey(wb, F, example: bool = False, name: str = "Survey") -> None:
     ws = wb.add_worksheet(name)
-    ws.write(0, 0, "Survey (opsional)", F["bold"])
-    ws.write(1, 0, "Kosongkan bila tidak ada.", F["muted"])
+    ws.write(0, 0, "Survey (optional)", F["bold"])
+    ws.write(1, 0, "Leave empty if not available.", F["muted"])
     for j, (t, u) in enumerate(
         (
             ("Measured Depth", "ft"),
@@ -293,29 +313,32 @@ def _survey(wb, F, example: bool = False, name: str = "Survey") -> None:
     ws.freeze_panes(4, 0)
 
 
-def _contoh(wb, F, with_actual: bool) -> None:
-    ws = wb.add_worksheet("Contoh")
+def _examples(wb, F, with_actual: bool) -> None:
+    ws = wb.add_worksheet("Example")
     ws.set_column(0, 0, 100)
     ws.write(
-        0, 0, "Contoh isian (data sintetis). Sheet 'Contoh ...' tidak ikut diimpor.", F["title"]
+        0,
+        0,
+        "Filled-in example (synthetic data). 'Example ...' sheets are not imported.",
+        F["title"],
     )
     ws.write(
         2,
         0,
-        "Info Sumur: Nama sumur = CONTOH-01, Section = 8.5, Tipe = J, Block weight = 20, "
+        "Well Info: Well name = EXAMPLE-01, Well section = 8.5, Well type = J, Block weight = 20, "
         "Casing shoe = 2800, Mud weight = 9.2",
         F["wrap"],
     )
     ws.write(
         3,
         0,
-        "Lihat sheet 'Contoh Drag', 'Contoh Torque'"
-        + (", 'Contoh T&D'" if with_actual else "")
-        + ", 'Contoh Survey'.",
+        "See sheets 'Example Drag', 'Example Torque'"
+        + (", 'Example T&D'" if with_actual else "")
+        + ", 'Example Survey'.",
         F["wrap"],
     )
-    _drag(wb, F, example=True, name="Contoh Drag")
-    _torque(wb, F, example=True, name="Contoh Torque")
+    _drag(wb, F, example=True, name="Example Drag")
+    _torque(wb, F, example=True, name="Example Torque")
     if with_actual:
-        _actual(wb, F, example=True, name="Contoh T&D")
-    _survey(wb, F, example=True, name="Contoh Survey")
+        _actual(wb, F, example=True, name="Example T&D")
+    _survey(wb, F, example=True, name="Example Survey")

@@ -1,15 +1,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, InboxStatus, ScanRun } from "../api";
+import { api, InboxStatus, SCAN_STATUS_LABEL, ScanRun, statusTone } from "../api";
 import QualityBadge from "./QualityBadge";
 
-const FILE_CLS: Record<string, string> = {
-  diterima: "ok",
-  "diterima dengan peringatan": "warn",
-  duplikat: "",
-  dilewati: "",
-  ditolak: "bad",
-};
 
 export default function InboxPanel() {
   const qc = useQueryClient();
@@ -17,24 +10,24 @@ export default function InboxPanel() {
   const runs = useQuery({
     queryKey: ["scanruns"],
     queryFn: () => api.get<ScanRun[]>("/api/inbox/runs"),
-    refetchInterval: (q) => ((q.state.data ?? []).some((r) => r.status === "berjalan") ? 2000 : false),
+    refetchInterval: (q) => ((q.state.data ?? []).some((r) => r.status === "running") ? 2000 : false),
   });
   const latest = runs.data?.[0];
   const detail = useQuery({
     queryKey: ["scanrun", latest?.id, latest?.status],
     queryFn: () => api.get<ScanRun>(`/api/inbox/runs/${latest!.id}`),
-    enabled: !!latest && latest.status !== "berjalan",
+    enabled: !!latest && latest.status !== "running",
   });
-  const [show, setShow] = useState<"sumur" | "file">("sumur");
+  const [show, setShow] = useState<"well" | "file">("well");
   const scan = useMutation({
     mutationFn: () => api.post<ScanRun>("/api/inbox/scan"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["scanruns"] }),
     onError: (e) => alert((e as Error).message),
   });
-  const running = latest?.status === "berjalan";
+  const running = latest?.status === "running";
   const doneKey = latest && !running ? `${latest.id}-${latest.status}` : null;
   useEffect(() => {
-    // setelah pemindaian selesai, segarkan daftar lain (sekali per pemindaian)
+    // after a scan finishes, refresh the other lists (once per scan)
     if (!doneKey) return;
     qc.invalidateQueries({ queryKey: ["wells"] });
     qc.invalidateQueries({ queryKey: ["quality"] });
@@ -47,35 +40,37 @@ export default function InboxPanel() {
   return (
     <section className="card">
       <div className="row space wrap">
-        <h2>Impor massal dari folder</h2>
+        <h2>Bulk import from folder (training data)</h2>
         <button className="btn primary" disabled={running || scan.isPending || !s?.pending} onClick={() => scan.mutate()}>
-          {running ? "Memindai…" : "Pindai folder"}
+          {running ? "Scanning…" : "Scan folder"}
         </button>
       </div>
       <p className="muted small">
-        Taruh file di <code>data/inbox/&lt;sumur&gt;/</code> atau <code>data/inbox/&lt;J|S|Horizontal&gt;/&lt;sumur&gt;/</code> (nama
-        folder = kode sumur, folder induk = tipe sumur). File yang baru diubah &lt; 1 menit dilewati. Setelah diimpor file dipindah
-        ke <code>data/processed/</code> atau <code>data/rejected/</code> (beserta alasan).
+        For many historical wells at once (administrator). Put files in{" "}
+        <code>data/inbox/&lt;J|S|Horizontal&gt;/&lt;well&gt;/</code> (folder name = well code, parent folder = well type; the
+        well section is read from the file name). Files are always imported as <b>Training Data</b>. Files modified less than
+        1 minute ago are skipped. After import, files move to <code>data/processed/</code> or <code>data/rejected/</code>{" "}
+        (with the reason).
       </p>
       {s && (
         <p className="small">
-          Inbox: <b>{s.pending}</b> file dari <b>{s.wells}</b> folder sumur menunggu
-          {s.too_new > 0 && <> · {s.too_new} baru diubah (dilewati)</>}
-          {!s.exists && <span className="bad-text"> · folder inbox belum ada</span>}
+          Inbox: <b>{s.pending}</b> files from <b>{s.wells}</b> well folders waiting
+          {s.too_new > 0 && <> · {s.too_new} recently modified (skipped)</>}
+          {!s.exists && <span className="bad-text"> · the inbox folder does not exist yet</span>}
         </p>
       )}
       {latest && (
         <div className="small">
-          Pemindaian terakhir #{latest.id}: <b>{latest.status}</b>
+          Last scan #{latest.id}: <b>{SCAN_STATUS_LABEL[latest.status] ?? latest.status}</b>
           {latest.counts &&
             Object.entries(latest.counts).map(([k, v]) => (
-              <span key={k} className={`badge ${FILE_CLS[k] ?? ""}`} style={{ marginLeft: 6 }}>
-                {v} {k}
+              <span key={k} className={`badge ${statusTone(k)}`} style={{ marginLeft: 6 }}>
+                {v} {SCAN_STATUS_LABEL[k] ?? k}
               </span>
             ))}
           {latest.quality && (
             <span style={{ marginLeft: 10 }}>
-              Kualitas: A {latest.quality.A ?? 0} · B {latest.quality.B ?? 0} · C {latest.quality.C ?? 0}
+              Quality: A {latest.quality.A ?? 0} · B {latest.quality.B ?? 0} · C {latest.quality.C ?? 0}
             </span>
           )}
           {latest.error && <div className="bad-text">{latest.error}</div>}
@@ -84,23 +79,23 @@ export default function InboxPanel() {
       {d?.files && (
         <>
           <div className="seg" style={{ marginTop: 10 }}>
-            <button className={show === "sumur" ? "on" : ""} onClick={() => setShow("sumur")}>
-              Per sumur-section ({d.wells?.length ?? 0})
+            <button className={show === "well" ? "on" : ""} onClick={() => setShow("well")}>
+              By well section ({d.wells?.length ?? 0})
             </button>
             <button className={show === "file" ? "on" : ""} onClick={() => setShow("file")}>
-              Per file ({d.files.length})
+              By file ({d.files.length})
             </button>
           </div>
           <div className="table-wrap" style={{ maxHeight: 420, overflow: "auto", marginTop: 8 }}>
-            {show === "sumur" ? (
+            {show === "well" ? (
               <table>
                 <thead>
                   <tr>
-                    <th>Sumur</th>
+                    <th>Well</th>
                     <th>Section</th>
-                    <th>Tipe</th>
+                    <th>Type</th>
                     <th>Status</th>
-                    <th>Alasan</th>
+                    <th>Reasons</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -122,9 +117,9 @@ export default function InboxPanel() {
                 <thead>
                   <tr>
                     <th>File</th>
-                    <th>Hasil</th>
-                    <th>Sumur</th>
-                    <th>Keterangan</th>
+                    <th>Result</th>
+                    <th>Well</th>
+                    <th>Note</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -133,10 +128,10 @@ export default function InboxPanel() {
                       <tr>
                         <td className="small">{f.file}</td>
                         <td>
-                          <span className={`badge ${FILE_CLS[f.status] ?? ""}`}>{f.status}</span>
+                          <span className={`badge ${statusTone(f.status)}`}>{SCAN_STATUS_LABEL[f.status] ?? f.status}</span>
                         </td>
                         <td className="small">
-                          {f.well ?? "–"} {f.section ? `${f.section}"` : ""} {f.version && f.version > 1 ? `(versi ${f.version})` : ""}
+                          {f.well ?? "–"} {f.section ? `${f.section}"` : ""} {f.version && f.version > 1 ? `(version ${f.version})` : ""}
                         </td>
                         <td className="small">{f.message || "–"}</td>
                       </tr>

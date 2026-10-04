@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type * as Plotly from "plotly.js";
-import { api, BlindSet, DatasetItem, fmt, GroupRow, ModelItem, Op, OP_LABEL, OPS } from "../api";
+import { api, BlindSet, DatasetItem, fmt, fmtDate, GroupRow, MODEL_STATUS_LABEL, ModelItem, Op, OP_LABEL, OPS, statusTone } from "../api";
 import PlotlyChart from "../components/PlotlyChart";
 import { COLOR } from "../components/chartTheme";
 
@@ -13,7 +13,15 @@ const UNIT: Record<Op, string> = {
   torque_on_bottom: "kN·m",
 };
 const ALGO_NAME: Record<string, string> = { ridge: "Ridge", xgboost: "XGBoost", random: "Random Forest", svr: "SVR", mlp: "MLP" };
-const STATUS_CLS: Record<string, string> = { selesai: "ok", gagal: "bad", ditahan: "warn", antri: "warn", berjalan: "warn" };
+const GROUP_LABEL: Record<string, string> = {
+  base: "Base features",
+  survey: "Survey (inclination, dogleg)",
+  casing_shoe: "Casing shoe / open hole",
+  bha_mud: "BHA & mud weight",
+  kop_interval: "KOP & interval type",
+  block_weight: "Block weight",
+  calibration: "DD Calibrate offset",
+};
 
 function Improvement({ wp, ml }: { wp: number | null; ml: number | null }) {
   if (wp === null || ml === null || !wp) return <>–</>;
@@ -21,7 +29,7 @@ function Improvement({ wp, ml }: { wp: number | null; ml: number | null }) {
   return (
     <span className={pct >= 0 ? "pos" : "neg"}>
       {pct >= 0 ? "▲ " : "▼ "}
-      {fmt(Math.abs(pct), 1)}% {pct >= 0 ? "lebih baik" : "lebih buruk"}
+      {fmt(Math.abs(pct), 1)}% {pct >= 0 ? "better" : "worse"}
     </span>
   );
 }
@@ -34,14 +42,14 @@ function GroupTable({ rows, cols }: { rows: GroupRow[]; cols: ("section" | "well
       <thead>
         <tr>
           {cols.includes("section") && <th>Section</th>}
-          {cols.includes("well_type") && <th>Tipe</th>}
-          <th className="num">Sumur</th>
-          <th className="num">Titik</th>
-          <th className="num">RMSE WellPlan</th>
+          {cols.includes("well_type") && <th>Type</th>}
+          <th className="num">Wells</th>
+          <th className="num">Points</th>
+          <th className="num">RMSE T&amp;D Model</th>
           <th className="num">RMSE ML</th>
-          <th className="num">MAPE WellPlan</th>
+          <th className="num">MAPE T&amp;D Model</th>
           <th className="num">MAPE ML</th>
-          <th className="num">ML lebih dekat</th>
+          <th className="num">ML closer</th>
           <th></th>
         </tr>
       </thead>
@@ -57,7 +65,7 @@ function GroupTable({ rows, cols }: { rows: GroupRow[]; cols: ("section" | "well
             <td className="num">{fmt(g.wellplan.mape, 1)}%</td>
             <td className="num">{fmt(g.ml.mape, 1)}%</td>
             <td className="num">{pct((g as GroupRow & { ml_better_frac?: number }).ml_better_frac)}</td>
-            <td className="small">{g.warning ? "⚠ data sedikit (< 3 sumur)" : ""}</td>
+            <td className="small">{g.warning ? "⚠ limited data (< 3 wells)" : ""}</td>
           </tr>
         ))}
       </tbody>
@@ -115,34 +123,34 @@ function ModelDetail({ id }: { id: number }) {
   return (
     <section className="card">
       <div className="row space wrap">
-        <h2>Laporan evaluasi model #{id}</h2>
+        <h2>Model evaluation report #{id}</h2>
         <div className="row gap wrap">
           <a className="btn" href={`/api/models/${id}/report.xlsx`}>
-            Laporan (.xlsx)
+            Report (.xlsx)
           </a>
           <a className="btn primary" href={`/api/models/${id}/report.pdf`}>
-            Ringkasan PDF
+            PDF summary
           </a>
         </div>
       </div>
       <p className="muted small">
-        Dataset v{m.dataset?.version} (hash {m.dataset?.hash?.slice(0, 12)}) · {m.dataset?.wells_train} sumur latih,{" "}
-        {m.dataset?.rows_train} titik · {m.dataset?.wells_blind} sumur blind test disisihkan. Validasi silang per kelompok sumur
-        (GroupKFold 5): sumur yang dinilai tidak pernah ada di data latih fold itu. RMSE dalam SI. Rasio RMSE ML/WellPlan rata-rata:{" "}
-        <b>{fmt(m.skill, 3)}</b> (&lt; 1 = ML lebih baik).
+        Dataset v{m.dataset?.version} (hash {m.dataset?.hash?.slice(0, 12)}) · {m.dataset?.wells_train} training wells,{" "}
+        {m.dataset?.rows_train} points · {m.dataset?.wells_blind} blind test wells set aside. Cross-validation grouped by well
+        (GroupKFold 5): a well being scored is never in that fold's training data. RMSE in SI. Mean RMSE ML/T&amp;D Model ratio:{" "}
+        <b>{fmt(m.skill, 3)}</b> (&lt; 1 = ML is better).
       </p>
-      {q.data.comparison?.decision && <div className={`alert ${q.data.status === "ditahan" ? "warn" : ""}`}>{q.data.comparison.decision}</div>}
+      {q.data.comparison?.decision && <div className={`alert ${q.data.status === "held" ? "warn" : ""}`}>{q.data.comparison.decision}</div>}
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Operasi</th>
-              <th>Model terpilih</th>
-              <th className="num">Sumur</th>
-              <th className="num">RMSE WellPlan</th>
+              <th>Operation</th>
+              <th>Selected model</th>
+              <th className="num">Wells</th>
+              <th className="num">RMSE T&amp;D Model</th>
               <th className="num">RMSE ML</th>
-              <th>ML vs WellPlan</th>
-              <th className="num">ML lebih dekat</th>
+              <th>ML vs T&amp;D Model</th>
+              <th className="num">ML closer</th>
               <th className="num">R² ML</th>
               <th className="num">Blind: RMSE WP → ML</th>
             </tr>
@@ -179,21 +187,21 @@ function ModelDetail({ id }: { id: number }) {
         <b>Blind test</b>{" "}
         {br ? (
           <span className="small">
-            dijalankan {new Date(br.run_at).toLocaleString("id-ID")} pada {br.wells.length} sumur: {br.wells.join(", ")}. Hasil
-            dicatat apa adanya dan tidak bisa diulang untuk model ini.
+            run {fmtDate(br.run_at)} on {br.wells.length} wells: {br.wells.join(", ")}. The result is recorded as is and
+            cannot be repeated for this model.
           </span>
         ) : (
           <>
             <span className="small muted">
-              Sumur blind test dikunci sejak dataset pertama dibekukan dan tidak dipakai untuk tuning. Jalankan <b>sekali</b>, setelah
-              model final dipilih.
+              Blind test wells were locked when the first dataset was frozen and are never used for tuning. Run it{" "}
+              <b>once</b>, after the final model is chosen.
             </span>{" "}
             <button
               className="btn small"
               disabled={blind.isPending}
-              onClick={() => confirm("Blind test hanya bisa dijalankan sekali untuk model ini. Lanjutkan?") && blind.mutate()}
+              onClick={() => confirm("The blind test can run only once for this model. Continue?") && blind.mutate()}
             >
-              {blind.isPending ? "Menjalankan…" : "Jalankan blind test"}
+              {blind.isPending ? "Running…" : "Run blind test"}
             </button>
           </>
         )}
@@ -201,34 +209,34 @@ function ModelDetail({ id }: { id: number }) {
 
       {m.feature_selection && (
         <details>
-          <summary>Uji manfaat fitur ({m.feature_selection.filter((r) => r.dipakai).length} grup dipakai)</summary>
+          <summary>Feature group tests ({m.feature_selection.filter((r) => r.used).length} groups used)</summary>
           <table>
             <thead>
               <tr>
-                <th>Grup fitur</th>
-                <th className="num">Skor (RMSE ML/WP)</th>
-                <th>Dipakai</th>
-                <th>Keterangan</th>
+                <th>Feature group</th>
+                <th className="num">Score (RMSE ML/WP)</th>
+                <th>Used</th>
+                <th>Note</th>
               </tr>
             </thead>
             <tbody>
               {m.feature_selection.map((r) => (
-                <tr key={r.grup}>
-                  <td>{r.grup}</td>
-                  <td className="num">{fmt(r.skor, 4)}</td>
-                  <td>{r.dipakai ? "ya" : "tidak"}</td>
-                  <td className="small">{r.keterangan}</td>
+                <tr key={r.group}>
+                  <td>{GROUP_LABEL[r.group] ?? r.group}</td>
+                  <td className="num">{fmt(r.score, 4)}</td>
+                  <td>{r.used ? "yes" : "no"}</td>
+                  <td className="small">{r.note}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="small muted">Grup dipertahankan hanya bila skor validasi silang turun ≥ 1% (fitur tanpa bukti manfaat tidak dipakai).</p>
+          <p className="small muted">A group is kept only if the cross-validation score improves by ≥ 1% (features without proven benefit are not used).</p>
         </details>
       )}
 
       <div className="row gap wrap" style={{ marginTop: 16 }}>
         <label className="inline">
-          Operasi
+          Operation
           <select value={op} onChange={(e) => setOp(e.target.value as Op)}>
             {OPS.filter((o) => m.operations[o]).map((o) => (
               <option key={o} value={o}>
@@ -240,15 +248,15 @@ function ModelDetail({ id }: { id: number }) {
         <div className="seg wrap-seg">
           {(
             [
-              ["by_section_type", "Section × tipe"],
+              ["by_section_type", "Section × type"],
               ["by_section", "Section"],
-              ["by_type", "Tipe"],
-              ["by_depth", "Kedalaman"],
-              ["per_well", "Per sumur"],
-              ["worst", "Titik terburuk"],
-              ["candidates", "Algoritma"],
-              ["strategy", "Tunggal vs kombinasi"],
-              ["learning", "Kurva belajar"],
+              ["by_type", "Type"],
+              ["by_depth", "Depth"],
+              ["per_well", "By well"],
+              ["worst", "Worst points"],
+              ["candidates", "Algorithms"],
+              ["strategy", "Single vs combination"],
+              ["learning", "Learning curve"],
               ["explain", "SHAP"],
             ] as const
           ).map(([k, l]) => (
@@ -267,12 +275,12 @@ function ModelDetail({ id }: { id: number }) {
             <table>
               <thead>
                 <tr>
-                  <th className="num">Dari (m)</th>
-                  <th className="num">Sampai (m)</th>
-                  <th className="num">Titik</th>
-                  <th className="num">RMSE WellPlan</th>
+                  <th className="num">From (m)</th>
+                  <th className="num">To (m)</th>
+                  <th className="num">Points</th>
+                  <th className="num">RMSE T&amp;D Model</th>
                   <th className="num">RMSE ML</th>
-                  <th className="num">ML lebih dekat</th>
+                  <th className="num">ML closer</th>
                 </tr>
               </thead>
               <tbody>
@@ -293,13 +301,13 @@ function ModelDetail({ id }: { id: number }) {
             <table>
               <thead>
                 <tr>
-                  <th>Sumur</th>
+                  <th>Well</th>
                   <th>Section</th>
-                  <th>Tipe</th>
-                  <th className="num">Titik</th>
-                  <th className="num">RMSE WellPlan</th>
+                  <th>Type</th>
+                  <th className="num">Points</th>
+                  <th className="num">RMSE T&amp;D Model</th>
                   <th className="num">RMSE ML</th>
-                  <th>ML vs WellPlan</th>
+                  <th>ML vs T&amp;D Model</th>
                 </tr>
               </thead>
               <tbody>
@@ -323,11 +331,11 @@ function ModelDetail({ id }: { id: number }) {
             <table>
               <thead>
                 <tr>
-                  <th>Sumur</th>
+                  <th>Well</th>
                   <th>Section</th>
-                  <th className="num">Kedalaman (m)</th>
-                  <th className="num">Aktual</th>
-                  <th className="num">WellPlan</th>
+                  <th className="num">Depth (m)</th>
+                  <th className="num">Actual</th>
+                  <th className="num">T&amp;D Model</th>
                   <th className="num">ML</th>
                 </tr>
               </thead>
@@ -347,7 +355,7 @@ function ModelDetail({ id }: { id: number }) {
           )}
           {view === "candidates" && (
             <>
-              <p className="small muted">RMSE validasi silang terbaik tiap algoritma (dari beberapa setelan × target langsung/selisih).</p>
+              <p className="small muted">Best cross-validation RMSE per algorithm (over several settings × direct/residual target).</p>
               <SmallChart
                 data={[
                   {
@@ -377,7 +385,7 @@ function ModelDetail({ id }: { id: number }) {
                       x: om.overall.wellplan.rmse ?? 0,
                       yref: "paper",
                       y: 1.08,
-                      text: "WellPlan",
+                      text: "T&D Model",
                       showarrow: false,
                       font: { color: COLOR.wellplan, size: 11 },
                     },
@@ -389,7 +397,7 @@ function ModelDetail({ id }: { id: number }) {
               <table>
                 <thead>
                   <tr>
-                    <th>Kandidat</th>
+                    <th>Candidate</th>
                     <th className="num">RMSE</th>
                     <th className="num">MAPE</th>
                     <th className="num">R²</th>
@@ -405,7 +413,7 @@ function ModelDetail({ id }: { id: number }) {
                         <td className="num">{fmt(s.rmse)}</td>
                         <td className="num">{fmt(s.mape, 1)}%</td>
                         <td className="num">{fmt(s.r2)}</td>
-                        <td>{k === om.chosen ? "dipilih" : ""}</td>
+                        <td>{k === om.chosen ? "selected" : ""}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -416,11 +424,11 @@ function ModelDetail({ id }: { id: number }) {
             <table>
               <thead>
                 <tr>
-                  <th>Section | tipe</th>
-                  <th className="num">Sumur</th>
-                  <th className="num">RMSE model tunggal</th>
-                  <th className="num">RMSE model kombinasi</th>
-                  <th>Dipakai</th>
+                  <th>Section | type</th>
+                  <th className="num">Wells</th>
+                  <th className="num">RMSE single model</th>
+                  <th className="num">RMSE combination model</th>
+                  <th>Used</th>
                 </tr>
               </thead>
               <tbody>
@@ -430,7 +438,7 @@ function ModelDetail({ id }: { id: number }) {
                     <td className="num">{s.n_wells}</td>
                     <td className="num">{fmt(s.rmse_single)}</td>
                     <td className="num">{fmt(s.rmse_combo)}</td>
-                    <td>{s.dipakai}</td>
+                    <td>{s.used}</td>
                   </tr>
                 ))}
               </tbody>
@@ -454,18 +462,18 @@ function ModelDetail({ id }: { id: number }) {
                     mode: "lines",
                     x: (om.learning_curve ?? []).map((p) => p.label),
                     y: (om.learning_curve ?? []).map((p) => p.rmse_wp),
-                    name: "WellPlan",
+                    name: "T&D Model",
                     line: { color: COLOR.wellplan, dash: "dash", width: 2 },
                   },
                 ]}
                 layout={{
-                  xaxis: { title: { text: "Jumlah sumur latih" }, type: "category", gridcolor: COLOR.grid },
+                  xaxis: { title: { text: "Number of training wells" }, type: "category", gridcolor: COLOR.grid },
                   yaxis: { title: { text: `RMSE (${UNIT[op]})` }, gridcolor: COLOR.grid },
                 }}
               />
               <p className="small muted">
-                Kurva yang masih turun di ujung kanan berarti menambah sumur masih membantu; bila mendatar, keterbatasan ada di data
-                atau fitur.
+                A curve still falling at the right end means more wells still help; when it is flat, the limit is in the data or
+                the features.
               </p>
             </>
           )}
@@ -491,7 +499,7 @@ function ModelDetail({ id }: { id: number }) {
       )}
       {m.notes.length > 0 && (
         <details>
-          <summary>Catatan dataset ({m.notes.length})</summary>
+          <summary>Dataset notes ({m.notes.length})</summary>
           <ul className="small">
             {m.notes.map((n, i) => (
               <li key={i}>{n}</li>
@@ -519,31 +527,31 @@ function DatasetPanel() {
   return (
     <section className="card">
       <div className="row space wrap">
-        <h2>Dataset (versi beku)</h2>
+        <h2>Datasets (frozen versions)</h2>
         <button className="btn" onClick={() => freeze.mutate()} disabled={freeze.isPending}>
-          {freeze.isPending ? "Membekukan…" : "Bekukan dataset baru"}
+          {freeze.isPending ? "Freezing…" : "Freeze a new dataset"}
         </button>
       </div>
       <p className="muted small">
-        Membekukan = menyimpan salinan dataset dari semua sumur berstatus kualitas A/B beserta hash isinya. Setiap model mencatat versi
-        dataset yang dipakai sehingga hasilnya bisa diulang. Dataset pertama juga mengunci ~20% sumur sebagai blind test (proporsional
-        per tipe).
+        Freezing = saving a copy of the dataset from all <b>Training Data</b> wells with data quality A/B, with a content hash.
+        Monitoring wells are never included. Every model records the dataset version it used so the result can be reproduced.
+        The first dataset also locks ~20% of the wells as the blind test (proportional per well type).
       </p>
       {blind.data && (
         <p className="small">
-          <b>Blind test terkunci</b> ({blind.data.note}): {blind.data.wells.join(", ")}
+          <b>Blind test locked</b> ({blind.data.note}): {blind.data.wells.join(", ")}
         </p>
       )}
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Versi</th>
-              <th>Dibuat</th>
-              <th className="num">Sumur-section</th>
+              <th>Version</th>
+              <th>Created</th>
+              <th className="num">Well sections</th>
               <th className="num">Blind</th>
-              <th className="num">Dikecualikan</th>
-              <th className="num">Baris</th>
+              <th className="num">Excluded</th>
+              <th className="num">Rows</th>
               <th>Hash</th>
               <th></th>
             </tr>
@@ -552,15 +560,15 @@ function DatasetPanel() {
             {list.map((d) => (
               <tr key={d.id}>
                 <td>v{d.version}</td>
-                <td className="small">{new Date(d.created_at).toLocaleString("id-ID")}</td>
+                <td className="small">{fmtDate(d.created_at)}</td>
                 <td className="num">{d.n_wells}</td>
                 <td className="num">{d.n_blind}</td>
                 <td className="num">{d.n_excluded}</td>
-                <td className="num">{d.n_rows.toLocaleString("id-ID")}</td>
+                <td className="num">{d.n_rows.toLocaleString("en-US")}</td>
                 <td className="small mono">{d.hash.slice(0, 12)}</td>
                 <td>
                   <a className="btn small ghost" href={`/api/datasets/${d.id}/download.csv.gz`}>
-                    Unduh
+                    Download
                   </a>
                 </td>
               </tr>
@@ -568,7 +576,7 @@ function DatasetPanel() {
             {!list.length && (
               <tr>
                 <td colSpan={8} className="muted">
-                  Belum ada. Dataset dibekukan otomatis saat pelatihan pertama.
+                  None yet. A dataset is frozen automatically at the first training run.
                 </td>
               </tr>
             )}
@@ -581,14 +589,14 @@ function DatasetPanel() {
 
 export default function ModelsPage() {
   const qc = useQueryClient();
-  const [algo, setAlgo] = useState("semua");
+  const [algo, setAlgo] = useState("all");
   const [mlp, setMlp] = useState(false);
   const [datasetId, setDatasetId] = useState("");
   const datasets = useQuery({ queryKey: ["datasets"], queryFn: () => api.get<DatasetItem[]>("/api/datasets") });
   const models = useQuery({
     queryKey: ["models"],
     queryFn: () => api.get<ModelItem[]>("/api/models"),
-    refetchInterval: (q) => ((q.state.data ?? []).some((m) => m.status === "antri" || m.status === "berjalan") ? 3000 : false),
+    refetchInterval: (q) => ((q.state.data ?? []).some((m) => m.status === "queued" || m.status === "running") ? 3000 : false),
   });
   const train = useMutation({
     mutationFn: () =>
@@ -604,51 +612,52 @@ export default function ModelsPage() {
     },
   });
   const list = models.data ?? [];
-  const running = list.some((m) => m.status === "antri" || m.status === "berjalan");
+  const running = list.some((m) => m.status === "queued" || m.status === "running");
   const [selected, setSelected] = useState<number | null>(null);
-  const shown = selected ?? list.find((m) => m.active)?.id ?? list.find((m) => m.status === "selesai")?.id ?? null;
+  const shown = selected ?? list.find((m) => m.active)?.id ?? list.find((m) => m.status === "done")?.id ?? null;
 
   return (
     <div className="page">
       <section className="card">
-        <h2>Latih model</h2>
+        <h2>Train a model</h2>
         <p className="muted small">
-          Satu model per operasi dari dataset beku (sumur blind test disisihkan). Kandidat: Ridge, XGBoost, Random Forest, SVR (+ MLP
-          opsional), target langsung atau selisih terhadap WellPlan, dinilai dengan validasi silang per kelompok sumur. Model baru
-          dibandingkan dengan model aktif: bila lebih buruk, model <b>ditahan</b> (tidak diaktifkan otomatis). Proses ±3–5 menit.
+          One model per operation from a frozen dataset of <b>Training Data</b> (blind test wells set aside). Candidates: Ridge,
+          XGBoost, Random Forest, SVR (+ optional MLP), with a direct target or a residual to WellPlan, scored with
+          cross-validation grouped by well. A new model is compared with the active model: if it is worse it is <b>held</b>{" "}
+          (not activated automatically). Takes about 3–5 minutes.
         </p>
         <div className="row gap wrap">
           <label className="inline">
             Dataset
             <select value={datasetId} onChange={(e) => setDatasetId(e.target.value)}>
-              <option value="">terbaru (dibekukan otomatis bila belum ada)</option>
+              <option value="">latest (frozen automatically if none)</option>
               {(datasets.data ?? []).map((d) => (
                 <option key={d.id} value={d.id}>
-                  v{d.version} · {d.n_wells} sumur-section
+                  v{d.version} · {d.n_wells} well sections
                 </option>
               ))}
             </select>
           </label>
           <label className="inline">
-            Algoritma
+            Algorithm
             <select value={algo} onChange={(e) => setAlgo(e.target.value)}>
-              <option value="semua">Bandingkan semua (terbaik per operasi)</option>
-              <option value="xgboost">XGBoost saja</option>
-              <option value="random_forest">Random Forest saja</option>
-              <option value="ridge">Ridge saja</option>
-              <option value="svr">SVR saja</option>
-              <option value="mlp">MLP saja</option>
+              <option value="all">Compare all (best per operation)</option>
+              <option value="xgboost">XGBoost only</option>
+              <option value="random_forest">Random Forest only</option>
+              <option value="ridge">Ridge only</option>
+              <option value="svr">SVR only</option>
+              <option value="mlp">MLP only</option>
             </select>
           </label>
           <label className="check">
-            <input type="checkbox" checked={mlp} onChange={(e) => setMlp(e.target.checked)} disabled={algo !== "semua"} />
-            Sertakan MLP (lebih lama)
+            <input type="checkbox" checked={mlp} onChange={(e) => setMlp(e.target.checked)} disabled={algo !== "all"} />
+            Include MLP (slower)
           </label>
           <button className="btn primary" onClick={() => train.mutate()} disabled={running || train.isPending}>
-            {running ? "Sedang melatih…" : "Latih model"}
+            {running ? "Training…" : "Train model"}
           </button>
           <a className="btn ghost" href="/api/models/dataset.csv">
-            Unduh dataset live (CSV)
+            Download live dataset (CSV)
           </a>
         </div>
       </section>
@@ -656,18 +665,18 @@ export default function ModelsPage() {
       <DatasetPanel />
 
       <section className="card">
-        <h2>Riwayat model</h2>
+        <h2>Model history</h2>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>#</th>
                 <th>Dataset</th>
-                <th>Algoritma</th>
+                <th>Algorithm</th>
                 <th>Status</th>
-                <th className="num">Rasio ML/WP</th>
+                <th className="num">ML/WP ratio</th>
                 <th>Blind test</th>
-                <th>Dibuat</th>
+                <th>Created</th>
                 <th></th>
               </tr>
             </thead>
@@ -678,28 +687,29 @@ export default function ModelsPage() {
                   <td>{m.dataset_version ? `v${m.dataset_version}` : "–"}</td>
                   <td>{m.algorithm}</td>
                   <td>
-                    <span className={`badge ${STATUS_CLS[m.status] ?? ""}`}>{m.status}</span> {m.active && <span className="badge ok">aktif</span>}
+                    <span className={`badge ${statusTone(m.status)}`}>{MODEL_STATUS_LABEL[m.status] ?? m.status}</span>{" "}
+                    {m.active && <span className="badge ok">active</span>}
                     {m.message && <div className="small bad-text">{m.message}</div>}
-                    {m.status === "ditahan" && <div className="small">{m.comparison?.decision}</div>}
+                    {m.status === "held" && <div className="small">{m.comparison?.decision}</div>}
                   </td>
                   <td className="num">{fmt(m.skill, 3)}</td>
-                  <td>{m.blind_done ? "sudah" : "–"}</td>
-                  <td className="small">{new Date(m.created_at).toLocaleString("id-ID")}</td>
+                  <td>{m.blind_done ? "done" : "–"}</td>
+                  <td className="small">{fmtDate(m.created_at)}</td>
                   <td className="nowrap">
-                    {(m.status === "selesai" || m.status === "ditahan") && (
+                    {(m.status === "done" || m.status === "held") && (
                       <>
                         <button className="btn small" onClick={() => setSelected(m.id)}>
-                          Laporan
+                          Report
                         </button>{" "}
                         {!m.active && (
                           <button
                             className="btn small ghost"
                             onClick={() =>
-                              (m.status !== "ditahan" || confirm("Model ini lebih buruk dari model aktif. Tetap aktifkan?")) &&
+                              (m.status !== "held" || confirm("This model is worse than the active model. Activate it anyway?")) &&
                               activate.mutate(m.id)
                             }
                           >
-                            Aktifkan
+                            Activate
                           </button>
                         )}
                       </>
@@ -710,7 +720,7 @@ export default function ModelsPage() {
               {!list.length && (
                 <tr>
                   <td colSpan={8} className="muted">
-                    Belum ada model.
+                    No models yet.
                   </td>
                 </tr>
               )}

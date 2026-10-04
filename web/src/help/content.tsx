@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { OHFF_COLOR } from "../components/chartTheme";
 import { Flow, Go, Step, Steps, Table, Tip, Ui } from "./ui";
 
 export type Topic = {
@@ -10,698 +11,835 @@ export type Topic = {
   body: ReactNode;
 };
 
-export const GROUPS = ["Mulai", "Langkah demi langkah", "Use case", "Alur sistem", "Referensi"];
+export const GROUPS = ["Getting started", "Step by step", "Use cases", "System flow", "Reference"];
 
 const STATUS_ROWS: ReactNode[][] = [
-  [<b>A · Layak</b>, "Lolos semua pemeriksaan", "Ya"],
-  [<b>B · Layak + peringatan</b>, "Lolos pemeriksaan wajib, ada catatan statistik", "Ya, ditandai"],
-  [<b>C · Ditahan</b>, "Gagal pemeriksaan kritis (mis. data aktual < 8 titik, satuan salah)", "Tidak, menunggu tinjauan"],
-  [<b>X · Dikecualikan</b>, "Dikecualikan engineer lewat tinjauan", "Tidak"],
+  [<b>A · Accepted</b>, "Passed all checks", "Yes"],
+  [<b>B · Accepted with warnings</b>, "Passed the critical checks, with statistical notes", "Yes, flagged"],
+  [<b>C · On hold</b>, "Failed a critical check (e.g. fewer than 8 actual points, wrong unit)", "No, waiting for review"],
+  [<b>X · Excluded</b>, "Excluded by an engineer's review", "No"],
 ];
 
+const Swatch = ({ c }: { c: string }) => (
+  <span style={{ display: "inline-block", width: 18, height: 4, borderRadius: 2, background: c, verticalAlign: "middle" }} />
+);
+
 export const TOPICS: Topic[] = [
-  // ------------------------------------------------------------------ Mulai
+  // ------------------------------------------------------------------ Getting started
   {
-    id: "ringkasan",
-    group: "Mulai",
-    title: "Apa yang dilakukan sistem ini",
-    summary: "Gambaran singkat, istilah, dan alur kerja dari data sampai hasil.",
-    keywords: "ringkasan pengantar wellplan friction factor ml kalibrasi",
+    id: "overview",
+    group: "Getting started",
+    title: "What This System Does",
+    summary:
+      "A brief overview of the system, the data used, and the workflow from historical data to Torque & Drag forecasting.",
+    keywords: "overview introduction wellplan friction factor ml calibration forecast directional driller",
     body: (
       <>
         <p>
-          Simulasi torque &amp; drag <b>WellPlan</b> memakai asumsi friction factor (FF), sehingga hasilnya sering berbeda dari
-          pembacaan di lapangan. Sistem ini belajar dari sumur yang sudah dibor (rencana WellPlan + data aktual), lalu memberi
-          <b> prediksi terkalibrasi</b> untuk sumur baru: hookload (pick up, slack off, rotating weight) dan torque (off/on bottom)
-          per kedalaman.
+          Torque &amp; Drag (T&amp;D) models and actual field measurements are prepared and recorded by the Directional Driller
+          (DD) during drilling operations. The dataset includes modeled and actual hookload under pick-up, slack-off, and
+          rotating conditions, as well as torque, referenced against measured depth.
+        </p>
+        <p>
+          The Machine Learning (ML) system learns the relationship and patterns between historical T&amp;D model outputs and
+          actual field measurements from previously drilled wells. Based on these learned patterns, the system generates a
+          forward-looking forecast of Torque &amp; Drag behavior at upcoming drilling depths.
         </p>
         <Flow
-          title="Alur kerja garis besar"
+          title="Workflow: historical data → ML → T&D forecast"
           nodes={[
-            { title: "1. Login", tone: "user" },
-            { title: "2. Masukkan data sumur", desc: "folder / unggah / template", tone: "user", to: "/sumur" },
-            { title: "3. Gerbang kualitas", desc: "status A/B/C", tone: "system", to: "/kualitas" },
-            { title: "4. Bekukan dataset & latih", desc: "validasi per sumur", tone: "user", to: "/model" },
-            { title: "5. Blind test", desc: "sekali, jujur", tone: "system", to: "/model" },
-            { title: "6. Prediksi sumur baru", tone: "user", to: "/sumur" },
-            { title: "7. Dashboard & ekspor", desc: "grafik, Excel, PDF", tone: "out", to: "/dashboard" },
-            { title: "8. Evaluasi", desc: "setelah dibor", tone: "out", to: "/evaluasi" },
+            { title: "Training Data", desc: "historical wells: T&D model + actual", tone: "user", to: "/training" },
+            { title: "Data Quality", desc: "A / B / C / X", tone: "system", to: "/quality" },
+            { title: "Freeze dataset & train", desc: "validated on unseen wells", tone: "user", to: "/models" },
+            { title: "Monitoring", desc: "well being drilled: T&D model (+ actual so far)", tone: "user", to: "/monitoring" },
+            { title: "T&D forecast", desc: "N ft ahead, P10–P90, cause and effect", tone: "out", to: "/dashboard" },
+            { title: "Excel / PDF", tone: "out" },
+            { title: "Evaluation", desc: "forecast vs actual", tone: "out", to: "/evaluations" },
           ]}
         />
-        <h3>Menu aplikasi</h3>
+        <h3>Menus</h3>
         <Table
-          head={["Menu", "Untuk apa"]}
+          head={["Menu", "Purpose"]}
           rows={[
-            [<Ui>Data sumur</Ui>, "Memasukkan data (pindai folder, unggah file/template), prediksi sumur baru, daftar sumur"],
-            [<Ui>Kualitas data</Ui>, "Status A/B/C tiap sumur-section, alasan, keputusan tinjauan engineer, laporan kualitas"],
-            [<Ui>Model</Ui>, "Membekukan dataset, melatih & membandingkan model, laporan akurasi, blind test"],
-            [<Ui>Dashboard</Ui>, "Tiga grafik (Hookload, Torque, Selisih), batas aman, ekspor Excel dan PDF"],
-            [<Ui>Evaluasi</Ui>, "Perbandingan prediksi dengan data aktual setelah sumur dibor"],
-            [<Ui>Panduan</Ui>, "Halaman ini"],
+            [<Ui>Training Data</Ui>, "Historical wells (the ML reference): bulk import from folder, upload files/templates, well list"],
+            [<Ui>Monitoring</Ui>, "Wells to be drilled or being drilled: upload, forecast. Never used for training"],
+            [<Ui>Data Quality</Ui>, "Status A/B/C/X per well section, reasons, the engineer's review decision, quality report"],
+            [<Ui>Models</Ui>, "Freeze datasets, train and compare models, accuracy report, blind test"],
+            [<Ui>Dashboard</Ui>, "Charts (Hookload, Torque, Difference), forecast N ft ahead, operating limits, Excel and PDF"],
+            [<Ui>Evaluations</Ui>, "Forecast compared with actual data after drilling"],
+            [<Ui>How-to Guide</Ui>, "This page"],
           ]}
         />
-        <h3>Istilah penting</h3>
+        <h3>Key terms</h3>
         <Table
-          head={["Istilah", "Arti"]}
+          head={["Term", "Meaning"]}
           rows={[
-            ["Sumur-section", "Satu file = satu section sumur (mis. 8,5\"). Kualitas dan prediksi dihitung per sumur-section."],
-            ["FF (friction factor)", "Asumsi gesekan di WellPlan; tiap FF menghasilkan satu kurva rencana. Baseline = FF 0,3."],
-            ["Out-of-fold", "Prediksi untuk sumur latih dari model yang tidak pernah melihat sumur itu (perbandingan jujur)."],
-            ["Blind test", "~20% sumur dikunci sejak awal dan hanya diuji sekali di akhir."],
-            ["Pita 10–90%", "Rentang ketidakpastian prediksi ML."],
+            ["Well section", 'One file = one section of a well (e.g. 8.5"). Quality and forecasts are per well section.'],
+            ["T&D model (WellPlan)", "The modelled hookload/torque. One curve per open hole friction factor (OHFF). Baseline = OHFF 0.3."],
+            ["DD Calibrate", "Offsets entered by the DD at the top of the roadmap Drag/Torque sheets. A correction, not actual data."],
+            ["Training Data / Monitoring", "Historical wells that teach the ML / wells being drilled that are only forecast. Never mixed."],
+            ["Unseen-well validation", "Out-of-fold forecast for a training well from a model that never saw that well (a fair comparison)."],
+            ["Blind test", "About 20% of the wells are locked from the start and tested only once at the end."],
+            ["Uncertainty band (P10–P90)", "The range in which 80% of the actual readings are expected."],
+            ["Difference (Δ)", "A − B. Right (+) = A is higher, left (−) = A is lower."],
           ]}
         />
+      </>
+    ),
+  },
+  {
+    id: "quick-start",
+    group: "Getting started",
+    title: "Quick Start",
+    summary: "One-page checklist: sign in → upload → forecast → output.",
+    keywords: "quick start checklist first time tutorial practice files",
+    body: (
+      <>
+        <Steps>
+          <Step n={1} title="Sign in">
+            Open the application address, enter the username and password, click <Ui>Sign in</Ui>.
+          </Step>
+          <Step n={2} title="Training Data → upload historical wells">
+            Select the <b>Well section</b> and <b>Well type</b>, then drop the files (template or original WellPlan files).
+            Check the result column: data quality A/B = used for training.
+          </Step>
+          <Step n={3} title="Data Quality → review status C">
+            Open each C well, read the reason, choose <Ui>Accept</Ui>, <Ui>Exclude</Ui> or <Ui>Fix</Ui> with a reason.
+          </Step>
+          <Step n={4} title="Models → Freeze a new dataset → Train model">
+            Wait 3–5 minutes. Status <b>Done + active</b> = in use. Read the report (RMSE T&amp;D model → ML).
+          </Step>
+          <Step n={5} title="Monitoring → upload the well being drilled">
+            Select the Well section and Well type, drop the file (T&amp;D model + actual readings so far).
+          </Step>
+          <Step n={6} title="Dashboard → Forecast ahead">
+            Enter the distance (e.g. 300 ft), click <Ui>Forecast</Ui>. Read the cause-and-effect sentences and the shaded
+            forecast window.
+          </Step>
+          <Step n={7} title="Output">
+            <Ui>Export Excel</Ui>, <Ui>PDF</Ui>, <Ui>⬇ Forecast (.xlsx)</Ui>.
+          </Step>
+        </Steps>
+        <Tip>
+          Practice files (synthetic, not client data) for a first session: the operator runs <code>make practice-files</code>{" "}
+          and shares <code>data/practice/</code> (training/, monitoring/, README.txt with the section and type to select). Use
+          the training practice files on a practice installation only, or delete the PRACTICE wells afterwards.
+        </Tip>
       </>
     ),
   },
   {
     id: "login",
-    group: "Mulai",
-    title: "Login dan keluar",
-    summary: "Masuk dengan akun admin, sesi 8 jam, penguncian 15 menit.",
-    keywords: "login masuk password lupa terkunci keluar sesi",
+    group: "Getting started",
+    title: "Sign in and sign out",
+    summary: "Sign in with the admin account; 8-hour session; 15-minute lock after failed attempts.",
+    keywords: "login sign in password forgot locked sign out session",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Buka alamat aplikasi">
-            Laptop: <code>http://127.0.0.1:8401</code>. Server: alamat <code>https://…</code> dari admin.
+          <Step n={1} title="Open the application address">
+            Laptop: <code>http://localhost:8401</code>. Server: the <code>https://…</code> address from the administrator.
           </Step>
-          <Step n={2} title="Isi Username dan Password">
-            Klik ikon mata di kolom password untuk menampilkan/menyembunyikan password.
+          <Step n={2} title="Enter the username and password">
+            Click the eye icon in the password field to show or hide the password.
           </Step>
-          <Step n={3} title="Klik Masuk">
-            Anda diarahkan ke <Ui>Data sumur</Ui>. Sesi berlaku 8 jam.
+          <Step n={3} title="Click Sign in">
+            You land on <Ui>Training Data</Ui>. The session lasts 8 hours.
           </Step>
-          <Step n={4} title="Keluar">
-            Klik <Ui>Keluar</Ui> di kanan atas.
+          <Step n={4} title="Sign out">
+            Click <Ui>Sign out</Ui> at the top right.
           </Step>
         </Steps>
         <Tip kind="warn">
-          Setelah 5 kali salah password, login terkunci 15 menit. Lupa password: operator menjalankan <code>make password</code> di
-          server (sekaligus membuka kunci).
+          After 5 wrong passwords, sign-in is locked for 15 minutes. Forgot the password: the operator runs{" "}
+          <code>make password</code> on the server (this also removes the lock).
         </Tip>
       </>
     ),
   },
 
-  // ------------------------------------------------------------------ Langkah
+  // ------------------------------------------------------------------ Step by step
   {
-    id: "siapkan-file",
-    group: "Langkah demi langkah",
-    title: "1. Menyiapkan file sumur",
-    summary: "Format yang diterima: file asli WellPlan (A/B) atau template.",
-    keywords: "format file excel xlsx xlsm roadmap laporan wellplan template section nama file",
+    id: "prepare-files",
+    group: "Step by step",
+    title: "1. Preparing well files",
+    summary: "Accepted formats: original WellPlan files (report or roadmap) or the template.",
+    keywords: "file format excel xlsx xlsm roadmap wellplan report template section file name calibrate",
     body: (
       <>
         <p>
-          <b>Satu file Excel = satu section sumur.</b> Tiga jenis file diterima:
+          <b>One Excel file = one well section.</b> Three kinds of file are accepted:
         </p>
         <Table
-          head={["Jenis", "Ciri", "Perlu isian manual?"]}
+          head={["Kind", "Recognised by", "Notes"]}
           rows={[
             [
-              <b>Laporan WellPlan (.xlsm)</b>,
-              "sheet Summary, Tripping Load Analysis, Off Bottom Torque analysis, Survey Outputs, Drilling Data",
-              "Tidak (nama, section, tipe terbaca otomatis)",
+              <b>WellPlan report (.xlsm)</b>,
+              "sheets Summary, Tripping Load Analysis, Off Bottom Torque analysis, Survey Outputs, Drilling Data",
+              "Survey and actual drilling data are read too",
             ],
             [
-              <b>Roadmap (.xlsx)</b>,
-              "sheet Drag, Torque, T&D Actual Reading",
-              "Pilih Tipe sumur (dan Section bila tidak ada di nama file)",
+              <b>T&amp;D roadmap (.xlsx)</b>,
+              "sheets Drag, Torque, T&D Actual Reading",
+              "DD Calibrate offsets (Drag row 2, Torque C2/C3) are read; 'Graph reference' columns are ignored",
             ],
-            [<b>Template</b>, "diunduh dari aplikasi; sheet Info Sumur, Drag, Torque, (T&D), Survey", "Tidak (isi di sheet Info Sumur)"],
+            [<b>Template</b>, "downloaded from the application; sheets Well Info, Drag, Torque, (T&D), Survey", "Same layout as the roadmap"],
           ]}
         />
-        <h3>Aturan nama</h3>
-        <ul>
-          <li>
-            Section di nama file: <code>_8.5in</code>, <code>8.50in</code>, <code>12.25 HS</code>, <code>22inHS</code>.
-          </li>
-          <li>
-            Untuk impor folder: <code>data/inbox/&lt;J|S|Horizontal&gt;/&lt;nama sumur&gt;/&lt;file&gt;</code>. Nama folder = kode
-            sumur, folder induk = tipe sumur.
-          </li>
-        </ul>
+        <p>
+          <b>Before every upload you select the Well section and Well type.</b> The selection wins over the file; if the file
+          says something else the import shows a warning.
+        </p>
         <Tip>
-          File .xlsm dibaca tanpa menjalankan macro. Angka yang tersimpan sebagai teks, satuan Klbs/kip/1000 lbf/ft-lbf/kft-lbf
-          dikenali otomatis.
+          .xlsm files are read without running macros. Numbers stored as text and the units Klbs/kip/1000 lbf/ft-lbf/kft-lbf are
+          recognised automatically. Old templates (sheet "Info Sumur") are still accepted.
         </Tip>
       </>
     ),
   },
   {
-    id: "impor-folder",
-    group: "Langkah demi langkah",
-    title: "2a. Impor massal dari folder",
-    summary: "Cara tercepat untuk puluhan sumur: Pindai folder.",
-    keywords: "impor massal folder inbox pindai scan processed rejected training",
+    id: "bulk-import",
+    group: "Step by step",
+    title: "2a. Bulk import from folder (Training Data)",
+    summary: "The fastest way for dozens of historical wells: Scan folder.",
+    keywords: "bulk import folder inbox scan processed rejected training",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Taruh file di folder inbox">
-            Operator menyalin file ke <code>data/inbox/</code> (data client: <code>make inbox-training</code>).
+          <Step n={1} title="Put the files in the inbox folder">
+            The operator copies files to <code>data/inbox/&lt;J|S|Horizontal&gt;/&lt;well&gt;/</code> (client data:{" "}
+            <code>make inbox-training</code>). Folder name = well code, parent folder = well type.
           </Step>
-          <Step n={2} title="Buka Data sumur → Impor massal dari folder">
-            Panel menampilkan jumlah file yang menunggu.
+          <Step n={2} title="Training Data → Bulk import from folder">
+            The panel shows how many files are waiting.
           </Step>
-          <Step n={3} title="Klik Pindai folder">
-            ±30 detik untuk 94 file. File yang baru diubah &lt; 1 menit dilewati (mungkin masih disalin).
+          <Step n={3} title="Click Scan folder">
+            About 30 seconds for 94 files. Files modified less than 1 minute ago are skipped (they may still be copying).
           </Step>
-          <Step n={4} title="Baca hasil">
-            Tab <Ui>Per sumur-section</Ui>: status kualitas A/B/C + alasan. Tab <Ui>Per file</Ui>: diterima / diterima dengan
-            peringatan / duplikat / dilewati / ditolak + alasan.
+          <Step n={4} title="Read the result">
+            Tab <Ui>By well section</Ui>: data quality A/B/C + reasons. Tab <Ui>By file</Ui>: accepted / accepted with warnings /
+            duplicate / skipped / rejected + reason.
           </Step>
         </Steps>
         <Tip>
-          File diterima dipindah ke <code>data/processed/</code>, file ditolak ke <code>data/rejected/</code> beserta file
-          <code> .alasan.txt</code>. File yang sama tidak diimpor dua kali; file yang isinya berubah menjadi versi baru.
+          The folder scan always imports as <b>Training Data</b>. Accepted files move to <code>data/processed/</code>, rejected
+          files to <code>data/rejected/</code> with a <code>.reason.txt</code>. The same file is never imported twice; a file
+          whose content changed becomes a new version.
         </Tip>
-        <Go to="/sumur">Buka Data sumur</Go>
+        <Go to="/training">Open Training Data</Go>
       </>
     ),
   },
   {
-    id: "impor-unggah",
-    group: "Langkah demi langkah",
-    title: "2b. Unggah file atau template (data latih)",
-    summary: "Unduh template, isi, unggah, lihat status kualitas.",
-    keywords: "unggah upload template data latih impor file excel info sumur actual reading",
+    id: "upload-training",
+    group: "Step by step",
+    title: "2b. Upload training data",
+    summary: "Select section and type, download the template, fill in, upload, read the data quality.",
+    keywords: "upload template training data import excel well info actual reading section type",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Data sumur → Impor file Excel (data latih) → Template data latih (.xlsx)">
-            Punya file asli WellPlan? Lewati langkah 1–2, langsung unggah.
+          <Step n={1} title="Training Data → select Well section and Well type">
+            Both are required; the upload area stays disabled until they are selected.
           </Step>
-          <Step n={2} title="Isi template">
-            <b>Info Sumur</b>: nama, section, tipe (J/S/Horizontal), block weight. <b>Drag</b>: kedalaman (ft) + hookload (kip)
-            Tripping In / Tripping Out / Rotating Off Bottom per FF. <b>Torque</b>: Rotating On/Off Bottom (ft-lbf) per FF.
-            <b> T&amp;D Actual Reading</b>: pembacaan lapangan (minimal 8 kedalaman). <b>Survey</b> opsional. Lihat sheet Contoh.
+          <Step n={2} title="Download the template (optional)">
+            Have the original WellPlan file? Skip steps 2–3 and upload it directly.
           </Step>
-          <Step n={3} title="Unggah">
-            Tarik file ke kotak unggah (bisa banyak). Untuk roadmap .xlsx asli, buka <Ui>Isian manual</Ui> dan pilih Tipe sumur.
+          <Step n={3} title="Fill in the template">
+            <b>Well Info</b>: name, section, type, block weight. <b>Drag</b>: depth (ft) + hookload (kip) Tripping In / Tripping
+            Out / Rotating Off Bottom per OHFF, optional DD Calibrate offsets in row 2. <b>Torque</b>: Rotating On/Off Bottom
+            (ft-lbf) per OHFF, optional Calibrate in C2/C3. <b>T&amp;D Actual Reading</b>: field readings (at least 8 depths).{" "}
+            <b>Survey</b> optional. See the Example sheets.
           </Step>
-          <Step n={4} title="Hasil">
-            Tabel per file: status impor, sumur, section, tipe, <b>status kualitas</b>. A/B dipakai pada pelatihan berikutnya.
+          <Step n={4} title="Upload">Drop the files (several at once is fine, same section and type).</Step>
+          <Step n={5} title="Result">
+            Per file: import status, well, section, type, <b>data quality</b>. A/B are used in the next training run.
           </Step>
         </Steps>
-        <Tip kind="warn">Jangan ubah judul kolom atau menyisipkan kolom di template. Angka memakai titik sebagai desimal.</Tip>
-        <Go to="/sumur">Buka Data sumur</Go>
+        <Tip kind="warn">Do not rename headers or insert columns in the template. Use a dot as the decimal separator.</Tip>
+        <Go to="/training">Open Training Data</Go>
       </>
     ),
   },
   {
-    id: "kualitas",
-    group: "Langkah demi langkah",
-    title: "3. Memeriksa kualitas data",
-    summary: "Status A/B/C/X, membaca alasan, mencatat keputusan tinjauan.",
-    keywords: "kualitas data status a b c x ditahan tinjauan review terima kecualikan perbaiki laporan",
+    id: "quality",
+    group: "Step by step",
+    title: "3. Checking data quality",
+    summary: "Status A/B/C/X, reading the reasons, recording a review decision.",
+    keywords: "data quality status a b c x on hold review accept exclude fix report",
     body: (
       <>
-        <Table head={["Status", "Arti", "Masuk training?"]} rows={STATUS_ROWS} />
+        <Table head={["Status", "Meaning", "Used for training?"]} rows={STATUS_ROWS} />
         <Steps>
-          <Step n={1} title="Buka Kualitas data">Kotak A/B/C/X di atas bisa diklik untuk menyaring.</Step>
-          <Step n={2} title="Klik baris sumur">Semua pemeriksaan tampil: kritis (merah), peringatan (kuning), lolos.</Step>
-          <Step n={3} title="Catat keputusan">
-            Pilih <Ui>Terima (dengan catatan)</Ui> (C → B), <Ui>Kecualikan dari training</Ui> (X), atau{" "}
-            <Ui>Perbaiki (minta file baru)</Ui> (tetap C). Isi alasan, klik <Ui>Simpan keputusan</Ui>. Nama dan waktu tercatat.
+          <Step n={1} title="Open Data Quality">
+            <Ui>Data group</Ui> = Training Data by default. The A/B/C/X tiles filter the list.
           </Step>
-          <Step n={4} title="Unduh laporan">
-            <Ui>Unduh laporan kualitas (.xlsx)</Ui> untuk dikirim ke client (daftar sumur yang perlu diperbaiki).
+          <Step n={2} title="Click a well">All checks are shown: critical (red), warning (yellow), pass.</Step>
+          <Step n={3} title="Record a decision">
+            <Ui>Accept (with a note)</Ui> (C → B), <Ui>Exclude from training</Ui> (X), or <Ui>Fix (request a new file)</Ui>{" "}
+            (stays C). Enter a reason, click <Ui>Save decision</Ui>. Name and time are recorded.
+          </Step>
+          <Step n={4} title="Download the report">
+            <Ui>Download quality report (.xlsx)</Ui> to send to the client (list of wells to fix).
           </Step>
         </Steps>
-        <h3>Pemeriksaan yang dilakukan</h3>
+        <h3>Checks</h3>
         <Table
-          head={["Kritis (gagal → C)", "Peringatan (→ B)"]}
+          head={["Critical (fail → C)", "Warning (→ B)"]}
           rows={[
-            ["Rencana pick up & slack off ada", "Rasio aktual/WellPlan menyimpang dari sumur sekelas"],
-            ["Satuan wajar (tidak beda ~1000×)", "Lompatan tak wajar antar titik"],
-            ["Nilai fisik wajar (hookload > 0, torsi ≥ 0)", "Nilai berulang persis (salin tempel)"],
-            ["Slack off ≤ rotating ≤ pick up", "Titik jauh lebih sedikit dari sumur sekelas"],
-            ["≥ 8 titik aktual di rentang WellPlan", "Rasio torsi jauh dari 1, urutan kedalaman di file turun"],
-            ["Section & tipe diketahui, bukan duplikat", ""],
+            ["T&D model pick up & slack off present", "Actual/T&D model ratio deviates from similar wells"],
+            ["Plausible units (no ~1000× difference)", "Implausible jumps between points"],
+            ["Plausible values (hookload > 0, torque ≥ 0)", "Exactly repeated values (copy-paste)"],
+            ["Slack off ≤ rotating ≤ pick up", "Far fewer points than similar wells"],
+            ["≥ 8 actual points within the T&D model depth range", "Torque ratio far from 1, depth order decreasing"],
+            ["Section & type known, not a duplicate", ""],
           ]}
         />
-        <Go to="/kualitas">Buka Kualitas data</Go>
+        <Go to="/quality">Open Data Quality</Go>
       </>
     ),
   },
   {
-    id: "latih",
-    group: "Langkah demi langkah",
-    title: "4. Membekukan dataset dan melatih model",
-    summary: "Dataset beku + blind test terkunci, lalu bandingkan algoritma.",
-    keywords: "model latih training bekukan dataset algoritma xgboost random forest ridge svr mlp ditahan aktif",
+    id: "train",
+    group: "Step by step",
+    title: "4. Freezing a dataset and training a model",
+    summary: "Frozen dataset + locked blind test, then compare algorithms.",
+    keywords: "model train freeze dataset algorithm xgboost random forest ridge svr mlp held active",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Model → Dataset (versi beku) → Bekukan dataset baru">
-            Mengambil semua sumur berstatus A/B, menyimpan snapshot + hash. Dataset pertama mengunci ~20% sumur sebagai blind test.
-            (Bila belum dibekukan, pelatihan pertama membekukan otomatis.)
+          <Step n={1} title="Models → Datasets → Freeze a new dataset">
+            Takes all <b>Training Data</b> wells with status A/B (never Monitoring), saves a snapshot + hash. The first dataset
+            locks ~20% of the wells as the blind test. (If none is frozen, the first training run freezes one automatically.)
           </Step>
-          <Step n={2} title="Model → Latih model">
-            Pilih <Ui>Dataset</Ui> (bawaan: terbaru) dan <Ui>Algoritma</Ui>: <i>Bandingkan semua</i> (Ridge, XGBoost, Random
-            Forest, SVR; centang <Ui>Sertakan MLP</Ui> bila perlu). Klik <Ui>Latih model</Ui>. Proses ±3–5 menit, status
-            diperbarui otomatis.
+          <Step n={2} title="Models → Train a model">
+            Choose the <Ui>Dataset</Ui> (default: latest) and <Ui>Algorithm</Ui>: <i>Compare all</i> (Ridge, XGBoost, Random
+            Forest, SVR; tick <Ui>Include MLP</Ui> if needed). Click <Ui>Train model</Ui>. About 3–5 minutes; the status updates
+            automatically.
           </Step>
-          <Step n={3} title="Lihat status di Riwayat model">
-            <b>selesai + aktif</b> = dipakai untuk prediksi. <b>ditahan</b> = lebih buruk dari model aktif (tidak diaktifkan
-            otomatis; bisa <Ui>Aktifkan</Ui> manual bila yakin).
+          <Step n={3} title="Check Model history">
+            <b>Done + active</b> = used for forecasts. <b>Held</b> = worse than the active model (not activated automatically;{" "}
+            <Ui>Activate</Ui> manually if you are sure).
           </Step>
         </Steps>
         <Flow
-          title="Yang terjadi saat Latih model"
+          title="What happens in Train model"
           nodes={[
-            { title: "Dataset beku", desc: "sumur blind disisihkan" },
-            { title: "Uji manfaat fitur", desc: "dipakai bila error turun ≥1%" },
-            { title: "Semua algoritma", desc: "validasi per sumur (5 fold)" },
-            { title: "Pilih terbaik", desc: "per operasi" },
-            { title: "Kurva belajar, SHAP", desc: "pita 10–90%" },
-            { title: "Banding model aktif", desc: "aktif / ditahan", tone: "out" },
+            { title: "Frozen dataset", desc: "blind wells set aside" },
+            { title: "Feature group tests", desc: "kept if the error drops ≥ 1% (incl. DD Calibrate)" },
+            { title: "All algorithms", desc: "validated per well (5 folds)" },
+            { title: "Best per operation" },
+            { title: "Learning curve, SHAP", desc: "band P10–P90" },
+            { title: "Compare with active", desc: "active / held", tone: "out" },
           ]}
         />
-        <Go to="/model">Buka Model</Go>
+        <Go to="/models">Open Models</Go>
       </>
     ),
   },
   {
-    id: "laporan-model",
-    group: "Langkah demi langkah",
-    title: "5. Membaca laporan model dan blind test",
-    summary: "Arti RMSE, 'ML lebih dekat', tab analisis, blind test sekali.",
-    keywords: "laporan model rmse mape r2 ml lebih dekat kurva belajar shap blind test section tipe kedalaman",
+    id: "model-report",
+    group: "Step by step",
+    title: "5. Reading the model report and the blind test",
+    summary: "RMSE, 'ML closer', analysis tabs, blind test once.",
+    keywords: "model report rmse mape r2 ml closer learning curve shap blind test section type depth",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Klik Laporan di Riwayat model">Tabel utama per operasi muncul di bawah.</Step>
-          <Step n={2} title="Baca tabel utama">
-            <b>RMSE WellPlan → RMSE ML</b>: rata-rata kesalahan (makin kecil makin baik), satuan kN / kN·m. <b>ML vs WellPlan</b>:
-            persen perbaikan. <b>ML lebih dekat</b>: persen titik ketika ML lebih dekat ke aktual daripada WellPlan.
+          <Step n={1} title="Click Report in Model history">The main table per operation appears below.</Step>
+          <Step n={2} title="Read the main table">
+            <b>RMSE T&amp;D model → RMSE ML</b>: mean error (smaller is better), in kN / kN·m. <b>ML vs T&amp;D model</b>:
+            improvement in percent. <b>ML closer</b>: share of points where ML is closer to actual than the T&amp;D model.
           </Step>
-          <Step n={3} title="Pakai tab analisis">
-            <Ui>Section × tipe</Ui> (baris kuning = &lt; 3 sumur, kurang andal), <Ui>Kedalaman</Ui>, <Ui>Per sumur</Ui>,
-            <Ui>Titik terburuk</Ui>, <Ui>Algoritma</Ui>, <Ui>Tunggal vs kombinasi</Ui>, <Ui>Kurva belajar</Ui> (turun = tambah sumur
-            membantu), <Ui>SHAP</Ui> (fitur paling berpengaruh).
+          <Step n={3} title="Use the analysis tabs">
+            <Ui>Section × type</Ui> (yellow rows = fewer than 3 wells, less reliable), <Ui>Depth</Ui>, <Ui>By well</Ui>,{" "}
+            <Ui>Worst points</Ui>, <Ui>Algorithms</Ui>, <Ui>Single vs combination</Ui>, <Ui>Learning curve</Ui> (falling = more
+            wells help), <Ui>SHAP</Ui> (most influential features).
           </Step>
-          <Step n={4} title="Jalankan blind test (sekali)">
-            Setelah model final dipilih, klik <Ui>Jalankan blind test</Ui>. Hasilnya dicatat apa adanya dan tidak bisa diulang.
+          <Step n={4} title="Run the blind test (once)">
+            After choosing the final model, click <Ui>Run blind test</Ui>. The result is recorded as is and cannot be repeated.
           </Step>
-          <Step n={5} title="Unduh untuk client">
-            <Ui>Laporan (.xlsx)</Ui> (semua tabel) dan <Ui>Ringkasan PDF</Ui> (metrik, blind test, kurva belajar, SHAP).
+          <Step n={5} title="Download for the client">
+            <Ui>Report (.xlsx)</Ui> (all tables) and <Ui>PDF summary</Ui> (metrics, blind test, learning curve, SHAP).
           </Step>
         </Steps>
         <Tip>
-          Angka validasi silang dihitung pada sumur yang tidak dilihat model, dan blind test pada sumur yang dikunci sejak awal. Bila
-          ML tidak lebih baik di kombinasi tertentu, laporan menunjukkannya apa adanya.
+          Cross-validation numbers are computed on wells the model did not see, and the blind test on wells locked from the start.
+          If ML is not better for a combination, the report shows it as is.
         </Tip>
       </>
     ),
   },
   {
-    id: "prediksi",
-    group: "Langkah demi langkah",
-    title: "6. Prediksi sumur baru",
-    summary: "Unggah rencana WellPlan sumur yang akan dibor, hasil langsung keluar.",
-    keywords: "prediksi sumur baru template rencana wellplan hasil prediksi excel pdf dashboard peringatan",
+    id: "monitoring",
+    group: "Step by step",
+    title: "6. Monitoring a well (forecast only)",
+    summary: "Upload a well to be drilled or being drilled; it is forecast but never used for training.",
+    keywords: "monitoring new well forecast template upload promote to training separate",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Data sumur → Prediksi sumur baru → Template sumur baru (.xlsx)">
-            Atau langsung pakai file WellPlan asli sumur itu.
+          <Step n={1} title="Monitoring → select Well section and Well type">Required before uploading.</Step>
+          <Step n={2} title="Download the monitoring template (optional)">Or use the original WellPlan file of that well.</Step>
+          <Step n={3} title="Fill in Well Info, Drag, Torque (Survey if available)">
+            Actual readings are optional: add the T&amp;D Actual Reading sheet with the readings so far to forecast ahead of the
+            current depth.
           </Step>
-          <Step n={2} title="Isi Info Sumur, Drag, Torque (Survey bila ada)">Tanpa data aktual.</Step>
-          <Step n={3} title="Unggah satu file">Sistem mengimpor, memeriksa, lalu memprediksi dengan model aktif.</Step>
-          <Step n={4} title="Baca hasil">
-            Tabel per operasi di kedalaman akhir: WellPlan (FF 0,3), <b>Prediksi ML</b>, rentang ML 10–90%, ML − WellPlan. Tombol{" "}
-            <Ui>Buka dashboard</Ui>, <Ui>Hasil prediksi (.xlsx)</Ui>, <Ui>Ringkasan (PDF)</Ui>.
+          <Step n={4} title="Upload one file">The system imports, checks and forecasts with the active model.</Step>
+          <Step n={5} title="Read the result">
+            Per operation at the final depth: T&amp;D model (OHFF 0.3), <b>ML forecast</b>, uncertainty band (P10–P90), ML − T&amp;D
+            model. Buttons <Ui>Open dashboard</Ui>, <Ui>⬇ Forecast (.xlsx)</Ui>, <Ui>⬇ Summary (PDF)</Ui>.
+          </Step>
+          <Step n={6} title="While drilling">
+            Upload the file again with new actual readings (same name and section): it replaces the previous version, and the
+            stored forecast is evaluated automatically (Evaluations).
+          </Step>
+          <Step n={7} title="After the well is finished (optional)">
+            <Ui>Promote to training</Ui> copies the well into Training Data. The copy goes through the data quality gate and is
+            used in the next training run if it gets A/B.
           </Step>
         </Steps>
         <Tip kind="warn">
-          Perhatikan peringatan: section/tipe jarang di data latih, kedalaman di luar rentang latih, atau survey kosong berarti
-          prediksi kurang andal.
+          Monitoring data never enters a dataset, even with complete actual data. Read the warnings: a section/type rare in the
+          training data, depths outside the training range, or a missing survey make the forecast less reliable.
         </Tip>
-        <Go to="/sumur">Buka Data sumur</Go>
+        <Go to="/monitoring">Open Monitoring</Go>
       </>
     ),
   },
   {
     id: "dashboard",
-    group: "Langkah demi langkah",
-    title: "7. Membaca dashboard",
-    summary: "Tiga grafik, zoom, selisih, penandaan interval, pita ketidakpastian.",
-    keywords: "dashboard grafik hookload torque selisih zoom pita interval ambang filter model satuan out-of-fold",
+    group: "Step by step",
+    title: "7. Reading the dashboard",
+    summary: "Standard plot labels, one colour per OHFF, band, limits, Difference, zoom.",
+    keywords: "dashboard chart hookload torque difference zoom band ohff colour pu so rot calibrated interval threshold",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Pilih sumur">
-            Saring dengan <Ui>Section</Ui>, <Ui>Tipe sumur</Ui>, <Ui>Kualitas</Ui>, lalu pilih <Ui>Sumur</Ui>. <Ui>Satuan</Ui>:
-            imperial (ft, klbf, ft-lbf) atau SI. <Ui>Model</Ui>: aktif atau versi lain.
+          <Step n={1} title="Select a well">
+            Filter by <Ui>Data group</Ui>, <Ui>Well section</Ui>, <Ui>Well type</Ui>, <Ui>Quality</Ui>, then choose{" "}
+            <Ui>Well</Ui>. <Ui>Units</Ui>: imperial (ft, klbf, ft-lbf) or SI. <Ui>Model</Ui>: active or another version.
           </Step>
-          <Step n={2} title="Baca tiga panel">
-            <b>Hookload</b> dan <b>Torque</b>: WellPlan <span style={{ color: "#2a78d6" }}>biru</span>, ML{" "}
-            <span style={{ color: "#eb6834" }}>oranye</span> (+ arsiran pita 10–90%), Aktual titik{" "}
-            <span style={{ color: "#1baf7a" }}>hijau</span>. Garis penuh = pick up / torque off bottom, putus-putus = slack off /
-            torque on bottom, titik-titik = rotating.
+          <Step n={2} title="WellPlan curves: with DD Calibrate or as modelled">
+            <Ui>Automatic</Ui> shows the T&amp;D model <b>with the DD Calibrate offsets</b> when the file has them (the same
+            curves as the Excel "Graph reference" crossplot), otherwise as modelled.
           </Step>
-          <Step n={3} title="Panel Selisih">
-            Selisih = A − B. <b>Kanan (+) = A lebih tinggi</b>, kiri (−) = lebih rendah. Pilih target dan <Ui>Absolut</Ui> /{" "}
-            <Ui>Persen</Ui>.
+          <Step n={3} title="Read the Hookload and Torque panels">
+            Y axis <b>Depth (ft)</b>. Curve names follow the client's Excel: <b>PU - OHFF : 0.3</b>, <b>SO - OHFF : 0.5</b>,{" "}
+            <b>ROT</b> (one curve), <b>Torque On Bottom - OHFF : 0.3</b>, ML <b>PU - ML</b>, actual <b>PU Actual</b>. One fixed colour per OHFF in every chart:{" "}
+            {Object.entries(OHFF_COLOR).map(([ff, c]) => (
+              <span key={ff} className="nowrap">
+                <Swatch c={c} /> {ff}{" "}
+              </span>
+            ))}
+            . ML forecast <span style={{ color: "#eb6834" }}>orange</span>, uncertainty band (P10–P90) orange{" "}
+            <b>dashed</b>, actual readings <span style={{ color: "#1baf7a" }}>green</span> points, operating limits red{" "}
+            <b>dotted</b>.
           </Step>
-          <Step n={4} title="Zoom">
-            Tarik kotak di grafik; klik dua kali untuk kembali; <Ui>Reset zoom</Ui> untuk semua panel. Dengan{" "}
-            <Ui>Samakan kedalaman saat zoom</Ui>, ketiga panel ikut. Arahkan kursor: garis penuntun muncul di ketiga panel dan
-            nilainya tampil di bar bawah.
+          <Step n={4} title="Checkboxes">
+            <Ui>All OHFF curves</Ui> (on by default) shows every OHFF; off = only OHFF 0.3. <Ui>Uncertainty band (P10–P90)</Ui>{" "}
+            (off by default) adds the two dashed bounds.
           </Step>
-          <Step n={5} title="Penandaan interval">
-            Atur seri dan ambang |selisih| di <Ui>Penandaan interval</Ui>; interval yang lewat ambang diarsir kuning dan didaftar di
-            bawah grafik bersama tabel 5 selisih terbesar.
+          <Step n={5} title="Difference (Δ) panel">
+            Δ = A − B. <b>Right (+) = A is higher</b>, left (−) = lower. Choose the target and <Ui>Absolute</Ui> /{" "}
+            <Ui>Percent</Ui>.
+          </Step>
+          <Step n={6} title="Zoom">
+            Drag a box on a chart; double click to go back; <Ui>Reset zoom</Ui> for all panels. With{" "}
+            <Ui>Same depth in all panels when zooming</Ui> the panels follow each other. Hover: a guide line appears in all
+            panels and the values show in the bar below.
+          </Step>
+          <Step n={7} title="Flag intervals">
+            Choose the series and the |Δ| threshold in <Ui>Flag intervals</Ui>; intervals above the threshold are shaded yellow
+            and listed below the charts with the 5 largest differences.
           </Step>
         </Steps>
         <Tip>
-          Untuk sumur yang ikut melatih model, garis ML adalah prediksi <b>out-of-fold</b> (model yang tidak melihat sumur itu),
-          sehingga perbandingan dengan aktual tetap jujur.
+          For wells used in training, the ML line is an <b>unseen-well validation</b> forecast (from a model that never saw that
+          well), so the comparison with actual data stays fair.
         </Tip>
-        <Go to="/dashboard">Buka Dashboard</Go>
+        <Go to="/dashboard">Open Dashboard</Go>
       </>
     ),
   },
   {
-    id: "batas-aman",
-    group: "Langkah demi langkah",
-    title: "8. Batas aman",
-    summary: "Menetapkan batas hookload/torsi dan melihat kedalaman saat batas tersentuh.",
-    keywords: "batas aman limit torque top drive hookload slack off minimum kedalaman menyentuh margin",
+    id: "forecast",
+    group: "Step by step",
+    title: "8. Forecast N ft ahead with cause and effect",
+    summary: "Forecast the next 300 ft (or any distance) from the last actual depth, with explanations.",
+    keywords: "forecast ahead distance 300 ft cause effect shap inclination dogleg interval limit bias correction export",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Dashboard → Batas aman dan deteksi interval">Di bawah grafik.</Step>
-          <Step n={2} title="Tambah batas">
-            Pilih operasi (pick up maks, slack off min, torque on bottom maks, …), isi nilai dalam satuan tampilan, pilih berlaku
-            untuk <i>semua sumur section ini</i> atau <i>sumur ini saja</i>, klik <Ui>Tambah batas</Ui>.
+          <Step n={1} title="Dashboard → select the well → Forecast ahead">
+            Enter <Ui>Distance</Ui> (e.g. 300 ft). <Ui>From depth</Ui> is optional; default = the last actual depth (or the top
+            of the T&amp;D model when there is no actual data yet).
           </Step>
-          <Step n={3} title="Baca hasil">
-            Tabel: kedalaman pertama ketika ML, batas pita ML, dan WellPlan menyentuh batas (<i>aman</i> = tidak menyentuh), serta
-            margin minimum. Di grafik: garis merah putus-titik pada nilai batas dan arsiran merah di bawah kedalaman tersentuh.
+          <Step n={2} title="Optional: Local bias correction">
+            Shifts the forecast by the median (actual − ML) of the last 10 actual points within 1,000 ft. For display only; the
+            model is not changed.
+          </Step>
+          <Step n={3} title="Click Forecast">
+            The forecast window is shaded in the charts. The table shows per operation: ML at the start and the end, the change,
+            P10–P90 at the end and the main drivers.
+          </Step>
+          <Step n={4} title="Read the cause and effect">
+            One sentence per operation, e.g. <i>"Pick up: from 8,450 to 8,750 ft the ML forecast is expected to rise from 210.3
+            to 225.1 klbf (+14.8). Main drivers: T&amp;D model (+10.2), Inclination (+3.1), inclination 28° → 34°. The max
+            operating limit (250.0 klbf) is reached by the P10–P90 band at 8,720 ft."</i>
+          </Step>
+          <Step n={5} title="Export">
+            <Ui>⬇ Forecast (.xlsx)</Ui>: Summary (sentences), one sheet per operation (depth, ML, P10, P90, T&amp;D model per OHFF
+            and a chart), Explanation (drivers, plan changes, operating limits).
           </Step>
         </Steps>
-        <Tip>Batas sumur menimpa batas section untuk operasi yang sama. Batas ikut tercetak di Excel (sheet Batas aman) dan PDF.</Tip>
+        <h3>How the explanation is made</h3>
+        <Table
+          head={["Part", "Source"]}
+          rows={[
+            ["Main drivers", "Local SHAP: change of each feature's contribution between the start and the end of the window (feature swap for SVR/MLP). 'T&D model' = change of the T&D model curve itself."],
+            ["Plan changes", "Survey: inclination at the start and the end, maximum dogleg, interval type (vertical / build / tangent / drop / horizontal)."],
+            ["Operating limits", "First depth where the ML forecast or the P10–P90 band reaches a limit."],
+          ]}
+        />
+        <Tip kind="warn">
+          The ML needs the T&amp;D model as input: the forecast stops where the WellPlan results end (a warning says so).
+        </Tip>
       </>
     ),
   },
   {
-    id: "ekspor",
-    group: "Langkah demi langkah",
-    title: "9. Ekspor Excel dan PDF",
-    summary: "Mengunduh hasil per sumur, laporan model, laporan kualitas.",
-    keywords: "ekspor excel pdf unduh laporan hasil prediksi download",
+    id: "limits",
+    group: "Step by step",
+    title: "9. Operating limits",
+    summary: "Set hookload/torque limits and see the depth where they are reached.",
+    keywords: "operating limits limit torque top drive hookload slack off minimum depth margin",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Dashboard → Ekspor Excel">
-            Sheet <b>Info</b>, <b>Drag</b>, <b>Torque</b>, <b>T&amp;D Actual Reading</b> (struktur seperti file roadmap + kolom ML,
-            pita, selisih), <b>Selisih</b>, <b>Grafik</b> (3 grafik), <b>Batas aman</b>, <b>Metrik</b>.
+          <Step n={1} title="Dashboard → Operating limits">Below the charts.</Step>
+          <Step n={2} title="Add a limit">
+            Choose the operation (pick up max, slack off min, torque on bottom max, …), enter the value in the display unit,
+            choose <i>all wells in this section</i> or <i>this well only</i>, click <Ui>Add limit</Ui>.
           </Step>
-          <Step n={2} title="Dashboard → PDF">Ringkasan 2 halaman: status kualitas, versi model & dataset, metrik, batas aman, tiga grafik.</Step>
-          <Step n={3} title="Model → Laporan (.xlsx) / Ringkasan PDF">Laporan akurasi model untuk client.</Step>
-          <Step n={4} title="Kualitas data → Unduh laporan kualitas (.xlsx)">Status semua sumur dan alasan.</Step>
+          <Step n={3} title="Read the result">
+            Table: first depth where ML, the ML band bound, and the T&amp;D model reach the limit (<i>not reached</i> = never),
+            and the minimum margin. In the charts: a red dotted line at the limit and red shading below the ML crossing depth.
+          </Step>
         </Steps>
-        <Tip>Grafik selisih di Excel mengikuti target yang dipilih di panel Selisih saat menekan Ekspor.</Tip>
+        <Tip>A well limit overrides the section limit for the same operation. Limits are included in the Excel and PDF.</Tip>
       </>
     ),
   },
   {
-    id: "evaluasi",
-    group: "Langkah demi langkah",
-    title: "10. Evaluasi setelah sumur dibor",
-    summary: "Prediksi lama otomatis dibandingkan dengan data aktual.",
-    keywords: "evaluasi prediksi aktual setelah dibor perbandingan akurasi",
+    id: "export",
+    group: "Step by step",
+    title: "10. Excel and PDF output",
+    summary: "Per-well results, forecast, model report, quality report.",
+    keywords: "export excel pdf download report result forecast",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Sumur pernah diprediksi">Lewat Prediksi sumur baru (sebelum dibor).</Step>
-          <Step n={2} title="Unggah file berisi data aktualnya">
-            Di <Ui>Impor file Excel (data latih)</Ui>, dengan nama sumur dan section yang sama.
+          <Step n={1} title="Dashboard → Export Excel">
+            Sheets <b>Info</b> (incl. DD Calibrate offsets), <b>Drag</b>, <b>Torque</b> (T&amp;D model per OHFF with standard
+            names, <b>ROT as one column</b>, ML, P10, P90, ML − T&amp;D model), <b>T&amp;D Actual Reading</b>, <b>Difference</b>,{" "}
+            <b>Operating limits</b>, <b>Charts</b> (one chart per operation + Difference), <b>Metrics</b>.
           </Step>
-          <Step n={3} title="Buka Evaluasi">
-            Per operasi: RMSE WellPlan vs ML terhadap aktual dan persen titik ketika ML lebih dekat.
+          <Step n={2} title="Dashboard → PDF">
+            Summary: data quality, model & dataset versions, metrics, operating limits, six chart panels.
+          </Step>
+          <Step n={3} title="Dashboard → ⬇ Forecast (.xlsx)">Forecast N ft ahead with cause and effect.</Step>
+          <Step n={4} title="Models → Report (.xlsx) / PDF summary">Model accuracy report for the client.</Step>
+          <Step n={5} title="Data Quality → Download quality report (.xlsx)">Status of every well and the reasons.</Step>
+        </Steps>
+        <Tip>The Difference chart in Excel follows the target selected in the Difference panel when you click Export.</Tip>
+      </>
+    ),
+  },
+  {
+    id: "evaluation",
+    group: "Step by step",
+    title: "11. Evaluation after drilling",
+    summary: "Earlier forecasts are compared with the actual data automatically.",
+    keywords: "evaluation forecast actual after drilling comparison accuracy",
+    body: (
+      <>
+        <Steps>
+          <Step n={1} title="The well was forecast">Through Monitoring (before or while drilling).</Step>
+          <Step n={2} title="Upload the file with its actual data">
+            In <Ui>Monitoring</Ui>, with the same well name and section.
+          </Step>
+          <Step n={3} title="Open Evaluations">
+            Per operation: RMSE T&amp;D model vs ML against actual, and the share of points where ML is closer.
           </Step>
         </Steps>
-        <Go to="/evaluasi">Buka Evaluasi</Go>
+        <Go to="/evaluations">Open Evaluations</Go>
       </>
     ),
   },
 
-  // ------------------------------------------------------------------ Use case
+  // ------------------------------------------------------------------ Use cases
   {
     id: "uc-onboarding",
-    group: "Use case",
-    title: "UC-1 · Memulai dengan data 40+ sumur",
-    summary: "Dari folder data client sampai model pertama dan laporan.",
-    keywords: "use case onboarding awal 40 sumur pertama kali",
+    group: "Use cases",
+    title: "UC-1 · Starting with 40+ wells",
+    summary: "From the client's data folder to the first model and report.",
+    keywords: "use case onboarding first 40 wells first time",
     body: (
       <>
         <p>
-          <b>Aktor:</b> engineer + operator. <b>Tujuan:</b> model pertama dan laporan akurasi untuk client.
+          <b>Actors:</b> engineer + operator. <b>Goal:</b> first model and an accuracy report for the client.
         </p>
         <Flow
           nodes={[
-            { title: "Salin data ke inbox", desc: "make inbox-training", tone: "user" },
-            { title: "Pindai folder", tone: "user", to: "/sumur" },
-            { title: "Tinjau status C", tone: "user", to: "/kualitas" },
-            { title: "Bekukan dataset v1", desc: "blind test terkunci", tone: "user", to: "/model" },
-            { title: "Latih: bandingkan semua", tone: "system" },
-            { title: "Jalankan blind test", tone: "user" },
-            { title: "Laporan model + kualitas", tone: "out" },
+            { title: "Copy data to inbox", desc: "make inbox-training", tone: "user" },
+            { title: "Scan folder", tone: "user", to: "/training" },
+            { title: "Review status C", tone: "user", to: "/quality" },
+            { title: "Freeze dataset v1", desc: "blind test locked", tone: "user", to: "/models" },
+            { title: "Train: compare all", tone: "system" },
+            { title: "Run blind test", tone: "user" },
+            { title: "Model + quality reports", tone: "out" },
           ]}
         />
         <Steps>
-          <Step n={1} title="Pindai folder">Pastikan tidak ada file ditolak; bila ada, baca alasannya.</Step>
-          <Step n={2} title="Kualitas data">Untuk setiap status C: terima / kecualikan / perbaiki dengan alasan.</Step>
-          <Step n={3} title="Model">Bekukan dataset, latih (Bandingkan semua), baca laporan, jalankan blind test.</Step>
-          <Step n={4} title="Kirim ke client">Laporan kualitas (.xlsx), laporan model (.xlsx + PDF).</Step>
+          <Step n={1} title="Scan folder">Make sure no file is rejected; if one is, read the reason.</Step>
+          <Step n={2} title="Data Quality">For each status C: accept / exclude / fix with a reason.</Step>
+          <Step n={3} title="Models">Freeze the dataset, train (Compare all), read the report, run the blind test.</Step>
+          <Step n={4} title="Send to the client">Quality report (.xlsx), model report (.xlsx + PDF).</Step>
         </Steps>
       </>
     ),
   },
   {
-    id: "uc-tambah",
-    group: "Use case",
-    title: "UC-2 · Menambah sumur dan melatih ulang",
-    summary: "Data sumur baru yang sudah dibor masuk, model diperbarui dengan aman.",
-    keywords: "use case tambah data latih ulang retrain versi baru ditahan",
+    id: "uc-add",
+    group: "Use cases",
+    title: "UC-2 · Adding wells and retraining",
+    summary: "New drilled wells come in and the model is updated safely.",
+    keywords: "use case add data retrain new version held promote",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Masukkan data">Pindai folder atau unggah file/template (data latih).</Step>
-          <Step n={2} title="Periksa kualitas">Tinjau status C sumur baru.</Step>
-          <Step n={3} title="Model → Bekukan dataset baru">Versi naik; sumur blind test lama tetap terkunci.</Step>
-          <Step n={4} title="Latih model dengan dataset baru">
-            Bila lebih baik → otomatis aktif. Bila lebih buruk → <b>ditahan</b>; model lama tetap dipakai.
+          <Step n={1} title="Add the data">
+            Scan folder or upload in Training Data, or <Ui>Promote to training</Ui> a finished monitoring well.
+          </Step>
+          <Step n={2} title="Check data quality">Review status C of the new wells.</Step>
+          <Step n={3} title="Models → Freeze a new dataset">The version goes up; the existing blind test wells stay locked.</Step>
+          <Step n={4} title="Train with the new dataset">
+            Better → activated automatically. Worse → <b>held</b>; the previous model stays in use.
           </Step>
         </Steps>
-        <Tip>Setiap model mencatat versi dataset, jadi hasil lama selalu bisa ditelusuri dan dibandingkan.</Tip>
+        <Tip>Every model records its dataset version, so earlier results can always be traced and compared.</Tip>
       </>
     ),
   },
   {
-    id: "uc-prediksi",
-    group: "Use case",
-    title: "UC-3 · Prediksi sebelum mengebor + batas aman",
-    summary: "Engineer menyiapkan program pengeboran sumur baru.",
-    keywords: "use case prediksi sebelum bor program pengeboran batas aman torque limit",
+    id: "uc-monitor",
+    group: "Use cases",
+    title: "UC-3 · Monitoring a well while drilling",
+    summary: "The engineer follows a well being drilled and forecasts the next section of hole.",
+    keywords: "use case monitoring while drilling forecast ahead operating limit torque",
     body: (
       <>
         <Flow
           nodes={[
-            { title: "Template sumur baru", tone: "user" },
-            { title: "Isi rencana WellPlan", tone: "user" },
-            { title: "Unggah → prediksi", tone: "system" },
-            { title: "Dashboard + batas aman", tone: "user" },
-            { title: "Excel / PDF ke tim", tone: "out" },
+            { title: "Monitoring upload", desc: "T&D model + actual so far", tone: "user", to: "/monitoring" },
+            { title: "Forecast", tone: "system" },
+            { title: "Forecast 300 ft ahead", desc: "cause and effect", tone: "user", to: "/dashboard" },
+            { title: "Operating limits", tone: "user" },
+            { title: "Excel / PDF to the team", tone: "out" },
           ]}
         />
         <Steps>
-          <Step n={1} title="Prediksi sumur baru">Unduh template, isi, unggah. Catat peringatan.</Step>
-          <Step n={2} title="Buka dashboard">Bandingkan ML dengan WellPlan; perhatikan pita 10–90%.</Step>
-          <Step n={3} title="Tambah batas aman">Mis. torsi top drive. Lihat kedalaman ketika pita atas ML menyentuh batas.</Step>
-          <Step n={4} title="Ekspor">Excel (detail per kedalaman) dan PDF (ringkasan) untuk rapat program pengeboran.</Step>
+          <Step n={1} title="Monitoring">Select section and type, upload. Note the warnings.</Step>
+          <Step n={2} title="Dashboard">Compare ML with the T&amp;D model (with DD Calibrate); turn on the P10–P90 band.</Step>
+          <Step n={3} title="Forecast ahead">300 ft, optional bias correction. Read the drivers and the limit crossings.</Step>
+          <Step n={4} title="Add operating limits">E.g. top drive torque. See where the upper band reaches the limit.</Step>
+          <Step n={5} title="Repeat">Upload the file again after each new set of actual readings.</Step>
         </Steps>
       </>
     ),
   },
   {
-    id: "uc-evaluasi",
-    group: "Use case",
-    title: "UC-4 · Mengevaluasi setelah pengeboran",
-    summary: "Mengukur seberapa tepat prediksi sebelumnya.",
-    keywords: "use case evaluasi pasca bor akurasi prediksi",
+    id: "uc-evaluate",
+    group: "Use cases",
+    title: "UC-4 · Evaluating after drilling",
+    summary: "How accurate was the earlier forecast?",
+    keywords: "use case evaluation post drilling forecast accuracy",
     body: (
       <Steps>
-        <Step n={1} title="Unggah data aktual sumur yang sudah diprediksi">Nama sumur & section sama.</Step>
-        <Step n={2} title="Buka Evaluasi">Bandingkan RMSE WellPlan vs ML dan persen titik ML lebih dekat.</Step>
-        <Step n={3} title="Data masuk ke latihan berikutnya">
-          Bila status kualitas A/B, sumur ini ikut melatih model berikutnya (UC-2).
+        <Step n={1} title="Upload the actual data of the forecast well">In Monitoring, same well name and section.</Step>
+        <Step n={2} title="Open Evaluations">Compare RMSE T&amp;D model vs ML and the share of points where ML is closer.</Step>
+        <Step n={3} title="Use it for training (optional)">
+          <Ui>Promote to training</Ui>: if the copy gets A/B, it is used in the next training run (UC-2).
         </Step>
       </Steps>
     ),
   },
   {
-    id: "uc-masalah",
-    group: "Use case",
-    title: "UC-5 · File ditolak atau sumur berstatus C",
-    summary: "Menangani data bermasalah dan meminta perbaikan ke client.",
-    keywords: "use case ditolak gagal status c perbaiki file salah satuan titik sedikit",
+    id: "uc-problems",
+    group: "Use cases",
+    title: "UC-5 · Rejected file or status C",
+    summary: "Handling problem data and requesting fixes from the client.",
+    keywords: "use case rejected failed status c fix file wrong unit few points",
     body: (
       <>
         <Table
-          head={["Pesan", "Arti", "Tindakan"]}
+          head={["Message", "Meaning", "Action"]}
           rows={[
-            ["Format tidak dikenali", "Bukan roadmap atau laporan WellPlan", "Pakai template, atau periksa nama sheet"],
-            ["Section tidak ditemukan", "Ukuran lubang tidak ada di nama file/isi", "Isi Section di Isian manual / Info Sumur"],
-            ["Hanya N titik aktual (minimum 8)", "Data aktual terlalu sedikit", "Terima dengan catatan, atau minta data lengkap"],
-            ["Kemungkinan salah satuan", "Nilai beda ~1000× dari WellPlan", "Periksa satuan kolom (kip vs lbf), perbaiki file"],
-            ["Urutan SO ≤ ROT ≤ PU dilanggar", "Kolom tertukar atau salah catat", "Periksa kolom; perbaiki file"],
-            ["Tidak ada data aktual", "File hanya rencana", "Untuk prediksi tidak masalah; untuk latihan perlu data aktual"],
+            ["Unknown format", "Not a roadmap or a WellPlan report", "Use the template, or check the sheet names"],
+            ["Selected section differs from the file", "The selection and the file name/content disagree", "Check the selection; the selected section is used"],
+            ["Only N actual points (minimum 8)", "Too little actual data", "Accept with a note, or request complete data"],
+            ["Possible wrong unit", "Values differ ~1000× from the T&D model", "Check the column units (kip vs lbf), fix the file"],
+            ["Order SO ≤ ROT ≤ PU violated", "Columns swapped or misrecorded", "Check the columns; fix the file"],
+            ["No actual data", "The file only has the T&D model", "Fine for Monitoring; Training needs actual data"],
           ]}
         />
         <Steps>
-          <Step n={1} title="Kualitas data → klik sumur → catat keputusan Perbaiki">Dengan alasan yang jelas.</Step>
-          <Step n={2} title="Unduh laporan kualitas">Kirim daftar sumur yang perlu diperbaiki ke client.</Step>
-          <Step n={3} title="File perbaikan datang">Unggah/pindai lagi; versi baru menggantikan yang lama dan kualitas dihitung ulang.</Step>
+          <Step n={1} title="Data Quality → click the well → decision Fix">With a clear reason.</Step>
+          <Step n={2} title="Download the quality report">Send the list of wells to fix to the client.</Step>
+          <Step n={3} title="The fixed file arrives">Upload/scan again; the new version replaces the old one and quality is recomputed.</Step>
         </Steps>
       </>
     ),
   },
 
-  // ------------------------------------------------------------------ Alur sistem
+  // ------------------------------------------------------------------ System flow
   {
-    id: "alur-data",
-    group: "Alur sistem",
-    title: "Alur data: dari file sampai prediksi",
-    summary: "Apa yang dikerjakan sistem di balik layar pada setiap tahap.",
-    keywords: "alur flow sistem proses data parser impor database dataset model prediksi",
+    id: "data-flow",
+    group: "System flow",
+    title: "Data flow: from file to forecast",
+    summary: "What the system does behind the scenes at each stage.",
+    keywords: "flow system process data parser import database dataset model forecast",
     body: (
       <>
         <Flow
-          title="1. Masuk data"
+          title="1. Data in"
           nodes={[
-            { title: "File Excel", desc: "folder / unggah / template", tone: "user" },
-            { title: "Deteksi format", desc: "dari nama sheet" },
-            { title: "Parser A / B", desc: "rencana per FF, aktual, survey" },
-            { title: "Konversi satuan", desc: "asli + SI disimpan" },
-            { title: "Database", desc: "per sumur-section", tone: "out" },
+            { title: "Excel file", desc: "folder / upload / template", tone: "user" },
+            { title: "Purpose + section + type", desc: "selected by the user", tone: "user" },
+            { title: "Format detection", desc: "from sheet names" },
+            { title: "Parser A / B", desc: "T&D model per OHFF, DD Calibrate, actual, survey" },
+            { title: "Unit conversion", desc: "original + SI stored" },
+            { title: "Database", desc: "Training or Monitoring", tone: "out" },
           ]}
         />
         <Flow
-          title="2. Kualitas dan dataset"
+          title="2. Quality and dataset (Training Data only)"
           nodes={[
-            { title: "Gerbang kualitas", desc: "9 kritis + 5 statistik" },
-            { title: "Status A/B/C", desc: "+ tinjauan engineer" },
-            { title: "Pasangkan aktual ↔ WellPlan", desc: "di kedalaman sama" },
-            { title: "Fitur", desc: "WellPlan FF 0,3 & 0,5, survey, …" },
-            { title: "Dataset beku", desc: "hash + blind test", tone: "out" },
+            { title: "Quality gate", desc: "9 critical + 5 statistical" },
+            { title: "Status A/B/C", desc: "+ engineer review" },
+            { title: "Pair actual ↔ T&D model", desc: "at the same depth" },
+            { title: "Features", desc: "T&D model OHFF 0.3 & 0.5, survey, DD Calibrate, …" },
+            { title: "Frozen dataset", desc: "hash + blind test", tone: "out" },
           ]}
         />
         <Flow
-          title="3. Model dan hasil"
+          title="3. Model and results"
           nodes={[
-            { title: "Latih & validasi per sumur", desc: "5 fold" },
-            { title: "Model aktif", desc: "atau ditahan" },
-            { title: "Prediksi", desc: "grid kedalaman + pita" },
-            { title: "Dashboard, batas aman", tone: "out" },
-            { title: "Excel / PDF / Evaluasi", tone: "out" },
+            { title: "Train & validate per well", desc: "5 folds" },
+            { title: "Active model", desc: "or held" },
+            { title: "Forecast", desc: "depth grid + P10–P90" },
+            { title: "Forecast N ft ahead", desc: "cause and effect", tone: "out" },
+            { title: "Dashboard / Excel / PDF / Evaluation", tone: "out" },
           ]}
         />
       </>
     ),
   },
   {
-    id: "alur-status",
-    group: "Alur sistem",
-    title: "Siklus status: file, sumur, model",
-    summary: "Arti setiap status dan perubahannya.",
-    keywords: "status siklus file diterima ditolak diganti sumur a b c x model antri berjalan selesai ditahan gagal aktif",
+    id: "status-cycle",
+    group: "System flow",
+    title: "Status cycle: file, well, model",
+    summary: "What each status means and how it changes.",
+    keywords: "status cycle file accepted rejected replaced well a b c x model queued running done held failed active",
     body: (
       <>
         <h3>File</h3>
         <Flow
           nodes={[
-            { title: "diproses" },
-            { title: "ok / peringatan", desc: "diterima", tone: "out" },
-            { title: "diganti", desc: "bila versi baru masuk" },
-          ]}
-        />
-        <p className="small muted">Atau <b>gagal</b> (ditolak, dengan alasan). File identik tidak diimpor ulang (duplikat).</p>
-        <h3>Sumur-section</h3>
-        <Flow
-          nodes={[
-            { title: "Diimpor" },
-            { title: "Pemeriksaan otomatis" },
-            { title: "A / B / C" },
-            { title: "Tinjauan", desc: "terima → B, kecualikan → X, perbaiki → C", tone: "user" },
-            { title: "A/B masuk dataset", tone: "out" },
-          ]}
-        />
-        <Table head={["Status", "Arti", "Masuk training?"]} rows={STATUS_ROWS} />
-        <h3>Model</h3>
-        <Flow
-          nodes={[
-            { title: "antri" },
-            { title: "berjalan" },
-            { title: "selesai + aktif", desc: "lebih baik / pertama", tone: "out" },
-            { title: "atau ditahan", desc: "lebih buruk dari aktif" },
+            { title: "Processing" },
+            { title: "OK / Warning", desc: "accepted", tone: "out" },
+            { title: "Replaced", desc: "when a new version arrives" },
           ]}
         />
         <p className="small muted">
-          <b>gagal</b>: pesan galat tampil di Riwayat model (mis. sumur latih kurang dari 5). Blind test: <b>sudah</b> = tidak bisa
-          diulang.
+          Or <b>Failed</b> (rejected, with the reason). An identical file is not imported again (duplicate).
+        </p>
+        <h3>Well section</h3>
+        <Flow
+          nodes={[
+            { title: "Imported" },
+            { title: "Automatic checks" },
+            { title: "A / B / C" },
+            { title: "Review", desc: "accept → B, exclude → X, fix → C", tone: "user" },
+            { title: "A/B Training wells enter the dataset", tone: "out" },
+          ]}
+        />
+        <Table head={["Status", "Meaning", "Used for training?"]} rows={STATUS_ROWS} />
+        <h3>Model</h3>
+        <Flow
+          nodes={[
+            { title: "Queued" },
+            { title: "Running" },
+            { title: "Done + active", desc: "better / first", tone: "out" },
+            { title: "or Held", desc: "worse than active" },
+          ]}
+        />
+        <p className="small muted">
+          <b>Failed</b>: the error is shown in Model history (e.g. fewer than 5 training wells). Blind test <b>done</b> = cannot
+          be repeated.
         </p>
       </>
     ),
   },
 
-  // ------------------------------------------------------------------ Referensi
+  // ------------------------------------------------------------------ Reference
   {
-    id: "keluaran",
-    group: "Referensi",
-    title: "Daftar keluaran sistem",
-    summary: "Semua file/hasil yang bisa diperoleh dan dari menu mana.",
-    keywords: "output keluaran hasil laporan file unduh",
+    id: "outputs",
+    group: "Reference",
+    title: "System outputs",
+    summary: "Every file/result you can get and where.",
+    keywords: "output result report file download",
     body: (
       <Table
-        head={["Keluaran", "Dari mana", "Isi"]}
+        head={["Output", "Where", "Content"]}
         rows={[
-          ["Template isian", "Data sumur → Impor / Prediksi → langkah 1", "Template data latih & sumur baru (+ Petunjuk, Contoh)"],
-          ["Hasil pindai folder", "Data sumur → Pindai folder", "Status per file dan per sumur-section"],
-          ["Laporan kualitas data (.xlsx)", "Kualitas data", "Status A/B/C/X, skor, alasan, tinjauan"],
-          ["Dataset beku (.csv.gz)", "Model → Dataset → Unduh", "Data latih + hash, sumur blind"],
-          ["Laporan model (.xlsx / PDF)", "Model → Laporan", "Akurasi per operasi/section/tipe/kedalaman/sumur, blind test, kurva belajar, SHAP"],
-          ["Hasil prediksi sumur baru", "Data sumur → Prediksi sumur baru", "Tabel ringkas + Excel + PDF"],
-          ["Dashboard", "Dashboard", "3 grafik, pita, batas aman, interval ditandai"],
-          ["Ekspor per sumur (.xlsx / PDF)", "Dashboard → Ekspor Excel / PDF", "Drag, Torque, T&D + ML & selisih, grafik, batas aman"],
-          ["Evaluasi", "Evaluasi", "Prediksi vs aktual setelah dibor"],
+          ["Upload templates", "Training Data / Monitoring → step 2", "Training and monitoring templates (+ Instructions, Example)"],
+          ["Folder scan result", "Training Data → Scan folder", "Status per file and per well section"],
+          ["Data quality report (.xlsx)", "Data Quality", "Status A/B/C/X, score, reasons, reviews"],
+          ["Frozen dataset (.csv.gz)", "Models → Datasets → Download", "Training data + hash, blind wells"],
+          ["Model report (.xlsx / PDF)", "Models → Report", "Accuracy per operation/section/type/depth/well, blind test, learning curve, SHAP"],
+          ["Monitoring forecast", "Monitoring → upload", "Summary table + Excel + PDF"],
+          ["Dashboard", "Dashboard", "Charts, band, operating limits, flagged intervals"],
+          ["Forecast N ft (.xlsx)", "Dashboard → Forecast ahead", "Forecast per depth, P10–P90, T&D model per OHFF, cause and effect"],
+          ["Per-well export (.xlsx / PDF)", "Dashboard → Export Excel / PDF", "Drag, Torque, T&D + ML & Δ, charts, operating limits"],
+          ["Evaluation", "Evaluations", "Forecast vs actual after drilling"],
         ]}
       />
     ),
   },
   {
     id: "faq",
-    group: "Referensi",
-    title: "FAQ dan pemecahan masalah",
-    summary: "Pertanyaan yang sering muncul.",
-    keywords: "faq tanya masalah error tidak bisa kenapa",
+    group: "Reference",
+    title: "FAQ and troubleshooting",
+    summary: "Common questions.",
+    keywords: "faq question problem error cannot why",
     body: (
       <Table
-        head={["Pertanyaan", "Jawaban"]}
+        head={["Question", "Answer"]}
         rows={[
-          ["Apakah harus memakai template?", "Tidak. File asli WellPlan (.xlsm laporan atau .xlsx roadmap) bisa langsung diunggah. Untuk roadmap, pilih Tipe sumur di Isian manual."],
-          ["Tombol Pindai folder tidak aktif", "Folder inbox kosong. Operator menyalin file ke data/inbox."],
-          ["File 'dilewati' saat pindai", "File baru diubah < 1 menit. Tunggu, lalu pindai lagi."],
-          ["Mengapa sumur saya status C?", "Buka Kualitas data, klik sumurnya: alasan kritis tertulis. Lihat UC-5."],
-          ["Model baru 'ditahan'", "Akurasinya lebih buruk dari model aktif. Model lama tetap dipakai; bisa diaktifkan manual."],
-          ["Bisakah blind test diulang?", "Tidak, sengaja hanya sekali per model agar hasilnya jujur."],
-          ["Grafik ML tidak muncul", "Sumur belum diprediksi: klik Prediksi ulang di dashboard, atau belum ada model aktif."],
-          ["Satuan grafik", "Pilih Satuan imperial (ft, klbf, ft-lbf) atau SI (m, kN, kN·m) di dashboard."],
-          ["Login terkunci", "Tunggu 15 menit, atau operator menjalankan make password."],
+          ["Do I have to use the template?", "No. Original WellPlan files (.xlsm report or .xlsx roadmap) can be uploaded directly. Always select the section and type first."],
+          ["The upload area is greyed out", "Select the Well section and Well type first (step 1)."],
+          ["Training or Monitoring?", "Drilled wells with actual data that should teach the ML → Training Data. A well being drilled → Monitoring."],
+          ["Why does the T&D model curve differ from the raw WellPlan numbers?", "The dashboard adds the DD Calibrate offsets by default (as the Excel crossplot). Choose 'As modelled' under WellPlan curves to see the raw curves."],
+          ["Scan folder is disabled", "The inbox folder is empty. The operator copies files to data/inbox."],
+          ["A file is 'skipped' when scanning", "It was modified less than 1 minute ago. Wait and scan again."],
+          ["Why is my well status C?", "Open Data Quality and click the well: the critical reason is listed. See UC-5."],
+          ["A new model is 'held'", "Its accuracy is worse than the active model. The previous model stays in use; you can activate it manually."],
+          ["Can the blind test be repeated?", "No, it runs once per model on purpose so the result is fair."],
+          ["The ML line does not show", "The well has not been forecast: click Forecast again on the dashboard, or no model is active yet."],
+          ["Units", "Choose imperial (ft, klbf, ft-lbf) or SI (m, kN, kN·m) on the dashboard."],
+          ["Sign-in is locked", "Wait 15 minutes, or the operator runs make password."],
         ]}
       />
     ),

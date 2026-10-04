@@ -22,5 +22,5 @@ def require_admin(request: Request) -> str:
     """Dependensi untuk semua endpoint /api/* kecuali health dan login."""
     username = request.session.get("user")
     if not username:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Belum login")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
     return username

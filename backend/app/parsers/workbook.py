@@ -59,7 +59,7 @@ def parse_workbook(
     try:
         wb = open_workbook(path)
     except Exception as exc:  # file rusak, bukan Excel, terenkripsi
-        pw.error(f"File tidak bisa dibuka sebagai Excel: {exc.__class__.__name__}: {exc}")
+        pw.error(f"The file cannot be opened as Excel: {exc.__class__.__name__}: {exc}")
         return pw
     try:
         names = {norm(ws.title) for ws in wb.worksheets}
@@ -69,8 +69,8 @@ def parse_workbook(
             parse_wellplan(wb, pw)
         else:
             pw.error(
-                "Format tidak dikenali (bukan roadmap Drag/Torque atau laporan WellPlan). "
-                "Sheet yang ada: " + ", ".join(ws.title for ws in wb.worksheets)
+                "Unknown format (not a Drag/Torque roadmap or a WellPlan report). "
+                "Sheets found: " + ", ".join(ws.title for ws in wb.worksheets)
             )
     finally:
         wb.close()
@@ -83,9 +83,9 @@ def parse_workbook(
     if folder:
         pw.meta["well_folder"] = folder
     if pw.fmt and not pw.plan:
-        pw.error("Tidak ada data rencana WellPlan yang terbaca")
+        pw.error("No WellPlan T&D model data could be read")
     _check_rows(pw, pw.plan, "WellPlan")
-    _check_rows(pw, pw.actual, "aktual")
+    _check_rows(pw, pw.actual, "actual")
     if pw.plan:
         d = [units.to_si(r.depth, r.depth_unit) for r in pw.plan]
         pw.meta["plan_depth_m"] = [min(d), max(d)]
@@ -107,9 +107,9 @@ def _check_rows(pw: ParsedWorkbook, rows: list, label: str) -> None:
     if bad:
         sheets = sorted({r.sheet for r in bad})
         pw.warn(
-            f"{len(bad)} titik {label} di luar rentang wajar dibuang "
-            f"(contoh: kedalaman {bad[0].depth} {bad[0].depth_unit}, "
-            f"nilai {bad[0].value} {bad[0].unit})",
+            f"{len(bad)} {label} points outside the plausible range removed "
+            f"(e.g. depth {bad[0].depth} {bad[0].depth_unit}, "
+            f"value {bad[0].value} {bad[0].unit})",
             ", ".join(sheets),
         )
         bad_ids = {id(r) for r in bad}

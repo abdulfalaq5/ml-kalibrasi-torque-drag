@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.models import ActualReading, BlindSet, Dataset, PlanResult, Survey, UploadedFile, Well
+from app.services.calibration import CAL_FEATURE, offset_si
 from app.services.operations import BASELINE_FF, HOOKLOAD_OPS, OPERATIONS
 from app.services.units import FT_TO_M
 
@@ -28,9 +29,11 @@ BASE_CATEGORICAL = ["section", "well_type", "plan_format"]
 FEATURE_GROUPS: dict[str, dict[str, list[str]]] = {
     "survey": {"num": ["inc_deg", "dls_deg_30m", "tortuosity"], "cat": []},
     "casing_shoe": {"num": ["open_hole_len_m", "open_hole_frac"], "cat": []},
-    "bha_lumpur": {"num": ["mud_weight_ppg", "bha_weight_klbf", "bha_length_ft"], "cat": []},
+    "bha_mud": {"num": ["mud_weight_ppg", "bha_weight_klbf", "bha_length_ft"], "cat": []},
     "kop_interval": {"num": ["depth_from_kop_m"], "cat": ["interval_type"]},
     "block_weight": {"num": ["block_weight_klbf"], "cat": []},
+    # Koreksi "Calibrate" dari DD (file roadmap); grup tersendiri, dipakai hanya bila terbukti membantu
+    "calibration": {"num": ["dd_calibration"], "cat": []},
 }
 OUTLIER_MAD = 5.0
 VERTICAL_INC, HORIZONTAL_INC, BUILD_RATE = 3.0, 80.0, 1.0  # deg, deg, deg/100ft
@@ -63,12 +66,13 @@ def load_wells(db: Session, well_ids: list[int] | None = None) -> pd.DataFrame:
                 "well_name": w.name,
                 "section": None if w.section_in is None else f"{w.section_in:g}",
                 "well_type": w.well_type,
-                "plan_format": m.get("plan_format") or "tidak diketahui",
+                "plan_format": m.get("plan_format") or "unknown",
                 "casing_shoe_m": shoe,
                 "block_weight_klbf": m.get("block_weight_klbf"),
                 "mud_weight_ppg": m.get("mud_weight_ppg"),
                 "bha_weight_klbf": m.get("bha_weight_klbf"),
                 "bha_length_ft": m.get("bha_length_ft"),
+                **{col: offset_si(m, op) for op, col in CAL_FEATURE.items()},
             }
         )
     cols = [
@@ -82,6 +86,7 @@ def load_wells(db: Session, well_ids: list[int] | None = None) -> pd.DataFrame:
         "mud_weight_ppg",
         "bha_weight_klbf",
         "bha_length_ft",
+        *CAL_FEATURE.values(),
     ]
     return pd.DataFrame(rows, columns=cols)
 
@@ -190,7 +195,7 @@ def survey_features(
             "dls_deg_30m": nan,
             "tortuosity": nan,
             "depth_from_kop_m": nan,
-            "interval_type": np.array(["tidak diketahui"] * n, dtype=object),
+            "interval_type": np.array(["unknown"] * n, dtype=object),
         }
     md = sub.md_m.to_numpy()
     inc = sub.inc_deg.to_numpy()
@@ -208,7 +213,7 @@ def survey_features(
     )
     itype = np.where(
         inc_d < VERTICAL_INC,
-        "vertikal",
+        "vertical",
         np.where(
             inc_d >= HORIZONTAL_INC,
             "horizontal",
@@ -251,11 +256,19 @@ def features_frame(
             "bha_weight_klbf": well.bha_weight_klbf,
             "bha_length_ft": well.bha_length_ft,
             "block_weight_klbf": well.block_weight_klbf,
+            # offset Calibrate DD untuk operasi baris ini (kosong bila file tanpa Calibrate)
+            "dd_calibration": getattr(well, CAL_FEATURE[op], None),
         }
     )
     df["wp_slope"] = (df.wp_ff05 - df.wp_ff03) / 0.2
     df["wp_base"] = df[FF_COLS[BASELINE_FF]]
-    for c in ("mud_weight_ppg", "bha_weight_klbf", "bha_length_ft", "block_weight_klbf"):
+    for c in (
+        "mud_weight_ppg",
+        "bha_weight_klbf",
+        "bha_length_ft",
+        "block_weight_klbf",
+        "dd_calibration",
+    ):
         df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
 
@@ -265,11 +278,11 @@ def build_dataset(db: Session, well_ids: list[int] | None = None) -> tuple[pd.Da
     wells = load_wells(db, well_ids)
     notes: list[str] = []
     if wells.empty:
-        return pd.DataFrame(), ["Belum ada sumur"]
+        return pd.DataFrame(), ["No wells yet"]
     ids = wells.well_id.tolist()
     plan, actual, survey = load_plan(db, ids), load_actual(db, ids), load_survey(db, ids)
     if actual.empty or plan.empty:
-        return pd.DataFrame(), ["Belum ada pasangan data WellPlan dan aktual"]
+        return pd.DataFrame(), ["No wells with both T&D model and actual data yet"]
     parts = []
     for _, w in wells.iterrows():
         label = f'{w.well_name} {w.section}"'
@@ -283,15 +296,15 @@ def build_dataset(db: Session, well_ids: list[int] | None = None) -> tuple[pd.Da
             f = f[f.wp_base.notna()]
             if len(f) < n0:
                 notes.append(
-                    f"{label} {op}: {n0 - len(f)} titik aktual di luar rentang WellPlan dibuang"
+                    f"{label} {op}: {n0 - len(f)} actual points outside the T&D model depth range removed"
                 )
             f = _drop_outliers(f, notes, label, op)
             parts.append(f)
     if not parts:
-        return pd.DataFrame(), notes + ["Tidak ada titik aktual yang cocok dengan WellPlan"]
+        return pd.DataFrame(), notes + ["No actual points match the T&D model"]
     ds = pd.concat(parts, ignore_index=True)
     for c in ("section", "well_type", "plan_format"):
-        ds[c] = ds[c].fillna("tidak diketahui")
+        ds[c] = ds[c].fillna("unknown")
     return ds, notes
 
 
@@ -305,7 +318,9 @@ def _drop_outliers(f: pd.DataFrame, notes: list[str], label: str, op: str) -> pd
         return f
     mask = (resid - med).abs() <= OUTLIER_MAD * mad
     if (~mask).any():
-        notes.append(f"{label} {op}: {(~mask).sum()} titik outlier dibuang (> {OUTLIER_MAD:g} MAD)")
+        notes.append(
+            f"{label} {op}: {(~mask).sum()} outlier points removed (> {OUTLIER_MAD:g} MAD)"
+        )
     return f[mask]
 
 
@@ -352,7 +367,7 @@ def ensure_blind_set(
         wells=sorted(chosen),
         seed=seed,
         active=True,
-        note=f"{len(chosen)} dari {len(per_well)} sumur, proporsional per tipe",
+        note=f"{len(chosen)} of {len(per_well)} wells, proportional per well type",
     )
     db.add(bs)
     db.flush()
@@ -366,7 +381,9 @@ def freeze_dataset(db: Session) -> Dataset:
     ok_ids, status = eligible_well_ids(db)
     ds, notes = build_dataset(db, ok_ids)
     if ds.empty:
-        raise ValueError("Tidak ada sumur berstatus A/B dengan data aktual. " + "; ".join(notes))
+        raise ValueError(
+            "No training wells with data quality A/B and actual data. " + "; ".join(notes)
+        )
     wells = load_wells(db, sorted(ds.well_id.unique().tolist()))
     bs = ensure_blind_set(db, wells)
     ds["is_blind"] = ds.well_name.isin(bs.wells)
@@ -383,7 +400,7 @@ def freeze_dataset(db: Session) -> Dataset:
         wid: chk
         for wid, chk in db.execute(
             select(UploadedFile.well_id, UploadedFile.checksum).where(
-                UploadedFile.status.in_(["ok", "peringatan"])
+                UploadedFile.status.in_(["ok", "warning"])
             )
         ).all()
     }
@@ -423,10 +440,15 @@ def load_frozen(dataset: Dataset) -> pd.DataFrame:
     with gzip.open(dataset.path, "rb") as fh:
         raw = fh.read()
     if hashlib.sha256(raw).hexdigest() != dataset.content_hash:
-        raise ValueError(f"Hash dataset v{dataset.version} tidak cocok: file snapshot berubah")
+        raise ValueError(f"Dataset v{dataset.version} hash mismatch: the snapshot file has changed")
     df = pd.read_csv(io.BytesIO(raw), dtype={"section": str})
     for c in ("section", "well_type", "plan_format", "interval_type"):
         if c in df:
-            df[c] = df[c].fillna("tidak diketahui").astype(str)
+            df[c] = (
+                df[c]
+                .fillna("unknown")
+                .astype(str)
+                .replace({"tidak diketahui": "unknown", "vertikal": "vertical"})
+            )
     df["section"] = df["section"].map(lambda s: re.sub(r"\.0$", "", s))
     return df

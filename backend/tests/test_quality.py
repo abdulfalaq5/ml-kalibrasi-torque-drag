@@ -55,14 +55,14 @@ def test_good_well_is_A(db):
     ]
     wq = evaluate_well(db, _well(db, "QA-BAIK", rows))
     assert wq.status in ("A", "B"), wq.checks
-    assert not [c for c in wq.checks if c["level"] == "kritis"]
+    assert not [c for c in wq.checks if c["level"] == "critical"]
 
 
 def test_few_points_is_C(db):
     rows = [(d, 110, 85, 95) for d in (1500, 2000, 2500)]
     wq = evaluate_well(db, _well(db, "QA-SEDIKIT", rows))
     assert wq.status == "C"
-    assert any(c["code"] == "K6" and c["level"] == "kritis" for c in wq.checks)
+    assert any(c["code"] == "K6" and c["level"] == "critical" for c in wq.checks)
 
 
 def test_order_violation_is_C(db):
@@ -70,7 +70,7 @@ def test_order_violation_is_C(db):
     rows = [(d, 80, 120, 100) for d in range(1100, 5000, 300)]
     wq = evaluate_well(db, _well(db, "QA-URUTAN", rows))
     assert wq.status == "C"
-    assert any(c["code"] == "K5" and c["level"] == "kritis" for c in wq.checks)
+    assert any(c["code"] == "K5" and c["level"] == "critical" for c in wq.checks)
 
 
 def test_unit_error_is_C(db):
@@ -89,6 +89,6 @@ def test_review_overrides(db):
             self.decision = d
 
     assert effective_status(Q(), None) == "C"
-    assert effective_status(Q(), R("terima")) == "B"
-    assert effective_status(Q(), R("kecualikan")) == "X"
-    assert effective_status(Q(), R("perbaiki")) == "C"
+    assert effective_status(Q(), R("accept")) == "B"
+    assert effective_status(Q(), R("exclude")) == "X"
+    assert effective_status(Q(), R("fix")) == "C"
