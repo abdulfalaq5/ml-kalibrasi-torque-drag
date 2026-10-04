@@ -234,14 +234,15 @@ def well_pdf(
         rightMargin=1.4 * cm,
         topMargin=1.3 * cm,
         bottomMargin=1.3 * cm,
-        title=f"Summary {well.name}",
-        author="T&D ML Calibration",
+        title=f"Prediction Output Torque & Drag ML - {well.name}",
+        author="Torque & Drag ML Calibration",
     )
     m = prof["model"] or {}
     q = prof["quality"]
     els = [
         Paragraph(
-            f'T&amp;D calibration summary: {well.name} · {(well.section_in or 0):g}"', st["h1"]
+            f'Prediction Output Torque &amp; Drag ML: {well.name} · {(well.section_in or 0):g}"',
+            st["h1"],
         ),
         Paragraph(
             f"Created {datetime.now():%Y-%m-%d %H:%M} · well type {well.well_type or '-'} · "
@@ -378,7 +379,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         topMargin=1.3 * cm,
         bottomMargin=1.3 * cm,
         title=f"Model #{model.id}",
-        author="T&D ML Calibration",
+        author="Torque & Drag ML Calibration",
     )
     els = [
         Paragraph(f"Calibration model summary #{model.id}", st["h1"]),

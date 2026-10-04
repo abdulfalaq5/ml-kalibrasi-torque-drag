@@ -416,7 +416,7 @@ def export_forecast(fc: dict) -> bytes:
             else "WellPlan as modelled",
         ),
     ]
-    ws.write(0, 0, "Torque & Drag forecast", f.title)
+    ws.write(0, 0, "Prediction Output Torque & Drag ML - Forecast", f.title)
     for i, (k, v) in enumerate(rows, start=2):
         ws.write(i, 0, k, f.bold)
         ws.write(i, 1, "" if v is None else v)

@@ -153,7 +153,7 @@ def export_well(
         ("Sign convention", prof["sign_convention"]),
         ("Uncertainty band (P10–P90)", "10%–90% quantiles of cross-validation residuals"),
     ]
-    ws.write(0, 0, "Torque & Drag ML Calibration - well result", f.title)
+    ws.write(0, 0, "Prediction Output Torque & Drag ML", f.title)
     for i, (k, v) in enumerate(info, start=2):
         ws.write(i, 0, k, f.bold)
         ws.write(i, 1, "" if v is None else v)
