@@ -151,6 +151,7 @@ def _parse_bha(rows, pw) -> None:
         )
     if not comps:
         return
+    pw.meta["bha"] = comps  # rincian untuk ekspor (sheet "PU/SO/ROT MW")
     # komponen "to surface" (drill pipe) bukan bagian BHA
     bha = [c for c in comps if "surface" not in c["name"].lower()]
     pw.meta["bha_components"] = len(bha)
@@ -177,14 +178,25 @@ def _parse_wellbore(rows, pw) -> None:
         _header_index(h, "cum length"),
         _header_index(h, "diameter"),
     )
+    jl = next((j for j, c in enumerate(h) if norm(c) == "length"), None)
     shoe = None
     hole = None
+    sections = []
     for r in rows[i + 2 :]:
         name = norm(cell(r, jn))
         if not name:
             break
         cum = to_float(cell(r, jc)) if jc is not None else None
         dia = to_float(cell(r, jd)) if jd is not None else None
+        sections.append(
+            {
+                "name": str(cell(r, jn)).strip(),
+                "length_ft": to_float(cell(r, jl)) if jl is not None else None,
+                "cum_length_ft": cum,
+                "diameter_in": dia,
+                "cased": "casing" in name or "liner" in name,
+            }
+        )
         if "casing" in name or "liner" in name:
             shoe = cum
         else:
@@ -194,6 +206,8 @@ def _parse_wellbore(rows, pw) -> None:
         pw.meta["casing_shoe_unit"] = "ft"
     if hole is not None:
         pw.meta["hole_size_in"] = hole
+    if sections:
+        pw.meta["wellbore"] = sections
 
 
 def _parse_ff_table(rows, pw) -> None:
@@ -250,6 +264,9 @@ def _parse_tripping(rows, pw, sheet) -> None:
             continue
         unit = unit_in(cell(unitrow, j)) or "klbf"
         m = re.search(cm.WP_FF_SET, h)
+        if m:
+            # FF cased hole per skenario open hole (untuk ekspor "CSG x OPH y")
+            pw.meta.setdefault("csg_ff", {})[f"{to_float(m.group(2)):g}"] = to_float(m.group(1))
         if m and "trip in" in h:
             cols.append((j, "slack_off", to_float(m.group(2)), unit))
         elif m and "trip out" in h:

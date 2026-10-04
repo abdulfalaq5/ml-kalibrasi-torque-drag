@@ -541,9 +541,7 @@ export const TOPICS: Topic[] = [
       <>
         <Steps>
           <Step n={1} title="Dashboard → Export Excel">
-            Sheets <b>Info</b> (incl. DD Calibrate offsets), <b>Drag</b>, <b>Torque</b> (T&amp;D model per OHFF with standard
-            names, <b>ROT as one column</b>, ML, P10, P90, ML − T&amp;D model), <b>T&amp;D Actual Reading</b>, <b>Difference</b>,{" "}
-            <b>Operating limits</b>, <b>Charts</b> (one chart per operation + Difference), <b>Metrics</b>.
+            Sheets as the client's "OUTPUT … Multiple T&D Road Map" file: <b>Summary Outputs</b> (Actual vs Machine Learning table, drag/torque performance metrics, parity charts), <b>Tripping Load Analysis - Graph</b> (modelled hookloads per OHFF, actual hookloads, tripping data, ML prediction + chart), <b>Torque Analysis Off Btm</b> and <b>On Bottom</b> (modelled torque per OHFF, actual torque, ML + chart), and <b>ROT / SO / PU MW &lt;mud weight&gt;</b> (WellPlan multipoint outputs: header, BHA &amp; wellbore data, drilling parameters, per-OHFF table).
           </Step>
           <Step n={2} title="Dashboard → PDF">
             Summary: data quality, model & dataset versions, metrics, operating limits, six chart panels.
@@ -812,7 +810,7 @@ export const TOPICS: Topic[] = [
           ["Monitoring forecast", "Monitoring → upload", "Summary table + Excel + PDF"],
           ["Dashboard", "Dashboard", "Charts, band, operating limits, flagged intervals"],
           ["Forecast N ft (.xlsx)", "Dashboard → Forecast ahead", "Forecast per depth, P10–P90, T&D model per OHFF, cause and effect"],
-          ["Per-well export (.xlsx / PDF)", "Dashboard → Export Excel / PDF", "Drag, Torque, T&D + ML & Δ, charts, operating limits"],
+          ["Prediction Output (.xlsx) / PDF", "Dashboard → Export Excel / PDF", "Client format: Summary Outputs, Tripping Load & Torque graphs, PU/SO/ROT MW sheets"],
           ["Evaluation", "Evaluations", "Forecast vs actual after drilling"],
         ]}
       />

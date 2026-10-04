@@ -1,7 +1,7 @@
 """CLI admin.
 
 docker compose exec app python -m app.cli set-admin-password
-docker compose exec app python -m app.cli refresh-calibration   # baca ulang offset Calibrate DD
+docker compose exec app python -m app.cli refresh-meta   # baca ulang Calibrate DD, BHA, wellbore dari file
 docker compose exec app python -m app.cli recompute-quality
 """
 
@@ -51,20 +51,20 @@ def set_admin_password(username: str | None) -> int:
     return 0
 
 
-def refresh_calibration() -> int:
-    """Baca ulang offset Calibrate DD dari file roadmap yang sudah diimpor (setelah perbaikan parser)."""
+def refresh_meta() -> int:
+    """Baca ulang meta dari file yang sudah diimpor (Calibrate DD, BHA, wellbore, FF casing)."""
     from pathlib import Path
 
     from app.db.models import UploadedFile, Well
     from app.parsers.workbook import parse_workbook
     from app.services.importer import OK_STATUSES
 
-    keys = ("calibration_drag_klbf", "calibration_torque_ftlbf")
+    keys = ("calibration_drag_klbf", "calibration_torque_ftlbf", "bha", "wellbore", "csg_ff")
     n = changed = 0
     with SessionLocal() as db:
         for w in db.scalars(select(Well)):
             files = sorted(
-                (f for f in w.files if f.status in OK_STATUSES and f.kind == "roadmap"),
+                (f for f in w.files if f.status in OK_STATUSES),
                 key=lambda f: f.version or 0,
             )
             if not files or not Path(files[-1].path).exists():
@@ -79,7 +79,7 @@ def refresh_calibration() -> int:
                 w.meta = meta
                 changed += 1
         db.commit()
-    print(f"Roadmap wells checked: {n}, calibration updated: {changed}")
+    print(f"Wells checked: {n}, metadata updated: {changed}")
     return 0
 
 
@@ -98,15 +98,16 @@ def main() -> int:
         "set-admin-password", help="Change (or create) the password of the single admin account"
     )
     p.add_argument("--username", help="Also change the username (optional)")
-    sub.add_parser(
-        "refresh-calibration", help="Re-read the DD Calibrate offsets of imported roadmap files"
-    )
+    for name in ("refresh-meta", "refresh-calibration"):  # nama lama tetap diterima
+        sub.add_parser(
+            name, help="Re-read DD Calibrate offsets, BHA and wellbore of imported files"
+        )
     sub.add_parser("recompute-quality", help="Recompute the data quality of every well")
     args = ap.parse_args()
     if args.cmd == "set-admin-password":
         return set_admin_password(args.username)
-    if args.cmd == "refresh-calibration":
-        return refresh_calibration()
+    if args.cmd in ("refresh-meta", "refresh-calibration"):
+        return refresh_meta()
     if args.cmd == "recompute-quality":
         return recompute_quality()
     return 1

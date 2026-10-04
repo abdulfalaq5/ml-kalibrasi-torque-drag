@@ -135,7 +135,7 @@ Lalu di web: **Training Data → Scan folder**. Lanjutkan sesuai `docs/panduan.m
 | Dataset beku | Models → Datasets → Download | Snapshot CSV + hash, daftar sumur, sumur blind test, sumur dikecualikan |
 | Laporan model | Models → Report (.xlsx) / PDF summary | Metrik validasi silang & blind test per operasi, per section/tipe/kedalaman/sumur, perbandingan algoritma, uji fitur, kurva belajar, SHAP |
 | Dashboard | Dashboard | Hookload, Torque, Difference; kurva T&D model per OHFF (warna tetap per OHFF, bawaan + offset Calibrate DD = crossplot Excel), band P10–P90, operating limits, zona forecast |
-| Ekspor per sumur | Dashboard → Export Excel / PDF | Sheet `Drag`, `Torque` (nama seri baku, ROT satu kolom), `T&D Actual Reading` + ML & Δ + grafik per operasi + operating limits; PDF |
+| Ekspor per sumur | Dashboard → Export Excel / PDF | Format template client `OUTPUT … Multiple T&D Road Map`: `Summary Outputs`, `Tripping Load Analysis - Graph`, `Torque Analysis Off Btm/On Bottom`, `ROT/SO/PU MW <mud weight>`; PDF |
 | Evaluasi | Evaluations | Forecast sumur monitoring vs data aktualnya (otomatis setelah data aktual diunggah) |
 
 Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, berisi nama sumur).
@@ -153,7 +153,7 @@ Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, 
 | Salin data Training ke inbox | `make inbox-training` |
 | Data contoh sintetis ke inbox | `make inbox-sample` |
 | File latihan (Training + Monitoring) | `make practice-files` |
-| Baca ulang offset Calibrate DD | `docker compose exec app python -m app.cli refresh-calibration` |
+| Baca ulang offset Calibrate DD, BHA, wellbore | `docker compose exec app python -m app.cli refresh-meta` |
 | Hitung ulang kualitas data | `docker compose exec app python -m app.cli recompute-quality` |
 | Laporan audit file Training | `make audit` |
 | Backup manual | `make backup` (folder `backups/` milik root dari container backup: `sudo chown $USER backups` sekali) |
@@ -164,7 +164,7 @@ Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, 
 **Upgrade ke versi feedback client #1** (sekali): `make up` menjalankan migrasi `0003`
 (Training/Monitoring) dan `0004` (kode status bahasa Inggris; data kualitas dikosongkan), lalu:
 ```bash
-docker compose exec app python -m app.cli refresh-calibration
+docker compose exec app python -m app.cli refresh-meta
 docker compose exec app python -m app.cli recompute-quality
 ```
 lalu di web: Models → Freeze a new dataset → Train model (grup fitur DD Calibrate ikut diuji).

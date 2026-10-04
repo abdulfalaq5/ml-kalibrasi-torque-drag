@@ -155,9 +155,18 @@ or the whole section. The table shows the first depth where ML, the ML band boun
 reach the limit, and the minimum margin.
 
 ### 10. Output
-- **Export Excel** (per well): `Info` (incl. DD Calibrate offsets), `Drag`, `Torque` (T&D model per
-  OHFF with standard names, ROT one column, ML, P10, P90, ML − T&D model), `T&D Actual Reading`,
-  `Difference`, `Operating limits`, `Charts` (one chart per operation + Difference), `Metrics`.
+- **Export Excel** (per well, file `OUTPUT <well> <section>in Multiple T&D Road Map.xlsx`, same layout
+  as the client's template):
+  - `Summary Outputs`: "ML PREDICTION ANALYSIS SUMMARY REPORT", well info, table *ACTUAL VS Machine
+    Learning* (Actual / ML / Actual − ML for PU, SO, ROT and torque), Drag and Torque prediction
+    performance metrics (T&D model, T&D + DD Calibrate, ML; R2, RMSE, MAE, MAPE), parity charts.
+  - `Tripping Load Analysis - Graph`: MODELLED HOOKLOADS (SO/PU per OHFF, RT off bottom), ACTUAL
+    HOOKLOADS, TRIPPING DATA, plus ML PREDICTION (with P10/P90) and the drag chart.
+  - `Torque Analysis Off Btm` / `On Bottom`: MODELLED TORQUE per OHFF, actual torque, ML prediction
+    and chart (Kft.lbf).
+  - `ROT / SO / PU MW <mud weight>`: WellPlan "Multipoint Torque and Drag Outputs" (header, BHA &
+    wellbore data, drilling parameters, BHA and wellbore description, per-OHFF table), model as
+    modelled. Surface torque while tripping is not in the source files and stays empty.
 - **PDF**: data quality, model & dataset versions, metrics, operating limits, six chart panels.
 - **Forecast (.xlsx)**, **model report (.xlsx / PDF)**, **data quality report (.xlsx)**.
 
@@ -178,7 +187,7 @@ make inbox-training           # copy Training/ to data/inbox
 make practice-files           # synthetic practice files -> data/practice/{training,monitoring}
 make audit                    # file audit report -> data/audit/
 make backup                   # manual database dump -> backups/
-docker compose exec app python -m app.cli refresh-calibration   # re-read DD Calibrate offsets
+docker compose exec app python -m app.cli refresh-meta   # re-read DD Calibrate, BHA, wellbore
 docker compose exec app python -m app.cli recompute-quality
 docker compose exec db psql -U tdml -d tdml
 ```
@@ -207,7 +216,7 @@ docker compose exec db psql -U tdml -d tdml
 Migrations `0003` (Training/Monitoring) and `0004` (English status codes) run on `make up`.
 Migration 0004 clears the stored data quality, so afterwards run:
 ```bash
-docker compose exec app python -m app.cli refresh-calibration
+docker compose exec app python -m app.cli refresh-meta
 docker compose exec app python -m app.cli recompute-quality
 ```
 Then freeze a new dataset and train (the DD Calibrate feature group is tested automatically).

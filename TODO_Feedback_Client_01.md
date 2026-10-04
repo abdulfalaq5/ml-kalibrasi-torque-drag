@@ -209,12 +209,12 @@ Untuk sumur **Monitoring** yang sedang dibor (sudah ada actual sampai kedalaman 
 dan mengekspornya.
 
 ### E. Struktur output Excel hasil ML (feedback 4) — **ditunda, menunggu template client**
-- [ ] Terima template dari client
-- [ ] Petakan kolom template ↔ data sistem; catat kolom yang belum tersedia
+- [x] Terima template dari client *(4 Okt 2026: `OUTPUT xxx 8.5'' Multiple T&D Road Map.xls`)*
+- [x] Petakan kolom template ↔ data sistem; catat kolom yang belum tersedia *(K-42: surface torque saat tripping, satu mud weight per file)*
 - [x] Yang sudah disepakati: **ROT cukup 1 kolom** (tanpa OHFF); OHFF 0.5 (bukan 0.55)
 - [ ] Usulan untuk didiskusikan: PU/SO per OHFF (raw & calibrated), kolom ML + P10/P90, **ML-equivalent OHFF**
       per kedalaman (friction factor yang membuat model T&D = forecast ML)
-- [ ] Implementasi sesuai template, uji buka di Microsoft Excel tanpa peringatan
+- [x] Implementasi sesuai template *(`services/output_workbook.py`; dibuka di LibreOffice tanpa galat — uji di Microsoft Excel oleh client)*
 
 **Selesai bila:** file output sesuai template client dan disetujui tertulis.
 

@@ -81,7 +81,7 @@ Konversi hanya di `backend/app/services/units.py`.
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # membuat app FastAPI, middleware sesi, daftar router, SPA
-│   │   ├── cli.py                  # set-admin-password, refresh-calibration, recompute-quality
+│   │   ├── cli.py                  # set-admin-password, refresh-meta, recompute-quality
 │   │   ├── api/                    # router HTTP (satu file per area)
 │   │   │   ├── auth.py  health.py  files.py  inbox.py  wells.py  quality.py
 │   │   │   ├── datasets.py  models.py  limits.py  evaluations.py  templates.py
@@ -641,7 +641,7 @@ Rincian dan status: `TODO_Feedback_Client_01.md`; alasan: `docs/keputusan.md` K-
 | Offset per operasi dalam SI | `services/calibration.py` → `offset_si()`, `offsets_si()`, `has_calibration()` |
 | Kurva calibrated (= "Graph reference" Excel) di dashboard/ekspor/PDF | `services/profile.py` → `well_profile(…, calibration)` |
 | Grup fitur `calibration` (`dd_calibration`) | `services/dataset.py` → `FEATURE_GROUPS`, `features_frame()` |
-| Baca ulang data lama | `python -m app.cli refresh-calibration` |
+| Baca ulang data lama | `python -m app.cli refresh-meta` |
 
 ### 25.3 Forecast N ft ke depan + sebab-akibat
 
@@ -677,4 +677,15 @@ flowchart LR
 - Template Inggris (`Instructions`, `Well Info`, `Example …`); parser tetap menerima `Info Sumur`:
   `parsers/column_map.py` → `TEMPLATE_INFO_SHEET`, `TEMPLATE_INFO_KEYS`.
 - File latihan sesi pengenalan: `scripts/make_sample_data.py --practice` (`make practice-files`).
+
+### 25.5 Ekspor Excel format client ("OUTPUT … Multiple T&D Road Map")
+
+| Bagian | File → fungsi |
+|---|---|
+| `GET /api/wells/{id}/export.xlsx` → nama file `OUTPUT <sumur> <section>in Multiple T&D Road Map.xlsx` | `api/wells.py` → `export()` → `services/export.py` → `export_well()` |
+| Susun workbook | `services/output_workbook.py` → `build_output_workbook()` |
+| `Summary Outputs` (tabel Actual vs ML, metrik, gambar parity) | `_summary()`, `_metrics()`, `_parity_png()` |
+| `Tripping Load Analysis - Graph` | `_tripping()`, `_trip_data()` |
+| `Torque Analysis Off Btm` / `On Bottom` | `_torque()` |
+| `ROT/SO/PU MW <mud weight>` (BHA, wellbore, FF casing dari meta) | `_multipoint()`; meta `bha`, `wellbore`, `csg_ff` dari `parsers/wellplan_report.py`; data lama: `python -m app.cli refresh-meta` |
 

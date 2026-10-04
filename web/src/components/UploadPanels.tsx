@@ -367,7 +367,7 @@ export function MonitoringUploadPanel() {
                     Open dashboard (forecast N ft ahead)
                   </Link>
                   <a className="btn" href={`/api/wells/${wid}/export.xlsx`}>
-                    ⬇ Forecast (.xlsx)
+                    ⬇ Prediction Output (.xlsx)
                   </a>
                   <a className="btn" href={`/api/wells/${wid}/report.pdf`}>
                     ⬇ Summary (PDF)

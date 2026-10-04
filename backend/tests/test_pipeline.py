@@ -173,9 +173,33 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
 
     x = auth_client.get(f"/api/wells/{w_new.id}/export.xlsx")
     wb = openpyxl.load_workbook(io.BytesIO(x.content))
-    assert {"Drag", "Torque", "T&D Actual Reading", "Charts", "Operating limits"} <= set(
-        wb.sheetnames
-    )
+    # format template client "OUTPUT … Multiple T&D Road Map"
+    assert wb.sheetnames[:4] == [
+        "Summary Outputs",
+        "Tripping Load Analysis - Graph",
+        "Torque Analysis Off Btm",
+        "Torque Analysis On Bottom",
+    ]
+    assert [n.split(" MW ")[0] for n in wb.sheetnames[4:]] == ["ROT", "SO", "PU"]
+    sm = wb["Summary Outputs"]
+    assert sm["C3"].value == "ML PREDICTION ANALYSIS SUMMARY REPORT"
+    assert [sm.cell(16, c).value for c in (2, 3, 6, 9, 15)] == [
+        "Bit Depth ",
+        "Actual PU",
+        "ML PU",
+        "PU-MLPU",
+        "TQ-MLTQ On",
+    ]
+    tr = wb["Tripping Load Analysis - Graph"]
+    assert tr["Q2"].value == "MODELLED HOOKLOADS" and tr["Q3"].value == "Bit Depth"
+    assert any(str(c.value).startswith("PU Hook Load ff=") for c in tr[3])
+    assert "ML PREDICTION" in [c.value for c in tr[2]]
+    tq = wb["Torque Analysis Off Btm"]
+    assert tq["L3"].value == "MODELLED TORQUE" and tq["L4"].value == "Bit Depth"
+    pu = wb[wb.sheetnames[-1]]
+    assert pu["D5"].value == "Multipoint Torque and Drag Outputs"
+    assert any("Trip out" in str(c.value) for r in pu.iter_rows() for c in r if c.value)
+    assert "Multiple T&D Road Map" in x.headers["content-disposition"]
     assert auth_client.get(f"/api/wells/{w_new.id}/report.pdf").content[:4] == b"%PDF"
 
     # --- forecast N ft ke depan + penjelasan sebab-akibat + ekspor

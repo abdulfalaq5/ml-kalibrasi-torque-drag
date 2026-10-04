@@ -332,7 +332,7 @@ def export(
         raise HTTPException(400, "Unknown target")
     w = _get(db, well_id)
     data = export_well(db, w, units, target, _model(db, model_id), calibration)
-    fname = f"{w.name}_{(w.section_in or 0):g}in_comparison.xlsx".replace(" ", "_")
+    fname = f"OUTPUT {w.name} {(w.section_in or 0):g}in Multiple T&D Road Map.xlsx"
     return Response(
         data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
