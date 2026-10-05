@@ -185,7 +185,9 @@ export type EvaluationItem = {
   evaluated_at: string;
   metrics: { operations: Record<string, { ml: Metric; wellplan: Metric | null; ml_better_frac: number | null }> };
 };
-export type Metric = { rmse: number | null; mape: number | null; r2: number | null; n: number };
+export type Metric = { rmse: number | null; mape: number | null; r2: number | null; n: number; within?: number | null };
+export type Within = { wellplan: number | null; ml: number | null };
+export type Backtest = { tolerance_si: number; horizons: Record<string, Record<string, { within: number; p90_si: number; n: number }>> };
 export type GroupRow = {
   section?: string;
   well_type?: string;
@@ -204,7 +206,8 @@ export type OpMetrics = {
   explain?: { method: string; features: { feature: string; importance: number; direction: number }[]; note: string; physics_ok: boolean };
   algo_best?: Record<string, Metric & { candidate: string }>;
   candidates: Record<string, Metric>;
-  overall: { wellplan: Metric; ml: Metric; n_wells: number; ml_better_frac?: number };
+  overall: { wellplan: Metric; ml: Metric; n_wells: number; ml_better_frac?: number; within?: Within };
+  forecast_backtest?: Backtest;
   by_section: GroupRow[];
   by_type: GroupRow[];
   by_section_type: GroupRow[];
@@ -222,7 +225,7 @@ export type ModelItem = {
   blind_result?: {
     wells: string[];
     run_at: string;
-    operations: Record<string, { wellplan: Metric; ml: Metric; ml_better_frac: number }>;
+    operations: Record<string, { wellplan: Metric; ml: Metric; ml_better_frac: number; within?: Within }>;
   } | null;
   message: string | null;
   created_at: string;
@@ -259,6 +262,7 @@ export type OpProfile = {
   }[];
   diff: { wp_minus_actual: DiffSeries; ml_minus_actual: DiffSeries; ml_minus_wp: DiffSeries };
   metrics: { wellplan: Metric | null; ml: Metric | null } | null;
+  tolerance: string;
 };
 export type Profile = {
   well: { id: number; name: string; section_in: number | null; well_type: string | null; purpose: Purpose };
@@ -316,6 +320,17 @@ export type ForecastOp = {
   bias: number | null;
   wellplan: { ff: number | null; name: string; value: (number | null)[] }[];
   change: number;
+  tolerance: string;
+  backtest: { horizon_ft: number; method: string; within: number; p90: number; td_within: number | null } | null;
+  actual_check: {
+    n: number;
+    td_within: number;
+    ml_within: number;
+    ml_mean_abs: number;
+    ml_bias_within?: number;
+    ml_bias_mean_abs?: number;
+    unit: string;
+  } | null;
   explanation: {
     method: string;
     drivers: { feature: string; label: string; delta: number }[];

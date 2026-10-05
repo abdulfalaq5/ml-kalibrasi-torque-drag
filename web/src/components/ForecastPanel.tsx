@@ -8,13 +8,15 @@ type Props = {
   calibration: string;
   forecast: Forecast | null;
   onForecast: (f: Forecast | null) => void;
+  hasActual: boolean;
 };
 
 /** Forecast N ft ahead of the last actual depth, with cause and effect. */
-export default function ForecastPanel({ wellId, units, modelId, calibration, forecast, onForecast }: Props) {
+export default function ForecastPanel({ wellId, units, modelId, calibration, forecast, onForecast, hasActual }: Props) {
   const [distance, setDistance] = useState(300);
   const [start, setStart] = useState("");
-  const [bias, setBias] = useState(false);
+  // default on when the well already has actual readings (most accurate in the backtest)
+  const [bias, setBias] = useState(hasActual);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -96,7 +98,9 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
         </div>
       </div>
       <p className="muted small">
-        Forecasts hookload and torque for the next N ft from the last actual depth with the active model: ML forecast,
+        <b>To test the model on a well that already has actual readings</b>, enter an earlier <i>From depth</i>: the forecast
+        then only uses data above that depth, and the column <i>Check against actual</i> compares it with the readings
+        that follow. Forecasts hookload and torque for the next N ft from the last actual depth with the active model: ML forecast,
         uncertainty band (P10–P90) and the T&amp;D Model curve per OHFF. The explanation lists what drives the change (local SHAP
         contributions), plan changes (inclination, dogleg, interval type) and operating limits that would be reached. The
         forecast window is shaded in the charts above.
@@ -130,6 +134,12 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                   <th className="num">Change</th>
                   <th className="num">P10–P90 at end</th>
                   {forecast.bias_correction && <th className="num">Bias-corrected at end</th>}
+                  <th className="num" title="Backtest on unseen wells for this distance">Expected accuracy</th>
+                  {ops.some((op) => forecast.operations[op]?.actual_check) && (
+                    <th className="num" title="Actual readings that lie inside the forecast window (forecast started before the last actual depth)">
+                      Check against actual
+                    </th>
+                  )}
                   <th>Main drivers (contribution to the change)</th>
                 </tr>
               </thead>
@@ -157,6 +167,32 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                           {o.ml_corrected ? `${fmt(last(o.ml_corrected), 1)} (bias ${o.bias! > 0 ? "+" : ""}${fmt(o.bias, 1)})` : "–"}
                         </td>
                       )}
+                      <td className="num small nowrap">
+                        {o.backtest ? (
+                          <span title={`${o.backtest.method}, backtest ${o.backtest.horizon_ft} ft, P90 error ${fmt(o.backtest.p90, 1)} ${o.unit}`}>
+                            <b>{Math.round(o.backtest.within * 100)}%</b> &lt; {o.tolerance}
+                          </span>
+                        ) : (
+                          "–"
+                        )}
+                      </td>
+                      {ops.some((op) => forecast.operations[op]?.actual_check) && (
+                        <td className="num small nowrap">
+                          {o.actual_check ? (
+                            <span
+                              title={`${o.actual_check.n} actual readings in the window. Mean |error|: ML ${fmt(o.actual_check.ml_mean_abs, 1)}${o.actual_check.ml_bias_mean_abs != null ? `, ML + bias ${fmt(o.actual_check.ml_bias_mean_abs, 1)}` : ""} ${o.actual_check.unit}`}
+                            >
+                              T&amp;D {Math.round(o.actual_check.td_within * 100)}% · ML{" "}
+                              {o.actual_check.ml_bias_within != null
+                                ? `+ bias ${Math.round(o.actual_check.ml_bias_within * 100)}%`
+                                : `${Math.round(o.actual_check.ml_within * 100)}%`}{" "}
+                              <span className="muted">(n={o.actual_check.n})</span>
+                            </span>
+                          ) : (
+                            "–"
+                          )}
+                        </td>
+                      )}
                       <td className="small">
                         {o.explanation.drivers.slice(0, 3).map((d) => (
                           <span key={d.feature} className="nowrap">
@@ -178,7 +214,9 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
             </p>
           ))}
           <p className="muted small">
-            Contributions: {forecast.operations[ops[0]]?.explanation.method ?? "SHAP"} (the change of each feature's
+            Expected accuracy = share of actual points within the client tolerance (10 klbf hookload, 2 kft-lbf torque)
+            when this model forecast the same distance on wells it never saw
+            {forecast.bias_correction ? ", with local bias correction" : ", without bias correction"}. Contributions: {forecast.operations[ops[0]]?.explanation.method ?? "SHAP"} (the change of each feature's
             contribution between the start and the end of the window; "T&amp;D Model" = the change of the T&amp;D Model curve
             itself).
           </p>

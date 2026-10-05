@@ -14,6 +14,7 @@ satunya acuan ML) dan **Monitoring** (sumur yang akan/sedang dibor, hanya dipred
 | Dokumen | Isi |
 |---|---|
 | `docs/panduan.md` | **User guide** (bahasa Inggris, untuk client) + operasional (versi interaktif: menu **How-to Guide** di aplikasi) |
+| `docs/tutorial_uji_model.md` | **Tutorial uji model untuk pengguna awam** (Bahasa Indonesia; versi Inggris di How-to Guide → Tutorial) |
 | `docs/ALUR_DAN_KODE.md` | **Alur sistem dan peta kode**: setiap alur → endpoint → fungsi → file/folder (untuk developer & client) |
 | `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-41) |
 | `TODO_Feedback_Client_01.md` | Perbaikan dari feedback client #1 dan statusnya |
@@ -129,7 +130,7 @@ Lalu di web: **Training Data → Scan folder**. Lanjutkan sesuai `docs/panduan.m
 | Laporan audit file | `make audit` → `data/audit/laporan_audit.md` + CSV | Format, sheet, satuan, titik, matriks sumur × section × tipe, penyimpangan per file |
 | Template isian | Training Data / Monitoring → langkah 2 | `TnD_template_training.xlsx` (rencana + aktual) dan `TnD_template_monitoring.xlsx`, dengan Instructions dan Example |
 | Forecast sumur monitoring | Monitoring → unggah | Tabel forecast per operasi + tombol dashboard, Excel, PDF |
-| Forecast N ft + sebab-akibat | Dashboard → Forecast ahead | ML, P10–P90, T&D model per OHFF, faktor penyebab (SHAP lokal), perubahan rencana, batas terlewati, kalimat otomatis; ekspor `.xlsx` |
+| Forecast N ft + sebab-akibat | Dashboard → Forecast ahead (koreksi bias bawaan aktif bila ada data aktual; kolom akurasi backtest) | ML, P10–P90, T&D model per OHFF, faktor penyebab (SHAP lokal), perubahan rencana, batas terlewati, kalimat otomatis; ekspor `.xlsx` |
 | Hasil pindai folder | Training Data → Scan folder | Per file (accepted / warning / duplicate / rejected + alasan) dan per sumur-section (status A/B/C) |
 | Laporan kualitas data | Data Quality → Download (.xlsx) | Status A/B/C/X, skor, alasan, rasio aktual/WellPlan, riwayat tinjauan |
 | Dataset beku | Models → Datasets → Download | Snapshot CSV + hash, daftar sumur, sumur blind test, sumur dikecualikan |

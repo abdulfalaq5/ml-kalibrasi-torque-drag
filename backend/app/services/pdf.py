@@ -102,6 +102,13 @@ def _n(v, d=2):
         return str(v)
 
 
+def _pct_pair(w) -> str:
+    if not w or w.get("ml") is None:
+        return "–"
+    wp = w.get("wellplan")
+    return (f"{wp * 100:.0f}% → " if wp is not None else "") + f"{w['ml'] * 100:.0f}%"
+
+
 def _fig_png(fig) -> io.BytesIO:
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
@@ -394,7 +401,17 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
     ]
     els.append(Paragraph("Cross-validation grouped by well (GroupKFold 5)", st["h2"]))
     rows = [
-        ["Operation", "Model", "Wells", "RMSE WP", "RMSE ML", "Improvement", "ML closer", "R² ML"]
+        [
+            "Operation",
+            "Model",
+            "Wells",
+            "RMSE WP",
+            "RMSE ML",
+            "Improvement",
+            "ML closer",
+            "R² ML",
+            "Within tol. WP → ML",
+        ]
     ]
     for op, d in ops.items():
         wp, ml = d["overall"]["wellplan"], d["overall"]["ml"]
@@ -409,19 +426,21 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
                 _n(imp, 1) + "%",
                 _n((d["overall"].get("ml_better_frac") or 0) * 100, 0) + "%",
                 _n(ml["r2"]),
+                _pct_pair(d["overall"].get("within")),
             ]
         )
     els.append(_table(rows, st))
     els.append(
         Paragraph(
             "RMSE in SI (kN for hookload, kN·m for torque). 'ML closer' = share of points "
-            "where the ML forecast is closer to actual than WellPlan.",
+            "where the ML forecast is closer to actual than WellPlan. 'Within tol.' = share of points "
+            "with |error| < 10 klbf (hookload) or < 2 kft-lbf (torque).",
             st["small"],
         )
     )
     els.append(Paragraph("Blind test (run once, wells locked from the start)", st["h2"]))
     if model.blind_result:
-        rows = [["Operation", "Points", "RMSE WP", "RMSE ML", "ML closer"]]
+        rows = [["Operation", "Points", "RMSE WP", "RMSE ML", "ML closer", "Within tol. WP → ML"]]
         for op, d in model.blind_result["operations"].items():
             rows.append(
                 [
@@ -430,6 +449,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
                     _n(d["wellplan"]["rmse"]),
                     _n(d["ml"]["rmse"]),
                     _n((d.get("ml_better_frac") or 0) * 100, 0) + "%",
+                    _pct_pair(d.get("within")),
                 ]
             )
         els.append(_table(rows, st))
@@ -440,6 +460,28 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         )
     else:
         els.append(Paragraph("Not run yet.", st["small"]))
+    bt_rows = [["Operation", "Horizon", "T&D model", "T&D + bias", "ML", "ML + bias"]]
+    for op, d in ops.items():
+        for h, rows_ in (d.get("forecast_backtest") or {}).get("horizons", {}).items():
+            bt_rows.append(
+                [OP_LABELS.get(op, op), f"{int(h):,} ft"]
+                + [
+                    _n((rows_.get(k) or {}).get("within", float("nan")) * 100, 0) + "%"
+                    if k in rows_
+                    else "–"
+                    for k in ("T&D model", "T&D model + bias", "ML", "ML + bias")
+                ]
+            )
+    if len(bt_rows) > 1:
+        els.append(Paragraph("Forecast backtest (share of points within tolerance)", st["h2"]))
+        els.append(_table(bt_rows, st))
+        els.append(
+            Paragraph(
+                "Forecast N ft ahead from every actual depth on unseen wells. '+ bias' = local bias "
+                "correction from the last actual readings (the Forecast default when actual data exists).",
+                st["small"],
+            )
+        )
     els.append(Paragraph("Feature group tests", st["h2"]))
     rows = [["Group", "Score (RMSE ML/WP)", "Used", "Note"]]
     for r in m.get("feature_selection", []):

@@ -39,7 +39,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.models import Dataset, MLModel, Prediction, PredictionPoint, Well
 from app.services import dataset as dsm
-from app.services.metrics import all_metrics, rmse
+from app.services.backtest import forecast_backtest
+from app.services.metrics import all_metrics, rmse, tolerance_si, within_frac
 from app.services.operations import BASELINE_FF, OPERATIONS
 
 log = logging.getLogger(__name__)
@@ -532,7 +533,12 @@ def train(
                 "ml": all_metrics(d.target, d.ml_oof),
                 "n_wells": int(d.well_name.nunique()),
                 "ml_better_frac": better_frac(d.target, d.ml_oof, d.wp_base),
+                "within": {
+                    "wellplan": within_frac(d.target, d.wp_base, tolerance_si(op)),
+                    "ml": within_frac(d.target, d.ml_oof, tolerance_si(op)),
+                },
             },
+            "forecast_backtest": forecast_backtest(d, op),
             "strategy": strategy,
             "by_section": group_report(d, "ml_oof", ["section"]),
             "by_type": group_report(d, "ml_oof", ["well_type"]),
@@ -750,6 +756,10 @@ def run_blind_test(db: Session, model: MLModel) -> dict:
             "wellplan": all_metrics(d.target, d.wp_base),
             "ml": all_metrics(d.target, p),
             "ml_better_frac": better_frac(d.target, p, d.wp_base),
+            "within": {
+                "wellplan": within_frac(d.target, d.wp_base, tolerance_si(op)),
+                "ml": within_frac(d.target, p, tolerance_si(op)),
+            },
             "per_well": [
                 {
                     "well_name": w,

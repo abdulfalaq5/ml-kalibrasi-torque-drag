@@ -121,6 +121,9 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     op = m["operations"]["pick_up"]
     assert op["learning_curve"] and op["explain"]["features"] and op["strategy"]
     assert m["feature_selection"][0]["group"] == "base"
+    assert 0 <= op["overall"]["within"]["ml"] <= 1
+    assert set(op["forecast_backtest"]["horizons"]) == {"300", "600", "1000"}
+    assert "ML + bias" in op["forecast_backtest"]["horizons"]["300"]
     trained = set(m["dataset"]["train_combos"])
     assert trained
     # sumur blind tidak pernah punya prediksi out-of-fold
@@ -214,6 +217,21 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     assert pu["explanation"]["drivers"] and pu["explanation"]["sentence"].startswith("Pick up")
     assert pu["explanation"]["limit_crossings"]  # batas 50 klbf di atas
     assert fc["summary"]
+    assert pu["backtest"] and 0 <= pu["backtest"]["within"] <= 1 and pu["tolerance"] == "10 klbf"
+
+    # uji model pada sumur yang punya aktual: forecast dimulai sebelum aktual terakhir
+    tw = next(
+        w for w in db.scalars(select(Well)) if w.status == "ready" and w.name not in blind["wells"]
+    )
+    pr = auth_client.get(f"/api/wells/{tw.id}/profile").json()
+    ad = sorted(pr["operations"]["pick_up"]["actual"]["depth"])
+    mid = ad[len(ad) // 2]
+    ck = auth_client.post(
+        f"/api/wells/{tw.id}/forecast", json={"distance_ft": 600, "start_depth_ft": mid}
+    ).json()
+    c = ck["operations"]["pick_up"]["actual_check"]
+    assert ck["bias_correction"] is True and c and c["n"] >= 1 and 0 <= c["ml_within"] <= 1
+    assert any("before the last actual" in x for x in ck["warnings"])
     xf = auth_client.post(f"/api/wells/{w_new.id}/forecast.xlsx", json={"distance_ft": 300})
     assert {"Summary", "PU", "Explanation"} <= set(
         openpyxl.load_workbook(io.BytesIO(xf.content)).sheetnames

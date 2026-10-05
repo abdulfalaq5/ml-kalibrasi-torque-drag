@@ -13,6 +13,8 @@ import ThreeProfileChart, {
 } from "../components/ThreeProfileChart";
 import { DIFF_KEYS, DIFF_LABEL, DiffKey, OHFF_COLOR } from "../components/chartTheme";
 
+const pctTxt = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v * 100)}%`);
+
 export default function DashboardPage() {
   const { wellId } = useParams();
   const nav = useNavigate();
@@ -338,6 +340,8 @@ export default function DashboardPage() {
             calibration={calibration}
             forecast={forecast}
             onForecast={setForecast}
+            hasActual={p.has_actual}
+            key={`${p.well.id}-${p.has_actual}`}
           />
 
           {p.quality.issues.length > 0 && (
@@ -417,6 +421,9 @@ export default function DashboardPage() {
                       <th className="num">MAPE ML</th>
                       <th className="num">R² WP</th>
                       <th className="num">R² ML</th>
+                      <th className="num" title="Share of actual points with |error| below the client tolerance">
+                        Within tol. WP → ML
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -433,6 +440,10 @@ export default function DashboardPage() {
                           <td className="num">{fmt(m?.ml?.mape, 1)}%</td>
                           <td className="num">{fmt(m?.wellplan?.r2)}</td>
                           <td className="num">{fmt(m?.ml?.r2)}</td>
+                          <td className="num nowrap">
+                            {pctTxt(m?.wellplan?.within)} → <b>{pctTxt(m?.ml?.within)}</b>{" "}
+                            <span className="muted small">(&lt; {p.operations[o].tolerance})</span>
+                          </td>
                         </tr>
                       );
                     })}

@@ -101,7 +101,8 @@ type View =
   | "candidates"
   | "strategy"
   | "learning"
-  | "explain";
+  | "explain"
+  | "backtest";
 
 function ModelDetail({ id }: { id: number }) {
   const qc = useQueryClient();
@@ -152,7 +153,11 @@ function ModelDetail({ id }: { id: number }) {
               <th>ML vs T&amp;D Model</th>
               <th className="num">ML closer</th>
               <th className="num">R² ML</th>
+              <th className="num" title="Share of actual points with |error| < 10 klbf (hookload) / < 2 kft-lbf (torque)">
+                Within tolerance T&amp;D → ML
+              </th>
               <th className="num">Blind: RMSE WP → ML</th>
+              <th className="num">Blind within tolerance</th>
             </tr>
           </thead>
           <tbody>
@@ -175,7 +180,11 @@ function ModelDetail({ id }: { id: number }) {
                   </td>
                   <td className="num">{pct(d.overall.ml_better_frac)}</td>
                   <td className="num">{fmt(d.overall.ml.r2)}</td>
+                  <td className="num nowrap">
+                    {pct(d.overall.within?.wellplan)} → <b>{pct(d.overall.within?.ml)}</b>
+                  </td>
                   <td className="num">{b ? `${fmt(b.wellplan.rmse)} → ${fmt(b.ml.rmse)}` : "–"}</td>
+                  <td className="num nowrap">{b?.within ? `${pct(b.within.wellplan)} → ${pct(b.within.ml)}` : "–"}</td>
                 </tr>
               );
             })}
@@ -258,6 +267,7 @@ function ModelDetail({ id }: { id: number }) {
               ["strategy", "Single vs combination"],
               ["learning", "Learning curve"],
               ["explain", "SHAP"],
+              ["backtest", "Forecast backtest"],
             ] as const
           ).map(([k, l]) => (
             <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>
@@ -475,6 +485,43 @@ function ModelDetail({ id }: { id: number }) {
                 A curve still falling at the right end means more wells still help; when it is flat, the limit is in the data or
                 the features.
               </p>
+            </>
+          )}
+          {view === "backtest" && (
+            <>
+              <p className="small muted">
+                Forecast N ft ahead from every actual depth on wells the model never saw. Share of actual points in the
+                window within the client tolerance (&lt; 10 klbf hookload, &lt; 2 kft-lbf torque). "+ bias" = local bias
+                correction from the last actual readings (the Forecast default when actual data exists).
+              </p>
+              {om.forecast_backtest ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Horizon</th>
+                      {["T&D model", "T&D model + bias", "T&D + DD Calibrate", "ML", "ML + bias"].map((k) => (
+                        <th key={k} className="num">
+                          {k}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(om.forecast_backtest.horizons).map(([h, rows]) => (
+                      <tr key={h}>
+                        <td>{Number(h).toLocaleString("en-US")} ft</td>
+                        {["T&D model", "T&D model + bias", "T&D + DD Calibrate", "ML", "ML + bias"].map((k) => (
+                          <td key={k} className="num">
+                            {rows[k] ? (k === "ML + bias" ? <b>{pct(rows[k].within)}</b> : pct(rows[k].within)) : "–"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">Not available for this model (trained before this report existed). Train a new model.</p>
+              )}
             </>
           )}
           {view === "explain" && om.explain && (

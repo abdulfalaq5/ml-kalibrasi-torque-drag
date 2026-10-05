@@ -19,6 +19,7 @@ from app.services import dataset as dsm
 from app.services import units
 from app.services.calibration import has_calibration, offsets_si
 from app.services.limits import applicable_limits, first_crossing
+from app.services.metrics import TOLERANCE_LABEL, tolerance_si, within_frac
 from app.services.operations import (
     BASELINE_FF,
     OP_DIMENSION,
@@ -139,7 +140,7 @@ def forecast_well(
     distance_ft: float = 300.0,
     start_depth_ft: float | None = None,
     step_ft: float = 30.0,
-    bias_correction: bool = False,
+    bias_correction: bool | None = None,
     unit_system: str = "imperial",
     model: MLModel | None = None,
     calibration: str | None = None,
@@ -164,6 +165,8 @@ def forecast_well(
 
     warnings: list[str] = []
     last_actual = float(actual.depth_m.max()) if not actual.empty else None
+    if bias_correction is None:  # bawaan: aktif bila sumur sudah punya pembacaan aktual (K-43)
+        bias_correction = last_actual is not None
     if start_depth_ft is not None:
         start = start_depth_ft * FT
     elif last_actual is not None:
@@ -183,6 +186,12 @@ def forecast_well(
     if end <= start:
         raise ValueError("The start depth is at or below the end of the WellPlan T&D model")
     grid = np.unique(np.append(np.arange(start, end, step_ft * FT), end))
+    if last_actual is not None and start < last_actual - 1e-6:
+        warnings.append(
+            "The forecast starts before the last actual reading: readings after the start depth are not "
+            "used by the forecast (nor by the bias correction); they are only used to check it (see "
+            "'Check against actual')."
+        )
 
     mode = calibration or ("calibrated" if has_calibration(well) else "raw")
     offsets = offsets_si(well) if mode == "calibrated" else {}
@@ -214,9 +223,12 @@ def forecast_well(
         y, lo, hi = predict_frame(bundle, op, f)
         u = disp[OP_DIMENSION[op]]
 
-        # koreksi bias lokal dari titik aktual terakhir
+        # koreksi bias lokal: HANYA titik aktual sampai kedalaman awal (uji jujur bila start < aktual terakhir)
         bias = None
-        a = actual[actual.operation == op].sort_values("depth_m") if not actual.empty else actual
+        a_all = (
+            actual[actual.operation == op].sort_values("depth_m") if not actual.empty else actual
+        )
+        a = a_all[a_all.depth_m <= grid[0] + 1e-6] if len(a_all) else a_all
         if bias_correction and a is not None and len(a):
             a = a[a.depth_m >= a.depth_m.max() - BIAS_WINDOW_FT * FT].tail(BIAS_POINTS)
             fa = dsm.features_frame(w, op, a.depth_m.to_numpy(), plan, survey)
@@ -232,6 +244,7 @@ def forecast_well(
                     f"{OP_LABELS[op]}: fewer than 3 recent actual points; no bias correction"
                 )
         y_corr = y + bias if bias is not None else None
+        check = _actual_check(w, op, a_all, grid, plan, survey, bundle, bias)
 
         # kurva WellPlan per OHFF di jendela forecast
         curves = dsm.plan_curves(plan, well.id, op)
@@ -286,6 +299,7 @@ def forecast_well(
             op, f, y_corr if y_corr is not None else y, u, du, total, drivers, changes, crossings
         )
         sentences.append(sentence)
+        acc = _backtest_accuracy(model, op, distance_ft, bias is not None, u)
         ops_out[op] = {
             "label": OP_LABELS[op],
             "unit": units.UNIT_LABELS[u],
@@ -297,6 +311,9 @@ def forecast_well(
             "bias": None if bias is None else round(units.from_si(bias, u), 3),
             "wellplan": wp_series,
             "change": round(units.from_si(total, u), 3),
+            "tolerance": TOLERANCE_LABEL[OP_DIMENSION[op]],
+            "backtest": acc,
+            "actual_check": check,
             "explanation": {
                 "method": method,
                 "drivers": drivers,
@@ -330,6 +347,58 @@ def forecast_well(
         "warnings": warnings,
         "summary": " ".join(sentences),
         "operations": ops_out,
+    }
+
+
+def _actual_check(w, op, a_all, grid, plan, survey, bundle, bias) -> dict | None:
+    """Bila ada pembacaan aktual DI DALAM jendela forecast (forecast dimulai sebelum aktual terakhir),
+    bandingkan forecast dengan aktual itu: % titik dalam toleransi client dan rata-rata selisih."""
+    if a_all is None or not len(a_all):
+        return None
+    aw = a_all[(a_all.depth_m > grid[0] + 1e-6) & (a_all.depth_m <= grid[-1] + 1e-6)]
+    if aw.empty:
+        return None
+    fa = dsm.features_frame(w, op, aw.depth_m.to_numpy(), plan, survey)
+    ok = fa.wp_base.notna().to_numpy()
+    if not ok.any():
+        return None
+    fa, yv = fa[ok], aw.actual_si.to_numpy()[ok]
+    for c in ("section", "well_type", "plan_format", "interval_type"):
+        fa[c] = fa[c].fillna("unknown").astype(str)
+    p, _, _ = predict_frame(bundle, op, fa)
+    tol = tolerance_si(op)
+    u = "klbf" if OP_DIMENSION[op] == "force" else "kft-lbf"
+    out = {
+        "n": int(len(yv)),
+        "td_within": within_frac(yv, fa.wp_base.to_numpy(), tol),
+        "ml_within": within_frac(yv, p, tol),
+        "ml_mean_abs": round(units.from_si(float(np.mean(np.abs(p - yv))), u), 2),
+        "unit": "klbf" if u == "klbf" else "kft-lbf",
+    }
+    if bias is not None:
+        out["ml_bias_within"] = within_frac(yv, p + bias, tol)
+        out["ml_bias_mean_abs"] = round(units.from_si(float(np.mean(np.abs(p + bias - yv))), u), 2)
+    return out
+
+
+def _backtest_accuracy(model: MLModel, op: str, distance_ft: float, with_bias: bool, u: str):
+    """Akurasi backtest model ini (sumur tidak dilihat) untuk horizon terdekat >= jarak forecast."""
+    bt = ((model.metrics or {}).get("operations", {}).get(op) or {}).get("forecast_backtest")
+    if not bt:
+        return None
+    hs = sorted(int(h) for h in bt["horizons"])
+    h = next((x for x in hs if x >= distance_ft), hs[-1])
+    rows = bt["horizons"][str(h)]
+    key = "ML + bias" if with_bias and "ML + bias" in rows else "ML"
+    r = rows.get(key)
+    if not r:
+        return None
+    return {
+        "horizon_ft": h,
+        "method": key,
+        "within": r["within"],
+        "p90": round(units.from_si(r["p90_si"], u), 3),
+        "td_within": (rows.get("T&D model") or {}).get("within"),
     }
 
 
@@ -423,8 +492,28 @@ def export_forecast(fc: dict) -> bytes:
     r = len(rows) + 3
     ws.write(r, 0, "Cause and effect", f.bold)
     for j, op in enumerate(fc["operations"].values()):
-        ws.write(r + j, 1, op["explanation"]["sentence"], f.wrap)
-        ws.set_row(r + j, 45)
+        bt = op.get("backtest")
+        acc = (
+            f" Expected accuracy (backtest {bt['horizon_ft']:,} ft, {bt['method']}, unseen wells): "
+            f"{bt['within']:.0%} of points within {op['tolerance']}, P90 error {bt['p90']:,.1f} {op['unit']}."
+            if bt
+            else ""
+        )
+        ck = op.get("actual_check")
+        chk = (
+            f" Check against {ck['n']} actual readings in the window: T&D model {ck['td_within']:.0%}, "
+            f"ML {ck['ml_within']:.0%}"
+            + (
+                f", ML + bias {ck['ml_bias_within']:.0%}"
+                if ck.get("ml_bias_within") is not None
+                else ""
+            )
+            + f" within {op['tolerance']}."
+            if ck
+            else ""
+        )
+        ws.write(r + j, 1, op["explanation"]["sentence"] + acc + chk, f.wrap)
+        ws.set_row(r + j, 55)
     r += len(fc["operations"]) + 1
     ws.write(r, 0, "Warnings", f.bold)
     for j, t in enumerate(fc["warnings"] or ["-"]):

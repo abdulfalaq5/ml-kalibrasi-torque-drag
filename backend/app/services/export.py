@@ -222,6 +222,9 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
         "R² ML",
         "Blind RMSE WP",
         "Blind RMSE ML",
+        "Within tolerance T&D Model",
+        "Within tolerance ML",
+        "Blind within tolerance ML",
     ]
     for j, h in enumerate(hdr):
         ws.write(4, j, h, f.head)
@@ -250,12 +253,54 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
             ],
             numfmt=f.num3,
         )
+        wi = d["overall"].get("within") or {}
+        for j, v in (
+            (13, wi.get("wellplan")),
+            (14, wi.get("ml")),
+            (15, (b.get("within") or {}).get("ml")),
+        ):
+            if v is not None:
+                ws.write(i, j, v, f.pct)
         ws.write(i, 5, imp if imp is not None else "", f.pct)
         ws.write(i, 6, d["overall"].get("ml_better_frac") or "", f.pct)
     r = 6 + len(ops)
+    ws.write(
+        r - 1,
+        0,
+        "Tolerance (client): |ML - actual| < 10 klbf for hookload, < 2 kft-lbf for torque. "
+        "Share of actual points within tolerance; cross-validation on unseen wells.",
+    )
+    r += 1
     ws.write(r, 0, "Dataset notes", f.bold)
     for j, n in enumerate(m.get("notes", [])[:200]):
         ws.write(r + 1 + j, 0, n)
+
+    ws = wb.add_worksheet("Forecast backtest")
+    ws.write(
+        0,
+        0,
+        "Forecast N ft ahead from every actual depth (unseen wells): share of actual points in the "
+        "window within tolerance (10 klbf / 2 kft-lbf), and the 90th percentile error (SI). "
+        "'+ bias' = local bias correction from the last <= 10 actual points within 1,000 ft.",
+    )
+    for j, h in enumerate(
+        ["Operation", "Horizon (ft)", "Method", "Within tolerance", "P90 error (SI)", "Points"]
+    ):
+        ws.write(2, j, h, f.head)
+    i = 3
+    for op, d in ops.items():
+        for h, rows in (d.get("forecast_backtest") or {}).get("horizons", {}).items():
+            for meth, v in rows.items():
+                _write_row(
+                    ws,
+                    i,
+                    [OP_LABELS.get(op, op), int(h), meth, None, v["p90_si"], v["n"]],
+                    numfmt=f.num3,
+                )
+                ws.write(i, 3, v["within"], f.pct)
+                i += 1
+    ws.set_column(0, 2, 20)
+    ws.set_column(3, 5, 16)
 
     ws = wb.add_worksheet("Feature tests")
     for j, h in enumerate(["Feature group", "Score (RMSE ML/WP)", "Used", "Note"]):

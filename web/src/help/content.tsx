@@ -11,7 +11,7 @@ export type Topic = {
   body: ReactNode;
 };
 
-export const GROUPS = ["Getting started", "Step by step", "Use cases", "System flow", "Reference"];
+export const GROUPS = ["Getting started", "Tutorial", "Step by step", "Use cases", "System flow", "Reference"];
 
 const STATUS_ROWS: ReactNode[][] = [
   [<b>A · Accepted</b>, "Passed all checks", "Yes"],
@@ -125,6 +125,210 @@ export const TOPICS: Topic[] = [
           and shares <code>data/practice/</code> (training/, monitoring/, README.txt with the section and type to select). Use
           the training practice files on a practice installation only, or delete the PRACTICE wells afterwards.
         </Tip>
+      </>
+    ),
+  },
+  {
+    id: "tutorial-test-model",
+    group: "Tutorial",
+    title: "Tutorial: test the model on a well",
+    summary:
+      "For first-time users: upload a well in Monitoring, read the result, forecast 300 ft ahead and check the ML against the actual readings.",
+    keywords: "tutorial beginner test model monitoring upload section type forecast check against actual accuracy tolerance step by step",
+    body: (
+      <>
+        <Tip>
+          <b>No experience needed.</b> Follow the parts in order. Words in a grey box such as <Ui>Monitoring</Ui> are exactly what
+          you see on the screen. One well takes about 10 minutes.
+        </Tip>
+
+        <h3>Part 0 — The idea in plain words</h3>
+        <Table
+          head={["Word", "What it means"]}
+          rows={[
+            ["T&D model (WellPlan)", "What the planning software calculates for hookload and torque, one curve per friction factor (OHFF)."],
+            ["Actual", "What was really read on the rig while drilling (pick up, slack off, rotating weight, torque)."],
+            ["ML forecast", "The system's estimate. It learned from many drilled wells how far the T&D model usually is from the actual readings."],
+            ["Training Data", "Old wells the ML learned from. You do not touch these to test the model."],
+            ["Monitoring", "Wells you want a forecast for. Uploading here never changes the ML, so it is the safe place to test."],
+            ["Tolerance", "The client's pass mark: the ML is good when it is within 10 klbf (hookload) and 2 kft-lbf (torque) of the actual reading."],
+          ]}
+        />
+        <p>
+          <b>Testing the model</b> = give the system a well it has never seen, let it forecast, and compare the forecast with
+          what was really read on the rig. The system does the comparison for you and shows a percentage: the share of actual
+          readings that the ML hit within the tolerance. <b>90% or more is good</b>.
+        </p>
+        <Flow
+          title="The whole test in one line"
+          nodes={[
+            { title: "1. Check a model is active", tone: "user", to: "/models" },
+            { title: "2. Monitoring: choose section & type", tone: "user", to: "/monitoring" },
+            { title: "3. Upload the file", tone: "user" },
+            { title: "4. Read the result", tone: "out" },
+            { title: "5. Dashboard: forecast 300 ft", tone: "user", to: "/dashboard" },
+            { title: "6. Check against actual", tone: "out" },
+            { title: "7. Download Excel / PDF", tone: "out" },
+          ]}
+        />
+
+        <h3>Part 1 — Before you start (2 minutes)</h3>
+        <Steps>
+          <Step n={1} title="Sign in">
+            Open the application address, type the username and password, click <Ui>Sign in</Ui>.
+          </Step>
+          <Step n={2} title="Check that a model is active">
+            Click <Ui>Models</Ui> in the top bar. In <b>Model history</b> one row must show the status <b>Done</b> with the
+            green label <b>active</b>. If there is none, a model must be trained first (see topic 4).
+          </Step>
+          <Step n={3} title="Prepare the file of the well you want to test">
+            One Excel file for one section of one well: the original WellPlan report (.xlsm), the T&amp;D roadmap (.xlsx), or
+            the system template. For a real test the file should <b>also contain actual readings</b> (sheet "T&amp;D Actual
+            Reading" or "Drilling Data"), otherwise there is nothing to compare with.
+          </Step>
+          <Step n={4} title="Find out the well section and the well type">
+            <b>Well section</b> = the hole size of this file, usually in the file name (e.g. <code>_8.5in</code> means 8.5").{" "}
+            <b>Well type</b>: <b>J</b> = builds up and holds the angle, <b>S</b> = builds up, holds, then drops back,{" "}
+            <b>Horizontal</b> = ends near 90° inclination. Ask the DD or the well plan if you are not sure.
+          </Step>
+        </Steps>
+
+        <h3>Part 2 — Upload the well in Monitoring</h3>
+        <Steps>
+          <Step n={1} title="Click Monitoring in the top bar">
+            The page "Upload a monitoring well (forecast only)" opens. It has five numbered steps.
+          </Step>
+          <Step n={2} title="Step 1 on the page: select the Well section and the Well type">
+            Open the <Ui>Well section</Ui> list and pick the hole size (e.g. <b>8.5"</b>). Open <Ui>Well type</Ui> and pick{" "}
+            <b>J</b>, <b>S</b> or <b>Horizontal</b>. <Ui>Well name</Ui> is optional: leave it empty to read it from the file.
+            <br />
+            Until both lists are chosen the grey box in step 4 says "Select the well section and well type first".
+          </Step>
+          <Step n={3} title="Step 2 (optional): template">
+            Only if you have no original file: click <Ui>⬇ Monitoring well template (.xlsx)</Ui>, fill it in following the
+            "Instructions" and "Example" sheets, save it.
+          </Step>
+          <Step n={4} title="Step 4: upload">
+            Drag the file onto the box, or click the box and choose the file. Wait a few seconds: "Importing and checking the
+            file…", then "Forecasting with the active model…".
+          </Step>
+          <Step n={5} title="Step 5: read the forecast result">
+            A table appears with one row per operation (Pick up, Slack off, Rotating weight, Torque off bottom, Torque on
+            bottom) at the deepest depth:
+            <ul>
+              <li>
+                <b>T&amp;D Model (OHFF 0.3)</b> = the planning value, <b>ML forecast</b> = the system's value,{" "}
+                <b>Uncertainty band (P10–P90)</b> = the range in which the reading will most likely fall,{" "}
+                <b>ML − T&amp;D Model</b> = how much the system corrects the plan.
+              </li>
+              <li>Yellow messages are warnings worth reading (e.g. a well type rare in the training data).</li>
+            </ul>
+            Click <Ui>Open dashboard (forecast N ft ahead)</Ui> to continue.
+          </Step>
+        </Steps>
+        <Tip kind="warn">
+          If you get a red message instead, the file could not be read: the reason is listed per sheet. Typical causes: the
+          wrong file type, renamed column headers, or a section that does not match the file. Fix the file and upload again.
+        </Tip>
+
+        <h3>Part 3 — Look at the charts (Dashboard)</h3>
+        <Steps>
+          <Step n={1} title="The well is already selected">
+            In <Ui>Well</Ui> it is shown with the tag <b>[Monitoring]</b>. Leave <Ui>Units</Ui> on Imperial (ft, klbf, ft-lbf).
+          </Step>
+          <Step n={2} title="Hookload panel (top)">
+            Blue lines = T&amp;D model per OHFF (lighter blue = lower OHFF), names like <b>PU - OHFF : 0.3</b>. Orange line =
+            ML forecast (<b>PU - ML</b>). Green points = actual readings (<b>PU Actual</b>). <b>Good sign</b>: the green points
+            sit on or close to the orange line.
+          </Step>
+          <Step n={3} title="Torque panel and Difference panel">
+            Same idea for torque. The Difference panel shows actual minus model: points near the black zero line = small
+            error.
+          </Step>
+          <Step n={4} title="Metrics for this well (bottom right)">
+            Column <b>Within tol. WP → ML</b>: e.g. "70% → <b>96%</b>" means 70% of the actual readings were within the
+            tolerance of the T&amp;D model and 96% within the tolerance of the ML. This is the main test result for the whole
+            well.
+          </Step>
+        </Steps>
+
+        <h3>Part 4 — Test the forecast 300 ft ahead</h3>
+        <p>
+          The real question while drilling is: <i>how good is the forecast for the next 300 ft?</i> You can test it on a well
+          that already has the actual readings, by pretending you are drilling at an earlier depth.
+        </p>
+        <Steps>
+          <Step n={1} title="Scroll down to the panel Forecast ahead">Below the charts.</Step>
+          <Step n={2} title="Distance: 300">The number of feet to forecast.</Step>
+          <Step n={3} title="From depth: an earlier depth (for the test)">
+            Example: the actual readings go down to 9,500 ft. Type <b>9,000</b>. The forecast then only uses the data above
+            9,000 ft, exactly as if the rig were at 9,000 ft now. (Leave it empty for a real forecast from the last reading.)
+          </Step>
+          <Step n={4} title="Local bias correction: leave it ticked">
+            It shifts the forecast using the last actual readings above the start depth, like the DD's calibration. It is on by
+            default because it is the most accurate.
+          </Step>
+          <Step n={5} title="Click Forecast">
+            The window 9,000–9,300 ft is shaded light purple in the charts with the label "Forecast 300 ft ahead"; the purple
+            line is the bias-corrected forecast and the green points inside the shading are the readings it is tested against.
+          </Step>
+          <Step n={6} title="Read the table">
+            <ul>
+              <li>
+                <b>Check against actual</b> — the test result: e.g. "T&amp;D 60% · ML + bias <b>100%</b> (n=10)" = of the 10
+                actual readings in the next 300 ft, the T&amp;D model hit 60% and the ML 100% within the tolerance.
+              </li>
+              <li>
+                <b>Expected accuracy</b> — how the model did for the same distance on many wells it never saw (e.g. "99% &lt;
+                10 klbf"). Your result should be close to it.
+              </li>
+              <li>
+                <b>Cause and effect</b> sentences explain why the values rise or fall (inclination, dogleg, T&amp;D model) and
+                whether an operating limit is reached.
+              </li>
+            </ul>
+          </Step>
+          <Step n={7} title="Repeat at other depths">
+            Try 2–3 start depths (e.g. top, middle, bottom of the section) to see if the model is good everywhere.
+          </Step>
+        </Steps>
+
+        <h3>Part 5 — Download the result</h3>
+        <Steps>
+          <Step n={1} title="Export Excel (top of the dashboard)">
+            The client's format "OUTPUT … Multiple T&amp;D Road Map": Summary Outputs (actual vs ML table, performance metric),
+            drag and torque graphs, PU/SO/ROT MW sheets.
+          </Step>
+          <Step n={2} title="PDF">A printable summary with the charts.</Step>
+          <Step n={3} title="⬇ Forecast (.xlsx)">The 300 ft forecast with the check and the cause-and-effect sentences.</Step>
+        </Steps>
+
+        <h3>Part 6 — The model's own test report (optional)</h3>
+        <Steps>
+          <Step n={1} title="Models → Report on the active model">
+            Main table, column <b>Within tolerance T&amp;D → ML</b>: result on all training wells, each judged by a model that
+            never saw it. Column <b>Blind within tolerance</b>: result on the locked blind-test wells.
+          </Step>
+          <Step n={2} title="Tab Forecast backtest">
+            How often the forecast 300 / 600 / 1,000 ft ahead was within tolerance on unseen wells, with and without bias
+            correction.
+          </Step>
+        </Steps>
+
+        <h3>Good to know</h3>
+        <Table
+          head={["Situation", "What to do"]}
+          rows={[
+            ["The upload box is grey", "Choose Well section and Well type first (step 1)."],
+            ["\"No active model yet\"", "Train a model in Models first, or ask the administrator."],
+            ["The forecast stops before 300 ft", "The WellPlan results end there; the ML needs them as input."],
+            ["No 'Check against actual' column", "There are no actual readings in the window: enter an earlier From depth."],
+            ["Does my test change the ML?", "No. Monitoring wells are never used for training."],
+            ["Remove the test well afterwards", "Monitoring → list of wells → Delete."],
+            ["Want to practise without client data?", "Use the practice files (Quick Start): data/practice/monitoring. They are synthetic: good for learning the screens, but their accuracy numbers say nothing about the real model. Test the model with real wells."],
+          ]}
+        />
+        <Go to="/monitoring">Open Monitoring</Go>
       </>
     ),
   },
@@ -349,7 +553,9 @@ export const TOPICS: Topic[] = [
           <Step n={1} title="Click Report in Model history">The main table per operation appears below.</Step>
           <Step n={2} title="Read the main table">
             <b>RMSE T&amp;D model → RMSE ML</b>: mean error (smaller is better), in kN / kN·m. <b>ML vs T&amp;D model</b>:
-            improvement in percent. <b>ML closer</b>: share of points where ML is closer to actual than the T&amp;D model.
+            improvement in percent. <b>ML closer</b>: share of points where ML is closer to actual than the T&amp;D model.{" "}
+            <b>Within tolerance</b>: share of points with |error| &lt; 10 klbf (hookload) or &lt; 2 kft-lbf (torque), the
+            client's acceptance criterion; tab <Ui>Forecast backtest</Ui> shows it for 300 / 600 / 1,000 ft ahead.
           </Step>
           <Step n={3} title="Use the analysis tabs">
             <Ui>Section × type</Ui> (yellow rows = fewer than 3 wells, less reliable), <Ui>Depth</Ui>, <Ui>By well</Ui>,{" "}
@@ -475,13 +681,14 @@ export const TOPICS: Topic[] = [
             Enter <Ui>Distance</Ui> (e.g. 300 ft). <Ui>From depth</Ui> is optional; default = the last actual depth (or the top
             of the T&amp;D model when there is no actual data yet).
           </Step>
-          <Step n={2} title="Optional: Local bias correction">
+          <Step n={2} title="Local bias correction (on by default when the well has actual readings)">
             Shifts the forecast by the median (actual − ML) of the last 10 actual points within 1,000 ft. For display only; the
-            model is not changed.
+            model is not changed. It is the most accurate option in the backtest.
           </Step>
           <Step n={3} title="Click Forecast">
             The forecast window is shaded in the charts. The table shows per operation: ML at the start and the end, the change,
-            P10–P90 at the end and the main drivers.
+            P10–P90 at the end, the <b>expected accuracy</b> (backtest of the active model for this distance on unseen wells:
+            share of points within &lt; 10 klbf hookload / &lt; 2 kft-lbf torque) and the main drivers.
           </Step>
           <Step n={4} title="Read the cause and effect">
             One sentence per operation, e.g. <i>"Pick up: from 8,450 to 8,750 ft the ML forecast is expected to rise from 210.3

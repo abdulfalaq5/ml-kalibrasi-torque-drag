@@ -199,3 +199,33 @@ def test_monitoring_upload_never_enters_training(auth_client, db, tmp_path):
     assert auth_client.post(f"/api/wells/{tr['well_id']}/promote").status_code == 400
     for wid in (mon_id, tr["well_id"]):
         assert auth_client.delete(f"/api/wells/{wid}").status_code == 200
+
+
+def test_forecast_backtest_bias_correction_removes_constant_offset():
+    """Offset konstan 30 klbf per sumur: T&D mentah gagal toleransi, T&D + bias lolos semua."""
+    import pandas as pd
+    from app.services.backtest import forecast_backtest
+    from app.services.metrics import tolerance_si, within_frac
+
+    rows = []
+    for wid in (1, 2):
+        for k in range(40):
+            depth = units.to_si(3000 + 50 * k, "ft")
+            wp = units.to_si(100 + k, "klbf")
+            rows.append(
+                {
+                    "well_id": wid,
+                    "depth_m": depth,
+                    "wp_base": wp,
+                    "target": wp + units.to_si(30, "klbf"),
+                    "ml_oof": wp + units.to_si(25, "klbf"),
+                }
+            )
+    d = pd.DataFrame(rows)
+    bt = forecast_backtest(d, "pick_up")
+    assert set(bt["horizons"]) == {"300", "600", "1000"}
+    h = bt["horizons"]["300"]
+    assert h["T&D model"]["within"] == 0.0
+    assert h["T&D model + bias"]["within"] == 1.0 and h["ML + bias"]["within"] == 1.0
+    assert h["ML"]["within"] == 1.0  # 5 klbf < 10 klbf
+    assert within_frac([0, 0], [1, 100], tolerance_si("pick_up")) == 0.5

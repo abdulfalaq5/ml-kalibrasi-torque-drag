@@ -17,7 +17,7 @@ from app.services import dataset as dsm
 from app.services import units
 from app.services.calibration import has_calibration, offsets_si
 from app.services.limits import applicable_limits, first_crossing, margin
-from app.services.metrics import all_metrics
+from app.services.metrics import TOLERANCE_LABEL, all_metrics, tolerance_si, within_frac
 from app.services.operations import (
     BASELINE_FF,
     OP_DIMENSION,
@@ -165,6 +165,11 @@ def well_profile(
                 else None,
                 "ml": all_metrics(act_v[mask_ml], ml_at_act[mask_ml]) if mask_ml.any() else None,
             }
+            tol = tolerance_si(op)
+            if metrics["wellplan"] is not None:
+                metrics["wellplan"]["within"] = within_frac(act_v[mask_wp], wp_at_act[mask_wp], tol)
+            if metrics["ml"] is not None:
+                metrics["ml"]["within"] = within_frac(act_v[mask_ml], ml_at_act[mask_ml], tol)
             # konversi RMSE ke satuan tampilan
             for k in ("wellplan", "ml"):
                 if metrics[k] is not None:
@@ -243,6 +248,7 @@ def well_profile(
                 },
             },
             "metrics": metrics,
+            "tolerance": TOLERANCE_LABEL[OP_DIMENSION[op]],
         }
 
     return {

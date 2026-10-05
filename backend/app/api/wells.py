@@ -213,7 +213,7 @@ class ForecastIn(BaseModel):
     distance_ft: float = 300.0
     start_depth_ft: float | None = None
     step_ft: float = 30.0
-    bias_correction: bool = False
+    bias_correction: bool | None = None  # None = otomatis (aktif bila ada data aktual)
     units: str = "imperial"
     model_id: int | None = None
     calibration: str | None = None

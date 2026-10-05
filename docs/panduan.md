@@ -3,7 +3,8 @@
 Part A is for users (engineers), part B for the server operator.
 
 > An interactive version of this guide is in the application: menu **How-to Guide** (Quick Start,
-> step by step, use cases, system flow diagrams, outputs, FAQ, with search).
+> step by step, use cases, system flow diagrams, outputs, FAQ, with search). For first-time users:
+> **How-to Guide → Tutorial → "Tutorial: test the model on a well"**.
 
 ## What This System Does
 
@@ -137,8 +138,10 @@ Data (it then goes through the data quality gate).
 
 ### 8. Forecast N ft ahead
 Dashboard → **Forecast ahead**: enter the distance (e.g. 300 ft); the start is the last actual depth
-(or the top of the T&D model). Optional **local bias correction** (median actual − ML of the last
-10 actual points within 1,000 ft; display only). Output per operation: ML forecast, P10–P90 and the
+(or the top of the T&D model). **Local bias correction** (median actual − ML of the last 10 actual
+points within 1,000 ft; display only) is **on by default** when the well has actual readings.
+The column **Expected accuracy** shows the backtest of the active model for that distance on wells
+it never saw: share of points within the client tolerance (< 10 klbf hookload, < 2 kft-lbf torque). Output per operation: ML forecast, P10–P90 and the
 T&D model per OHFF every 30 ft, plus **cause and effect**:
 - main drivers (local SHAP contributions to the change over the window),
 - plan changes (inclination, maximum dogleg, interval type),
@@ -148,6 +151,11 @@ T&D model per OHFF every 30 ft, plus **cause and effect**:
 
 The window is shaded in the charts. **⬇ Forecast (.xlsx)** exports it (Summary, one sheet per
 operation with a chart, Explanation). The forecast stops where the WellPlan results end.
+
+### 8b. Accuracy against the client tolerance
+Every model reports the share of actual points with |ML − actual| < 10 klbf (hookload) or < 2 kft-lbf
+(torque): Models → report (main table, *Forecast backtest* tab for 300 / 600 / 1,000 ft), the model
+report Excel/PDF, and the dashboard metrics of each well.
 
 ### 9. Operating limits
 Add limits (e.g. pick up max, torque on bottom max = top drive limit, slack off min) for this well
