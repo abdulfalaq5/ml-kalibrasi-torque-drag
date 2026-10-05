@@ -107,10 +107,16 @@ yang lebih dangkal.
 4. **Local bias correction: biarkan tercentang.** Forecast digeser memakai pembacaan aktual terakhir
    di atas kedalaman awal, mirip kalibrasi yang dilakukan DD. Opsi ini aktif secara bawaan karena
    paling akurat.
-5. **Klik Forecast.**
-   - Jendela 9.000–9.300 ft diarsir ungu muda di grafik, dengan label "Forecast 300 ft ahead".
-   - Garis ungu = forecast yang sudah dikoreksi bias.
-   - Titik hijau di dalam arsiran = pembacaan aktual yang menjadi pembanding.
+5. **Klik Forecast. Grafik langsung pindah ke area forecast.** Halaman menggulir ke grafik dan
+   otomatis zoom ke jendela forecast. Yang terlihat:
+   - Dua garis putus-putus ungu: **Forecast start · 9,000 ft** dan **Forecast end · 9,300 ft (+300 ft)**,
+     dengan arsiran tipis di antaranya.
+   - **Garis ungu tebal** per operasi = **forecast-nya**, yaitu ke mana hookload/torsi diperkirakan
+     bergerak dalam 300 ft berikutnya. Pita ungu berarsir di sekitarnya = rentang kemungkinan (P10–P90).
+   - Di ujung setiap garis ungu tertulis **nilai prediksinya**, mis. "PU 128 klbf @ 9,300 ft".
+   - Titik hijau di dalam jendela = pembacaan aktual yang menjadi pembanding.
+   - Tombol **Show whole well** (di atas grafik) kembali ke seluruh kedalaman; **Zoom to forecast**
+     kembali ke jendela forecast.
 6. **Baca tabel:**
    - **Check against actual** = hasil uji. Contoh: "T&D 60% · ML + bias **100%** (n=10)" artinya dari
      10 pembacaan aktual di 300 ft berikutnya, T&D model tepat 60%, ML tepat 100% (dalam toleransi).

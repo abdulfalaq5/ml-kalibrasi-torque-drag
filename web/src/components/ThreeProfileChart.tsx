@@ -86,6 +86,26 @@ function nearest(depth: number[], value: number[], at: number, tol: number): num
   return best;
 }
 
+/** X range covering the data inside a depth window (+ room on the right for the value labels). */
+function xRangeIn(data: Plotly.Data[], win: [number, number]): { range?: [number, number]; autorange?: boolean } {
+  const [bottom, top] = win;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const t of data) {
+    const xs = (t as { x?: (number | null)[] }).x ?? [];
+    const ys = (t as { y?: (number | null)[] }).y ?? [];
+    xs.forEach((x, i) => {
+      const y = ys[i];
+      if (x == null || y == null || y < top || y > bottom) return;
+      if (x < lo) lo = x;
+      if (x > hi) hi = x;
+    });
+  }
+  if (!Number.isFinite(lo)) return {};
+  const span = hi - lo || Math.abs(hi) * 0.1 || 1;
+  return { range: [lo - span * 0.08, hi + span * 0.35], autorange: false };
+}
+
 /** Y-axis range from a Plotly relayout event. null = autorange, undefined = not a Y change. */
 function yRangeFromRelayout(e: Plotly.PlotRelayoutEvent): [number, number] | null | undefined {
   const r = e as Record<string, unknown>;
@@ -126,6 +146,25 @@ export default function ThreeProfileChart({
   const hkUnit = profile.operations.pick_up.unit;
   const tqUnit = profile.operations.torque_off_bottom.unit;
   const target = profile.operations[options.diffTarget];
+
+  // After a forecast: zoom to the forecast window (a bit of history above, a bit below)
+  const [fcZoom, setFcZoom] = useState(false);
+  const fcWindow = useMemo((): [number, number] | null => {
+    if (!forecast) return null;
+    const dist = Math.max(forecast.end_depth - forecast.start_depth, du === "ft" ? 100 : 30);
+    return [forecast.end_depth + 0.6 * dist, Math.max(0, forecast.start_depth - 2 * dist)];
+  }, [forecast, du]);
+  useEffect(() => {
+    if (fcWindow) {
+      setYRange(fcWindow);
+      setPanelY({ hookload: null, torque: null, diff: null });
+      setFcZoom(true);
+    } else {
+      setYRange(null);
+      setFcZoom(false);
+    }
+    setZoomRev((r) => r + 1);
+  }, [fcWindow]);
 
   // Reset zoom when the well / unit system changes
   useEffect(() => {
@@ -186,15 +225,59 @@ export default function ThreeProfileChart({
           });
         }
         const fo = forecast?.operations[op];
-        if (fo?.ml_corrected) {
+        if (fo && fo.depth.length) {
+          // forecast window: shaded P10–P90 band + thick purple line + value label at the end
+          const shift = fo.bias ?? 0;
+          const main = (fo.ml_corrected ?? fo.ml).map((v) => (v == null ? null : v));
+          const lo = fo.p10.map((v) => (v == null ? null : v + shift));
+          const hi = fo.p90.map((v) => (v == null ? null : v + shift));
+          const name = `${p} forecast (next ${forecast!.distance_ft} ft)`;
           out.push({
             type: "scatter",
             mode: "lines",
-            x: fo.ml_corrected,
+            x: lo,
             y: fo.depth,
-            name: `${p} - ML forecast (bias-corrected)`,
-            line: { color: COLOR.mlMinusWp, width: 2.5 },
-            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} - ML forecast (bias-corrected)</extra>`,
+            line: { width: 0, color: COLOR.forecast },
+            legendgroup: `fc-${op}`,
+            showlegend: false,
+            hoverinfo: "skip",
+          });
+          out.push({
+            type: "scatter",
+            mode: "lines",
+            x: hi,
+            y: fo.depth,
+            fill: "tonextx",
+            fillcolor: COLOR.forecastBand,
+            line: { width: 0, color: COLOR.forecast },
+            legendgroup: `fc-${op}`,
+            name: `${p} forecast range (P10–P90)`,
+            hoverinfo: "skip",
+          });
+          const last = main.length - 1;
+          out.push({
+            type: "scatter",
+            mode: "text+lines+markers",
+            x: main,
+            y: fo.depth,
+            name,
+            legendgroup: `fc-${op}`,
+            line: { color: COLOR.forecast, width: 4 },
+            marker: {
+              size: main.map((_, i) => (i === 0 || i === last ? 11 : 0)),
+              symbol: main.map((_, i) => (i === last ? "diamond" : "circle")),
+              color: COLOR.forecast,
+              line: { color: COLOR.surface, width: 1.5 },
+            },
+            text: main.map((v, i) =>
+              i === last && v != null
+                ? `<b>${p} ${v.toLocaleString("en-US", { maximumFractionDigits: o.unit === "ft-lbf" ? 0 : 1 })} ${o.unit}</b><br>@ ${fo.depth[i].toLocaleString("en-US", { maximumFractionDigits: 0 })} ${du}`
+                : "",
+            ),
+            textposition: "middle right",
+            textfont: { color: COLOR.forecast, size: 11 },
+            cliponaxis: false,
+            hovertemplate: `%{x:,.1f} ${o.unit} at %{y:,.0f} ${du}<extra>${name}</extra>`,
           });
         }
         if (o.actual.depth.length) {
@@ -329,8 +412,21 @@ export default function ThreeProfileChart({
             line: { width: 0 },
             layer: "below",
           },
+          ...[forecast.start_depth, forecast.end_depth].map(
+            (d): Partial<Plotly.Shape> => ({
+              type: "line",
+              xref: "paper",
+              yref: "y",
+              x0: 0,
+              x1: 1,
+              y0: d,
+              y1: d,
+              line: { color: COLOR.forecast, width: 1.5, dash: "dash" },
+            }),
+          ),
         ]
       : [];
+    const fmtD = (d: number) => d.toLocaleString("en-US", { maximumFractionDigits: 0 });
     const zoneNote: Partial<Plotly.Annotations>[] = forecast
       ? [
           {
@@ -338,15 +434,29 @@ export default function ThreeProfileChart({
             xref: "paper",
             y: forecast.start_depth,
             yref: "y",
+            yanchor: "bottom",
+            xanchor: "left",
+            showarrow: false,
+            text: `<b>Forecast start</b> · ${fmtD(forecast.start_depth)} ${du}${forecast.last_actual_depth != null && Math.abs(forecast.last_actual_depth - forecast.start_depth) < 1 ? " (last actual reading)" : ""}`,
+            font: { size: 11, color: COLOR.forecast },
+            bgcolor: "rgba(255,255,255,0.85)",
+          },
+          {
+            x: 0,
+            xref: "paper",
+            y: forecast.end_depth,
+            yref: "y",
             yanchor: "top",
             xanchor: "left",
             showarrow: false,
-            text: `Forecast ${forecast.distance_ft} ft ahead`,
-            font: { size: 10, color: COLOR.mlMinusWp },
+            text: `<b>Forecast end</b> · ${fmtD(forecast.end_depth)} ${du} (+${forecast.distance_ft} ft)`,
+            font: { size: 11, color: COLOR.forecast },
+            bgcolor: "rgba(255,255,255,0.85)",
           },
         ]
       : [];
-    const shapes: Partial<Plotly.Shape>[] = intervals.map((iv) => ({
+    // flagged intervals are hidden while a forecast is shown, so the forecast window stays readable
+    const shapes: Partial<Plotly.Shape>[] = (forecast ? [] : intervals).map((iv) => ({
       type: "rect",
       xref: "paper",
       yref: "y",
@@ -385,7 +495,7 @@ export default function ThreeProfileChart({
         title: { text: xTitle, font: { color: COLOR.textMuted, size: 12 } },
         ...(key === "diff"
           ? { zeroline: true, zerolinecolor: COLOR.zero, zerolinewidth: 2, range: [...traces.diffRange] }
-          : { zeroline: false }),
+          : { zeroline: false, ...(fcZoom && fcWindow ? xRangeIn(traces[key], fcWindow) : {}) }),
       },
       yaxis: {
         ...axisBase,
@@ -416,7 +526,7 @@ export default function ThreeProfileChart({
       PanelKey,
       Partial<Plotly.Layout>
     >,
-    [narrow, intervals, yRange, fullRange, panelY, syncDepth, zoomRev, traces, options, du, hkUnit, tqUnit, target, forecast],
+    [narrow, intervals, yRange, fullRange, panelY, syncDepth, zoomRev, traces, options, du, hkUnit, tqUnit, target, forecast, fcZoom, fcWindow],
   );
 
   const onHover = (e: Plotly.PlotHoverEvent) => {
@@ -427,6 +537,7 @@ export default function ThreeProfileChart({
   };
 
   const resetZoom = () => {
+    setFcZoom(false);
     setYRange(null);
     setPanelY({ hookload: null, torque: null, diff: null });
     setZoomRev((x) => x + 1);
@@ -440,6 +551,7 @@ export default function ThreeProfileChart({
       resetZoom();
       return;
     }
+    setFcZoom(false);
     if (syncDepth) setYRange(r);
     else setPanelY((p) => ({ ...p, [key]: r }));
   };
@@ -473,7 +585,7 @@ export default function ThreeProfileChart({
   const zoomed = yRange !== null || Object.values(panelY).some((r) => r !== null);
 
   return (
-    <div className="chart-stack" onMouseLeave={() => setHoverDepth(null)}>
+    <div className="chart-stack" id="profile-charts" onMouseLeave={() => setHoverDepth(null)}>
       <div className="chart-toolbar">
         <label className="check">
           <input
@@ -490,8 +602,21 @@ export default function ThreeProfileChart({
           Zoom: drag a box on a chart · pan: hand icon in the chart toolbar · double click: full view
         </span>
         <div className="spacer" />
+        {forecast && !fcZoom && fcWindow && (
+          <button
+            className="btn small"
+            onClick={() => {
+              setYRange(fcWindow);
+              setPanelY({ hookload: null, torque: null, diff: null });
+              setFcZoom(true);
+              setZoomRev((x) => x + 1);
+            }}
+          >
+            Zoom to forecast
+          </button>
+        )}
         <button className="btn small" onClick={resetZoom} disabled={!zoomed}>
-          Reset zoom
+          {fcZoom ? "Show whole well" : "Reset zoom"}
         </button>
       </div>
 

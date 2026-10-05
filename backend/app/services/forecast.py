@@ -244,7 +244,7 @@ def forecast_well(
                     f"{OP_LABELS[op]}: fewer than 3 recent actual points; no bias correction"
                 )
         y_corr = y + bias if bias is not None else None
-        check = _actual_check(w, op, a_all, grid, plan, survey, bundle, bias)
+        check = _actual_check(w, op, a_all, grid, plan, survey, bundle, bias, offsets.get(op, 0.0))
 
         # kurva WellPlan per OHFF di jendela forecast
         curves = dsm.plan_curves(plan, well.id, op)
@@ -350,7 +350,9 @@ def forecast_well(
     }
 
 
-def _actual_check(w, op, a_all, grid, plan, survey, bundle, bias) -> dict | None:
+def _actual_check(
+    w, op, a_all, grid, plan, survey, bundle, bias, td_offset: float = 0.0
+) -> dict | None:
     """Bila ada pembacaan aktual DI DALAM jendela forecast (forecast dimulai sebelum aktual terakhir),
     bandingkan forecast dengan aktual itu: % titik dalam toleransi client dan rata-rata selisih."""
     if a_all is None or not len(a_all):
@@ -370,7 +372,8 @@ def _actual_check(w, op, a_all, grid, plan, survey, bundle, bias) -> dict | None
     u = "klbf" if OP_DIMENSION[op] == "force" else "kft-lbf"
     out = {
         "n": int(len(yv)),
-        "td_within": within_frac(yv, fa.wp_base.to_numpy(), tol),
+        # T&D = kurva yang ditampilkan (termasuk offset Calibrate DD bila mode calibrated)
+        "td_within": within_frac(yv, fa.wp_base.to_numpy() + td_offset, tol),
         "ml_within": within_frac(yv, p, tol),
         "ml_mean_abs": round(units.from_si(float(np.mean(np.abs(p - yv))), u), 2),
         "unit": "klbf" if u == "klbf" else "kft-lbf",

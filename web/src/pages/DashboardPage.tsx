@@ -313,6 +313,13 @@ export default function DashboardPage() {
                 · <span className="sw ml" /> ML forecast{opts.showBand ? " (dashed = P10–P90 band)" : ""} ·{" "}
                 <span className="dot act" /> Actual (points) · <span className="sw limit" /> operating limit (dotted)
                 {p.calibration.mode === "calibrated" && <> · T&amp;D Model includes the DD Calibrate offsets</>}
+                {forecast && (
+                  <>
+                    {" "}
+                    · <span className="sw" style={{ background: "#4a3aa7", height: 4 }} /> <b>Forecast</b> (thick purple line,
+                    shaded band = P10–P90, value at the end of the window)
+                  </>
+                )}
               </div>
               <div>
                 <b>Names:</b> PU = pick up, SO = slack off, ROT = rotating weight (one curve). Actual markers: ● PU / torque

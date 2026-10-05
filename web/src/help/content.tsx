@@ -268,9 +268,24 @@ export const TOPICS: Topic[] = [
             It shifts the forecast using the last actual readings above the start depth, like the DD's calibration. It is on by
             default because it is the most accurate.
           </Step>
-          <Step n={5} title="Click Forecast">
-            The window 9,000–9,300 ft is shaded light purple in the charts with the label "Forecast 300 ft ahead"; the purple
-            line is the bias-corrected forecast and the green points inside the shading are the readings it is tested against.
+          <Step n={5} title="Click Forecast — the charts jump to the forecast">
+            The page scrolls up to the charts and zooms to the forecast window automatically. What you see:
+            <ul>
+              <li>
+                Two dashed purple lines: <b>Forecast start · 9,000 ft</b> and <b>Forecast end · 9,300 ft (+300 ft)</b>, with the
+                window between them lightly shaded.
+              </li>
+              <li>
+                A <b>thick purple line</b> per operation = <b>the forecast</b>: where hookload/torque is expected to go over the
+                next 300 ft. The shaded purple band around it = the likely range (P10–P90).
+              </li>
+              <li>
+                At the end of each purple line the <b>forecast value</b> is written, e.g. "PU 128 klbf @ 9,300 ft".
+              </li>
+              <li>Green points inside the window = actual readings the forecast is tested against.</li>
+            </ul>
+            <Ui>Show whole well</Ui> (above the charts) goes back to the full depth; <Ui>Zoom to forecast</Ui> returns to the
+            window.
           </Step>
           <Step n={6} title="Read the table">
             <ul>

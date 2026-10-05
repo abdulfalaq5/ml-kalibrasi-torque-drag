@@ -34,6 +34,8 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
     setErr(null);
     try {
       onForecast(await api.post<Forecast>(`/api/wells/${wellId}/forecast`, body()));
+      // show the result where it is drawn: the charts zoom to the forecast window
+      setTimeout(() => document.getElementById("profile-charts")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
     } catch (e) {
       setErr((e as Error).message);
       onForecast(null);
@@ -64,6 +66,8 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
 
   const ops = forecast ? OPS.filter((o) => forecast.operations[o]) : [];
   const last = (a: (number | null)[]) => (a.length ? a[a.length - 1] : null);
+  // the band moves with the bias correction (same as the shaded band in the charts)
+  const shifted = (v: number | null, b: number | null) => (v == null ? null : v + (forecast?.bias_correction ? (b ?? 0) : 0));
 
   return (
     <section className="card">
@@ -160,7 +164,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                         {fmt(o.change, 1)}
                       </td>
                       <td className="num">
-                        {fmt(last(o.p10), 1)} – {fmt(last(o.p90), 1)}
+                        {fmt(shifted(last(o.p10), o.bias), 1)} – {fmt(shifted(last(o.p90), o.bias), 1)}
                       </td>
                       {forecast.bias_correction && (
                         <td className="num">
