@@ -3,6 +3,7 @@
 Versi bahasa Inggris ada di aplikasi: menu **How-to Guide → Tutorial → "Tutorial: test the model on a well"**.
 Tampilan aplikasi berbahasa Inggris, jadi nama tombol di bawah ditulis persis seperti di layar
 (dalam **tebal**). Satu sumur butuh sekitar 10 menit.
+Penjelasan rinci setiap garis dan arsiran di grafik: `docs/panduan_membaca_grafik.md`.
 
 ---
 

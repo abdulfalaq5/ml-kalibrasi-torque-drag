@@ -15,6 +15,7 @@ satunya acuan ML) dan **Monitoring** (sumur yang akan/sedang dibor, hanya dipred
 |---|---|
 | `docs/panduan.md` | **User guide** (bahasa Inggris, untuk client) + operasional (versi interaktif: menu **How-to Guide** di aplikasi) |
 | `docs/tutorial_uji_model.md` | **Tutorial uji model untuk pengguna awam** (Bahasa Indonesia; versi Inggris di How-to Guide → Tutorial) |
+| `docs/panduan_membaca_grafik.md` | **Cara membaca grafik dan tabel** (setiap garis, titik, arsiran; gambar bernomor; Bahasa Indonesia; versi Inggris di How-to Guide → Tutorial) |
 | `docs/ALUR_DAN_KODE.md` | **Alur sistem dan peta kode**: setiap alur → endpoint → fungsi → file/folder (untuk developer & client) |
 | `docs/keputusan.md` | Keputusan dan asumsi (K-01 … K-41) |
 | `TODO_Feedback_Client_01.md` | Perbaikan dari feedback client #1 dan statusnya |

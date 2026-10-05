@@ -348,6 +348,68 @@ export const TOPICS: Topic[] = [
     ),
   },
   {
+    id: "reading-charts",
+    group: "Tutorial",
+    title: "Reading the charts: every line and shading",
+    summary: "What each colour, line, point, shaded area and table on the dashboard means, in plain words.",
+    keywords: "read chart legend line colour blue orange green purple red dashed dotted shading band P10 P90 forecast window difference metrics table beginner",
+    body: (
+      <>
+        <Tip>
+          Depth goes <b>down</b> the chart (deeper = lower), values go <b>right</b> (heavier / more torque = further right). A
+          forecast is good when the <b>green points sit on its line</b>. The client's pass mark: within 10 klbf (hookload) and
+          2 kft-lbf (torque).
+        </Tip>
+        <h3>Colours</h3>
+        <Table
+          head={["Colour", "What it is"]}
+          rows={[
+            [<><Swatch c={OHFF_COLOR["0.1"]} /> <Swatch c={OHFF_COLOR["0.5"]} /> Blue lines</>, "T&D model (WellPlan), one line per OHFF: lighter = lower friction factor, darker = higher. Same colour for the same OHFF in every chart."],
+            [<><Swatch c="#eb6834" /> Orange line</>, "ML forecast for the whole well (PU - ML, SO - ML, ROT - ML)."],
+            [<><Swatch c="#eb6834" /> Orange dashed lines</>, "Only when 'Uncertainty band (P10–P90)' is ticked: 80% of the actual readings are expected between the two dashed lines."],
+            [<><span style={{ color: "#1baf7a" }}>● ▲ ■</span> Green points</>, "Actual readings from the rig: ● pick up / torque off bottom, ▲ slack off / torque on bottom, ■ rotating weight."],
+            [<><Swatch c="#4a3aa7" /> Thick purple line</>, "THE FORECAST N ft ahead (bias-corrected). The value at its end is written next to the ◆, e.g. 'PU 254 klbf @ 8,900 ft'."],
+            ["Faded purple strip around the purple line", "Forecast range P10–P90: where the reading will most likely (80%) fall."],
+            ["Very light purple shading across the chart, between two dashed purple lines", "The forecast window (from 'Forecast start' to 'Forecast end'). It only marks the area; it is not a value."],
+            [<><span style={{ color: "#e34948" }}>┆</span> Red dotted vertical line</>, "Operating limit (e.g. max pick up, top drive torque)."],
+            ["Very light red shading", "Depths below the first point where the ML forecast reaches the limit."],
+            ["Light yellow shading", "Flagged intervals: |difference| above the threshold in 'Flag intervals' (hidden while a forecast is shown)."],
+            ["Black dashed horizontal line (on hover)", "Guide line at the mouse depth in all panels; the bar below the charts lists every value at that depth (WP = T&D model, ML, Act = actual)."],
+          ]}
+        />
+        <h3>The three panels</h3>
+        <Table
+          head={["Panel", "How to read it"]}
+          rows={[
+            ["Hookload", "Left group = SO (slack off, lightest), middle = ROT (one line), right = PU (pick up, heaviest). Normal order left to right: SO ≤ ROT ≤ PU."],
+            ["Torque", "Left group = Torque Off Bottom (rotating above the bottom), right group = Torque On Bottom (drilling)."],
+            ["Difference (Δ)", "A − B for one operation. Black vertical line = 0 = exactly equal. Blue dots = T&D model − actual, orange diamonds = ML − actual, purple line = ML − T&D model. Right (+) = A is higher, left (−) = A is lower. Closer to the black line = more accurate."],
+          ]}
+        />
+        <h3>Tables</h3>
+        <Table
+          head={["Table / column", "Meaning"]}
+          rows={[
+            ["Forecast: Bias-corrected at end", "The forecast value used (= the value at the end of the purple line). '(bias −20.4)' = the last readings were 20.4 below the ML, so the forecast was moved down by that."],
+            ["Forecast: P10–P90 at end", "Likely range at the end of the window."],
+            ["Forecast: Expected accuracy", "How often this model was within tolerance for this distance on wells it never saw."],
+            ["Forecast: Check against actual", "Only when testing with an earlier From depth: forecast vs the readings that follow ('ML + bias 100% (n=3)' = all 3 readings within tolerance)."],
+            ["Forecast: Main drivers / Cause and effect", "Why the values change (T&D model trend, inclination, dogleg …) and whether a limit is reached."],
+            ["Metrics: RMSE / MAPE", "Average error in units / percent — smaller is better."],
+            ["Metrics: R²", "How well the curve shape follows the actual readings — closer to 1 is better."],
+            ["Metrics: Within tol. WP → ML", "The client's measure: share of readings within 10 klbf / 2 kft-lbf, for the T&D model and for the ML. 90% or more is good."],
+            ["Operating limits: … reaches", "First depth where the ML, the ML band or the T&D model reaches the limit; 'not reached' = never. Minimum ML margin < 0 = the limit is exceeded."],
+          ]}
+        />
+        <Tip>
+          Too busy? Untick operations you do not need, untick <Ui>All OHFF curves</Ui> to keep only OHFF 0.3, or drag a box to
+          zoom. <Ui>Show whole well</Ui> / <Ui>Reset zoom</Ui> brings back the full depth. A version with numbered screenshots
+          (Bahasa Indonesia) is in <code>docs/panduan_membaca_grafik.md</code>.
+        </Tip>
+      </>
+    ),
+  },
+  {
     id: "login",
     group: "Getting started",
     title: "Sign in and sign out",
