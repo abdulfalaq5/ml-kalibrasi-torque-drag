@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import zipfile
 
 import openpyxl
 import pytest
@@ -222,6 +223,18 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     assert pu["explanation"]["limit_crossings"]  # batas 50 klbf di atas
     assert fc["summary"]
     assert pu["backtest"] and 0 <= pu["backtest"]["within"] <= 1 and pu["tolerance"] == "8 klbf"
+    assert fc["request"]["distance_ft"] == 300
+    # ekspor Excel dengan prediction yang sedang tampil: tabel + garis ungu di grafik
+    xe = auth_client.get(f"/api/wells/{w_new.id}/export.xlsx?fc_distance_ft=300&fc_bias=true")
+    assert xe.status_code == 200, xe.text
+    wbx = openpyxl.load_workbook(io.BytesIO(xe.content))
+    for sh in ("Tripping Load Analysis - Graph", "Torque Analysis Off Btm"):
+        vals = [str(c.value) for row in wbx[sh].iter_rows() for c in row if c.value]
+        assert any(v.startswith("PREDICTION AHEAD") for v in vals), sh
+        assert any("- Prediction P90" in v for v in vals), sh
+    with zipfile.ZipFile(io.BytesIO(xe.content)) as z:
+        charts = " ".join(z.read(n).decode() for n in z.namelist() if "charts/chart" in n)
+    assert "4A3AA7" in charts.upper()
 
     # uji model pada sumur yang punya aktual: forecast dimulai sebelum aktual terakhir
     tw = next(

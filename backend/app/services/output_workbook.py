@@ -151,6 +151,7 @@ def build_output_workbook(
     model: MLModel | None = None,
     calibration: str | None = None,
     guest: bool = False,
+    forecast: dict | None = None,
 ) -> bytes:
     """guest=True: hanya aktual + ML (tanpa kurva WellPlan, metrik T&D, sheet multipoint; K-45)."""
     prof = well_profile(db, well, unit_system, model, calibration)
@@ -179,12 +180,12 @@ def build_output_workbook(
     head_title = f'{well.name}  {sec}"_HOLE'
 
     _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq)
-    _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title)
+    _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title, forecast)
     for op, name, act_label in (
         (TORQUE_OFF, "Torque Analysis Off Btm", "RT Torque Off Bottom Max"),
         (TORQUE_ON, "Torque Analysis On Bottom", "RT Torque ON Bottom Max"),
     ):
-        _torque(wb, f, well, ops[op], op, name, act_label, du_cap, tq_lab, tq, head_title)
+        _torque(wb, f, well, ops[op], op, name, act_label, du_cap, tq_lab, tq, head_title, forecast)
     if not guest:
         _multipoint(wb, f, db, well, unit_system, disp, du, hk_lab, tq_lab, tq_u)
     wb.close()
@@ -423,7 +424,96 @@ def _parity_png(data, title, color):
 # ---------------------------------------------------------------- Tripping Load Analysis - Graph
 
 
-def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title):
+def _fc_values(o: dict, conv=lambda v: v) -> tuple[list, list, list]:
+    """Prediction ahead seperti di dashboard: nilai terkoreksi bias + pita P10–P90 yang digeser."""
+    shift = o.get("bias") or 0.0
+    main = o["ml_corrected"] if o.get("ml_corrected") is not None else o["ml"]
+    lo = [None if v is None else v + shift for v in o["p10"]]
+    hi = [None if v is None else v + shift for v in o["p90"]]
+    return conv(main), conv(lo), conv(hi)
+
+
+def _fc_block(ws, f, fc, op_list, r_group, c0, du_label, unit_label, conv=lambda v: v):
+    """Tabel PREDICTION AHEAD (per operasi: kedalaman, prediction, P10, P90).
+
+    Hasil: {op: (kolom kedalaman, kolom prediction, kolom P10, kolom P90, n, nilai prediction)}.
+    """
+    out = {}
+    if not fc:
+        return out
+    c = c0
+    for op in op_list:
+        o = (fc.get("operations") or {}).get(op)
+        if not o or len(o["depth"]) < 2:
+            continue
+        main, lo, hi = _fc_values(o, conv)
+        p = OP_SHORT[op]
+        cols = [
+            ("Bit Depth", du_label, o["depth"]),
+            (f"{p} - Prediction", unit_label, main),
+            (f"{p} - Prediction P10", unit_label, lo),
+            (f"{p} - Prediction P90", unit_label, hi),
+        ]
+        for j, (h, u, vals) in enumerate(cols):
+            ws.write(r_group + 1, c + j, h, f.ghead)
+            ws.write(r_group + 2, c + j, u, f.gunit)
+            for i, v in enumerate(vals):
+                _write(ws, r_group + 3 + i, c + j, v, f.n0 if j == 0 else f.n2)
+        out[op] = (c, c + 1, c + 2, c + 3, len(o["depth"]), main)
+        c += 4
+    if out:
+        ws.merge_range(
+            r_group,
+            c0,
+            r_group,
+            c - 1,
+            f"PREDICTION AHEAD {fc['start_depth']:,.0f} → {fc['end_depth']:,.0f} {fc['depth_unit']}"
+            + (" (bias-corrected)" if fc.get("bias_correction") else ""),
+            f.group,
+        )
+    return out
+
+
+def _fc_series(ch, name, fcpos, r_data, unit_label, distance_ft):
+    """Garis prediction ungu tebal + pita P10–P90 putus-putus + label nilai di ujung."""
+    for op, (cd, cm, clo, chi, n, main) in fcpos.items():
+        p = OP_SHORT[op]
+        last = next((v for v in reversed(main) if v is not None), None)
+        labels = [{"delete": True}] * (n - 1) + [
+            {"value": f"{p} {last:,.1f} {unit_label}" if last is not None else ""}
+        ]
+        ch.add_series(
+            {
+                "name": f"{p} - Prediction (next {distance_ft:g} ft)",
+                "categories": [name, r_data, cm, r_data + n - 1, cm],
+                "values": [name, r_data, cd, r_data + n - 1, cd],
+                "line": {"color": COLORS["forecast"], "width": 3.5},
+                "marker": {
+                    "type": "circle",
+                    "size": 5,
+                    "fill": {"color": COLORS["forecast"]},
+                    "border": {"color": COLORS["forecast"]},
+                },
+                "data_labels": {
+                    "custom": labels,
+                    "position": "right",
+                    "font": {"color": COLORS["forecast"], "bold": True, "size": 12},
+                },
+            }
+        )
+        for col, k in ((clo, "P10"), (chi, "P90")):
+            ch.add_series(
+                {
+                    "name": f"{p} - Prediction {k}",
+                    "categories": [name, r_data, col, r_data + n - 1, col],
+                    "values": [name, r_data, cd, r_data + n - 1, cd],
+                    "line": {"color": COLORS["forecast"], "width": 1.25, "dash_type": "dash"},
+                    "marker": {"type": "none"},
+                }
+            )
+
+
+def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title, fc=None):
     ws = wb.add_worksheet("Tripping Load Analysis - Graph")
     ws.set_column("Q:AT", 11)
     ops = prof["operations"]
@@ -530,6 +620,8 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title):
         ws.write(3, m0 + j, u, f.gunit)
         for i, v in enumerate(vals):
             _write(ws, 4 + i, m0 + j, v, f.n0 if j == 0 else f.n2)
+    # PREDICTION AHEAD (garis ungu di dashboard), bila sedang ditampilkan saat ekspor
+    fcpos = _fc_block(ws, f, fc, (PICK_UP, SLACK_OFF, ROTATING), 1, m0 + len(mcols) + 1, du, hk_lab)
     ws.freeze_panes(4, 0)
 
     # grafik (A1:N44), urutan seri seperti template: PU ff, SO ff, RT, aktual; + ML
@@ -576,6 +668,8 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title):
     nm = len(mgrid)
     for k in range(3):
         line(m0 + 1 + 3 * k, nm, m0, m0 + 1 + 3 * k, COLORS["ml"], width=2.25)
+    if fcpos:
+        _fc_series(ch, name, fcpos, 4, hk_lab, fc["distance_ft"])
     _depth_chart(
         ch,
         f"{head_title} DRAG Analysis",
@@ -612,13 +706,16 @@ def _trip_data(db, well, du, hk_lab):
 
 def _curve_note(prof) -> str:
     if not any(o["wellplan"] for o in prof["operations"].values()):
-        return "Actual = points; ML prediction = orange."
+        return "Actual = points; ML prediction = orange; prediction ahead = thick purple line (dashed = P10–P90)."
     mode = (prof.get("calibration") or {}).get("mode")
     return (
         "Modelled curves: WellPlan T&D model + DD Calibrate offsets (as the Excel 'Graph reference'). "
         if mode == "calibrated"
         else "Modelled curves: WellPlan T&D model as modelled. "
-    ) + "One colour per OHFF; actual = points; ML prediction = orange."
+    ) + (
+        "One colour per OHFF; actual = points; ML prediction = orange; "
+        "prediction ahead = thick purple line (dashed = P10–P90)."
+    )
 
 
 def _depth_chart(ch, title, x_title, y_title):
@@ -649,7 +746,7 @@ def _depth_chart(ch, title, x_title, y_title):
 # ---------------------------------------------------------------- Torque Analysis
 
 
-def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title):
+def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title, fc=None):
     ws = wb.add_worksheet(sheet)
     ws.set_column("L:X", 11)
     series = sorted(o["wellplan"], key=lambda s: (s["ff"] is None, s["ff"] or 0))
@@ -696,6 +793,7 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
         ws.write(4, m0 + j, u, f.gunit)
         for i, v in enumerate(vals):
             _write(ws, 5 + i, m0 + j, v, f.n0 if j == 0 else f.n2)
+    fcpos = _fc_block(ws, f, fc, (op,), 2, m0 + 5, du_cap, tq_lab, tq)
     ws.freeze_panes(5, 0)
 
     name = ws.get_name()
@@ -740,6 +838,8 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
                 "marker": {"type": "none"},
             }
         )
+    if fcpos:
+        _fc_series(ch, name, fcpos, 5, tq_lab, fc["distance_ft"])
     _depth_chart(
         ch, f"{head_title} TQ Analysis", f"Torque ({tq_lab})", f"Measured Depth ({du_cap})"
     )

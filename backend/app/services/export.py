@@ -17,7 +17,7 @@ from app.db.models import Dataset, MLModel, Well
 from app.services.operations import OP_LABELS
 
 # warna sama dengan dashboard (web/src/components/chartTheme.ts)
-COLORS = {"ml": "#eb6834", "actual": "#0e9f6e", "limit": "#e34948"}
+COLORS = {"ml": "#eb6834", "actual": "#0e9f6e", "limit": "#e34948", "forecast": "#4a3aa7"}
 MARKER_EDGE = "#0b2e22"  # tepi gelap agar simbol titik aktual kontras
 # satu warna tetap per nilai OHFF di semua grafik (ramp biru ordinal, tervalidasi)
 OHFF_COLORS = {0.1: "#86b6ef", 0.2: "#5598e7", 0.3: "#2a78d6", 0.4: "#1c5cab", 0.5: "#104281"}
@@ -77,11 +77,14 @@ def export_well(
     model: MLModel | None = None,
     calibration: str | None = None,
     guest: bool = False,
+    forecast: dict | None = None,
 ) -> bytes:
-    """Ekspor per sumur dengan format template client (lihat services/output_workbook.py)."""
+    """Ekspor per sumur dengan format template client (lihat services/output_workbook.py).
+
+    forecast: hasil Prediction ahead yang sedang tampil di dashboard (ikut digambar di grafik)."""
     from app.services.output_workbook import build_output_workbook
 
-    return build_output_workbook(db, well, unit_system, model, calibration, guest)
+    return build_output_workbook(db, well, unit_system, model, calibration, guest, forecast)
 
 
 # ---------------------------------------------------------------- kualitas data

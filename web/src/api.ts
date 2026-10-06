@@ -351,5 +351,7 @@ export type Forecast = {
   calibration: "calibrated" | "raw";
   warnings: string[];
   summary: string;
+  /** request parameters, reused to draw the same prediction in the Excel export */
+  request?: { distance_ft: number; step_ft: number; start_depth_ft: number | null; bias_correction: boolean | null };
   operations: Partial<Record<Op, ForecastOp>>;
 };

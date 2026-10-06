@@ -230,7 +230,7 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
     if body.calibration not in (None, "calibrated", "raw"):
         raise HTTPException(400, "calibration must be calibrated or raw")
     try:
-        return forecast_well(
+        fc = forecast_well(
             db,
             _get(db, well_id),
             body.distance_ft,
@@ -243,6 +243,14 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    # parameter permintaan, agar ekspor Excel bisa menggambar prediction yang sama
+    fc["request"] = {
+        "distance_ft": body.distance_ft,
+        "step_ft": body.step_ft,
+        "start_depth_ft": body.start_depth_ft,
+        "bias_correction": body.bias_correction,
+    }
+    return fc
 
 
 @router.post("/{well_id}/forecast")
@@ -346,15 +354,39 @@ def export(
     target: str = Query("pick_up"),
     model_id: int | None = None,
     calibration: str | None = Query(None, pattern="^(calibrated|raw)$"),
+    fc_distance_ft: float | None = Query(None, gt=0, le=20000),
+    fc_step_ft: float = 30.0,
+    fc_start_depth_ft: float | None = None,
+    fc_bias: bool | None = None,
     db: Session = Depends(get_db),
 ):
+    """fc_*: Prediction ahead yang sedang tampil di dashboard ikut diekspor (garis ungu)."""
     if target not in OPERATIONS:
         raise HTTPException(400, "Unknown target")
     w = _get(db, well_id)
-    if is_guest(request):  # hanya aktual + ML, model aktif (K-45)
-        data = export_well(db, w, units, target, None, "raw", guest=True)
-    else:
-        data = export_well(db, w, units, target, _model(db, model_id), calibration)
+    guest = is_guest(request)
+    if guest:  # hanya aktual + ML, model aktif (K-45)
+        model_id, calibration = None, "raw"
+    fc = None
+    if fc_distance_ft:
+        fc = _forecast(
+            db,
+            well_id,
+            ForecastIn(
+                distance_ft=fc_distance_ft,
+                step_ft=fc_step_ft,
+                start_depth_ft=fc_start_depth_ft,
+                bias_correction=fc_bias,
+                units=units,
+                model_id=model_id,
+                calibration=calibration,
+            ),
+        )
+        if guest:
+            fc = forecast_for_guest(fc)
+    data = export_well(
+        db, w, units, target, _model(db, model_id), calibration, guest=guest, forecast=fc
+    )
     fname = f"OUTPUT {w.name} {(w.section_in or 0):g}in Multiple T&D Road Map.xlsx"
     return Response(
         data,

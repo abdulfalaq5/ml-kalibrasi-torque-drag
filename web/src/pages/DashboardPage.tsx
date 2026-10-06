@@ -77,6 +77,13 @@ export default function DashboardPage() {
   });
 
   const p = profile.data;
+  // Export Excel: include the prediction ahead that is shown on the chart (purple line)
+  const fq = forecast?.request;
+  const fcQs = fq
+    ? `&fc_distance_ft=${fq.distance_ft}&fc_step_ft=${fq.step_ft}` +
+      (fq.start_depth_ft != null ? `&fc_start_depth_ft=${fq.start_depth_ft}` : "") +
+      (fq.bias_correction != null ? `&fc_bias=${fq.bias_correction}` : "")
+    : "";
   // Without actual data only ML − WellPlan can be flagged
   const flagSeries: DiffKey = p && !p.has_actual ? "ml_minus_wp" : opts.flagSeries;
   const target = p?.operations[opts.diffTarget];
@@ -204,10 +211,16 @@ export default function DashboardPage() {
               )}
               <a
                 className="btn primary"
-                href={`/api/wells/${selectedId}/export.xlsx?${qs}&target=${opts.diffTarget}`}
-                title={guest ? "Actual readings and ML prediction" : undefined}
+                href={`/api/wells/${selectedId}/export.xlsx?${qs}&target=${opts.diffTarget}${fcQs}`}
+                title={
+                  forecast
+                    ? "Includes the prediction ahead shown on the chart (purple line)"
+                    : guest
+                      ? "Actual readings and ML prediction"
+                      : undefined
+                }
               >
-                Export Excel
+                {forecast ? "Export Excel (with prediction)" : "Export Excel"}
               </a>
             </>
           )}
