@@ -151,6 +151,8 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
         assert g.get(f"/api/files/{tf}/download").status_code == 404
         assert g.get(f"/api/files/{mf}/download").status_code == 200
         assert g.get("/api/templates/training.xlsx").status_code == 403
+        assert g.get(f"/api/wells/{tw}/export.xlsx").status_code == 404
+        assert g.get(f"/api/wells/{mw}/report.pdf").status_code == 403
         assert g.get("/api/templates/monitoring.xlsx").status_code == 200
         p = fill("training", tmp_path / "g.xlsx", name="GUEST-try")
         with p.open("rb") as fh:
@@ -168,6 +170,82 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
             assert o["diff"]["ml_minus_wp"]["depth"] == []
             assert o["actual"]["depth"]  # aktual tetap ada
             assert not o["metrics"] or o["metrics"]["wellplan"] is None
+
+        # ekspor Excel versi guest: tanpa kurva WellPlan, metrik T&D, dan sheet multipoint
+        import io
+
+        import openpyxl
+
+        x = g.get(f"/api/wells/{mw}/export.xlsx")
+        assert x.status_code == 200, x.text
+        wb = openpyxl.load_workbook(io.BytesIO(x.content))
+        assert not any(" MW " in n for n in wb.sheetnames)
+        cells = {str(c.value) for ws in wb for row in ws.iter_rows() for c in row if c.value}
+        assert not any("MODELLED" in c or "T&D Model" in c or "ff=" in c for c in cells)
+        assert "ML PREDICTION" in cells
+        fx = g.post(f"/api/wells/{mw}/forecast.xlsx", json={"distance_ft": 300})
+        # rute terbuka untuk guest (di tes ini belum ada model aktif -> 400, bukan 403)
+        assert fx.status_code in (200, 400), fx.text
+
+    # ekspor prediction dari respons yang sudah disaring untuk guest tetap bisa dibuat
+    from app.services.forecast import export_forecast
+    from app.services.guest_view import forecast_for_guest
+
+    op = {
+        "label": "Pick up",
+        "unit": "klbf",
+        "depth": [3000.0, 3100.0],
+        "ml": [100.0, 102.0],
+        "p10": [95.0, 97.0],
+        "p90": [105.0, 107.0],
+        "ml_corrected": None,
+        "bias": None,
+        "wellplan": [{"ff": 0.3, "name": "PU - OHFF : 0.3", "value": [99.0, 101.0]}],
+        "change": 2.0,
+        "tolerance": "8 klbf",
+        "backtest": None,
+        "actual_check": {
+            "n": 2,
+            "td_within": 0.5,
+            "ml_within": 1.0,
+            "ml_mean_abs": 1.0,
+            "unit": "klbf",
+        },
+        "explanation": {
+            "method": "SHAP",
+            "drivers": [{"feature": "wp_base", "label": "T&D Model", "delta": 2.0}],
+            "plan_changes": {"inclination_deg": [10, 12]},
+            "limit_crossings": [],
+            "sentence": "Pick up: from 3,000 to 3,100 ft the ML prediction is expected to rise from "
+            "100.0 to 102.0 klbf (+2.0). Main drivers: T&D Model (+2.0).",
+        },
+    }
+    fc = {
+        "well": {
+            "id": 1,
+            "name": "X",
+            "section_in": 8.5,
+            "well_type": "J",
+            "purpose": "monitoring",
+        },
+        "model_id": 1,
+        "unit_system": "imperial",
+        "depth_unit": "ft",
+        "start_depth": 3000.0,
+        "end_depth": 3100.0,
+        "last_actual_depth": 3000.0,
+        "distance_ft": 100,
+        "bias_correction": False,
+        "calibration": "raw",
+        "warnings": [],
+        "summary": "",
+        "operations": {"pick_up": op},
+    }
+    g_fc = forecast_for_guest(fc)
+    assert "T&D" not in g_fc["operations"]["pick_up"]["explanation"]["sentence"]
+    wb = openpyxl.load_workbook(io.BytesIO(export_forecast(g_fc)))
+    cells = {str(c.value) for ws in wb for row in ws.iter_rows() for c in row if c.value}
+    assert not any("T&D" in c or "OHFF" in c or "WellPlan" in c for c in cells)
 
     for wid in (tw, mw):
         auth_client.delete(f"/api/wells/{wid}")

@@ -37,7 +37,7 @@ def forecast_for_guest(fc: dict) -> dict:
             o["backtest"]["td_within"] = None
         ex = o.get("explanation") or {}
         ex["drivers"] = []
-        ex["plan_changes"] = []
+        ex["plan_changes"] = {}
         ex["limit_crossings"] = []
         ex["sentence"] = _first_sentence(ex.get("sentence") or "")
     fc["summary"] = " ".join(

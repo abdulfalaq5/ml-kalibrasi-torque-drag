@@ -255,8 +255,12 @@ def forecast(well_id: int, body: ForecastIn, request: Request, db: Session = Dep
 
 
 @router.post("/{well_id}/forecast.xlsx")
-def forecast_xlsx(well_id: int, body: ForecastIn, db: Session = Depends(get_db)):
-    fc = _forecast(db, well_id, body)
+def forecast_xlsx(well_id: int, body: ForecastIn, request: Request, db: Session = Depends(get_db)):
+    if is_guest(request):
+        body.model_id = None
+        fc = forecast_for_guest(_forecast(db, well_id, body))
+    else:
+        fc = _forecast(db, well_id, body)
     w = fc["well"]
     fname = (
         f"{w['name']}_{(w['section_in'] or 0):g}in_prediction_{body.distance_ft:g}ft.xlsx".replace(
@@ -337,6 +341,7 @@ def evaluate(well_id: int, db: Session = Depends(get_db)):
 @router.get("/{well_id}/export.xlsx")
 def export(
     well_id: int,
+    request: Request,
     units: str = Query("imperial", pattern="^(imperial|si)$"),
     target: str = Query("pick_up"),
     model_id: int | None = None,
@@ -346,7 +351,10 @@ def export(
     if target not in OPERATIONS:
         raise HTTPException(400, "Unknown target")
     w = _get(db, well_id)
-    data = export_well(db, w, units, target, _model(db, model_id), calibration)
+    if is_guest(request):  # hanya aktual + ML, model aktif (K-45)
+        data = export_well(db, w, units, target, None, "raw", guest=True)
+    else:
+        data = export_well(db, w, units, target, _model(db, model_id), calibration)
     fname = f"OUTPUT {w.name} {(w.section_in or 0):g}in Multiple T&D Road Map.xlsx"
     return Response(
         data,

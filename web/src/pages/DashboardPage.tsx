@@ -195,21 +195,20 @@ export default function DashboardPage() {
                 {predict.isPending ? "Predicting…" : "Run prediction again"}
               </button>
               {!guest && (
-                <>
-                  <a
-                    className="btn"
-                    href={`/api/wells/${selectedId}/report.pdf?${qs}&target=${opts.diffTarget}`}
-                  >
-                    PDF
-                  </a>
-                  <a
-                    className="btn primary"
-                    href={`/api/wells/${selectedId}/export.xlsx?${qs}&target=${opts.diffTarget}`}
-                  >
-                    Export Excel
-                  </a>
-                </>
+                <a
+                  className="btn"
+                  href={`/api/wells/${selectedId}/report.pdf?${qs}&target=${opts.diffTarget}`}
+                >
+                  PDF
+                </a>
               )}
+              <a
+                className="btn primary"
+                href={`/api/wells/${selectedId}/export.xlsx?${qs}&target=${opts.diffTarget}`}
+                title={guest ? "Actual readings and ML prediction" : undefined}
+              >
+                Export Excel
+              </a>
             </>
           )}
         </div>

@@ -12,8 +12,8 @@ _hasher = PasswordHasher()
 
 ROLES = ("admin", "guest")
 
-# Guest: hanya menu Monitoring dan Dashboard, hanya sumur monitoring. Ekspor Excel/PDF ditutup
-# karena berisi kurva WellPlan; promote ke training, model, kualitas, dll. hanya untuk admin.
+# Guest: hanya menu Monitoring dan Dashboard, hanya sumur monitoring. Ekspor Excel tersedia dalam
+# versi guest (tanpa WellPlan); PDF, promote ke training, model, kualitas, dll. hanya untuk admin.
 GUEST_ROUTES = {
     ("GET", "/api/auth/me"),
     ("POST", "/api/auth/logout"),
@@ -24,6 +24,8 @@ GUEST_ROUTES = {
     ("POST", "/api/wells/{well_id}/predict"),
     ("GET", "/api/wells/{well_id}/profile"),
     ("POST", "/api/wells/{well_id}/forecast"),
+    ("POST", "/api/wells/{well_id}/forecast.xlsx"),
+    ("GET", "/api/wells/{well_id}/export.xlsx"),
     ("GET", "/api/files"),
     ("POST", "/api/files"),
     ("GET", "/api/files/{file_id}/download"),

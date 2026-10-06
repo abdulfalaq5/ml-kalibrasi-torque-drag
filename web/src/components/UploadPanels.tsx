@@ -368,15 +368,13 @@ export function MonitoringUploadPanel() {
                   <Link className="btn primary" to={`/dashboard/${wid}`}>
                     Open dashboard (prediction N ft ahead)
                   </Link>
+                  <a className="btn" href={`/api/wells/${wid}/export.xlsx`}>
+                    ⬇ Prediction Output (.xlsx)
+                  </a>
                   {!guest && (
-                    <>
-                      <a className="btn" href={`/api/wells/${wid}/export.xlsx`}>
-                        ⬇ Prediction Output (.xlsx)
-                      </a>
-                      <a className="btn" href={`/api/wells/${wid}/report.pdf`}>
-                        ⬇ Summary (PDF)
-                      </a>
-                    </>
+                    <a className="btn" href={`/api/wells/${wid}/report.pdf`}>
+                      ⬇ Summary (PDF)
+                    </a>
                   )}
                 </div>
               </div>
@@ -427,7 +425,7 @@ export function MonitoringUploadPanel() {
                 </tbody>
               </table>
               <p className="small muted">
-                The full prediction per depth is on the dashboard{guest ? "" : " and in the Excel file"}. Upload the file again with new actual
+                The full prediction per depth is on the dashboard and in the Excel file. Upload the file again with new actual
                 readings as drilling progresses: the system compares this prediction with the actual data (Evaluations).
               </p>
             </div>

@@ -76,11 +76,12 @@ def export_well(
     diff_target: str = "pick_up",
     model: MLModel | None = None,
     calibration: str | None = None,
+    guest: bool = False,
 ) -> bytes:
     """Ekspor per sumur dengan format template client (lihat services/output_workbook.py)."""
     from app.services.output_workbook import build_output_workbook
 
-    return build_output_workbook(db, well, unit_system, model, calibration)
+    return build_output_workbook(db, well, unit_system, model, calibration, guest)
 
 
 # ---------------------------------------------------------------- kualitas data

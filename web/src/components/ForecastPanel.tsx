@@ -104,11 +104,9 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
           <button className="btn primary" onClick={run} disabled={busy || !(distance > 0)}>
             {busy ? "Predicting…" : "Run prediction"}
           </button>
-          {!guest && (
-            <button className="btn" onClick={download} disabled={!forecast}>
-              ⬇ Prediction (.xlsx)
-            </button>
-          )}
+          <button className="btn" onClick={download} disabled={!forecast}>
+            ⬇ Prediction (.xlsx)
+          </button>
           {forecast && (
             <button className="btn ghost" onClick={() => onForecast(null)}>
               Clear

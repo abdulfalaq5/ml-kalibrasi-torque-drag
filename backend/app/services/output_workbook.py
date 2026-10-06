@@ -150,8 +150,14 @@ def build_output_workbook(
     unit_system: str = "imperial",
     model: MLModel | None = None,
     calibration: str | None = None,
+    guest: bool = False,
 ) -> bytes:
+    """guest=True: hanya aktual + ML (tanpa kurva WellPlan, metrik T&D, sheet multipoint; K-45)."""
     prof = well_profile(db, well, unit_system, model, calibration)
+    if guest:
+        from app.services.guest_view import profile_for_guest
+
+        prof = profile_for_guest(prof)
     disp = units.DISPLAY_UNITS[unit_system]
     imperial = unit_system == "imperial"
     du = prof["depth_unit"]
@@ -179,7 +185,8 @@ def build_output_workbook(
         (TORQUE_ON, "Torque Analysis On Bottom", "RT Torque ON Bottom Max"),
     ):
         _torque(wb, f, well, ops[op], op, name, act_label, du_cap, tq_lab, tq, head_title)
-    _multipoint(wb, f, db, well, unit_system, disp, du, hk_lab, tq_lab, tq_u)
+    if not guest:
+        _multipoint(wb, f, db, well, unit_system, disp, du, hk_lab, tq_lab, tq_u)
     wb.close()
     return buf.getvalue()
 
@@ -313,7 +320,7 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq):
         png = _parity_png(par[key], title, color)
         if png is not None:
             ws.insert_image(
-                rn + 2, c0, f"{key}.png", {"image_data": png, "x_scale": 0.55, "y_scale": 0.55}
+                rn + 2, c0, f"{key}.png", {"image_data": png, "x_scale": 0.9, "y_scale": 0.9}
             )
 
 
@@ -447,8 +454,11 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title):
             )
         )
     c0 = _col("Q")
-    ws.merge_range(1, c0, 1, c0 + len(cols) - 1, "MODELLED HOOKLOADS", f.group)
     pos = {}
+    if len(cols) == 1:  # tanpa kurva WellPlan (ekspor guest)
+        cols = []
+    else:
+        ws.merge_range(1, c0, 1, c0 + len(cols) - 1, "MODELLED HOOKLOADS", f.group)
     for j, (h, u, vals, key) in enumerate(cols):
         ws.write(2, c0 + j, h, f.ghead)
         ws.write(3, c0 + j, u, f.gunit)
@@ -557,7 +567,7 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title):
                     "line": {"none": True},
                     "marker": {
                         "type": ACT_SYMBOL[op],
-                        "size": 10,
+                        "size": 12,
                         "fill": {"color": COLORS["actual"]},
                         "border": {"color": MARKER_EDGE, "width": 1},
                     },
@@ -572,11 +582,14 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title):
         "Hookload (Klbs)" if hk_lab == "klbf" else "Hookload (kN)",
         f"Measured Depth ({du_cap})",
     )
-    ws.insert_chart("A1", ch, {"x_scale": 1.9, "y_scale": 3.05})
+    # grafik sangat besar (± 1.900 x 1.700 px) agar titik per kedalaman terlihat detail;
+    # kolom A:P dilebarkan supaya grafik tidak menutupi tabel data mulai kolom Q
+    ws.set_column("A:P", 17)
+    ws.insert_chart("A1", ch, {"x_scale": 3.95, "y_scale": 5.9})
     ws.set_landscape()
-    ws.print_area("A1:N46")
+    ws.print_area("A1:P88")
     ws.fit_to_pages(1, 1)
-    ws.write(45, 0, _curve_note(prof), f.note)
+    ws.write(86, 0, _curve_note(prof), f.note)
 
 
 def _trip_data(db, well, du, hk_lab):
@@ -598,6 +611,8 @@ def _trip_data(db, well, du, hk_lab):
 
 
 def _curve_note(prof) -> str:
+    if not any(o["wellplan"] for o in prof["operations"].values()):
+        return "Actual = points; ML prediction = orange."
     mode = (prof.get("calibration") or {}).get("mode")
     return (
         "Modelled curves: WellPlan T&D model + DD Calibrate offsets (as the Excel 'Graph reference'). "
@@ -607,10 +622,13 @@ def _curve_note(prof) -> str:
 
 
 def _depth_chart(ch, title, x_title, y_title):
-    ch.set_title({"name": title, "name_font": {"size": 12, "bold": True}})
+    # huruf lebih besar, sebanding dengan ukuran grafik
+    ch.set_title({"name": title, "name_font": {"size": 16, "bold": True}})
     ch.set_x_axis(
         {
             "name": x_title,
+            "name_font": {"size": 13, "bold": True},
+            "num_font": {"size": 12},
             "position_axis": "on_tick",
             "major_gridlines": {"visible": True, "line": {"color": "#d9d9d9"}},
             "label_position": "high",
@@ -619,11 +637,13 @@ def _depth_chart(ch, title, x_title, y_title):
     ch.set_y_axis(
         {
             "name": y_title,
+            "name_font": {"size": 13, "bold": True},
+            "num_font": {"size": 12},
             "reverse": True,
             "major_gridlines": {"visible": True, "line": {"color": "#d9d9d9"}},
         }
     )
-    ch.set_legend({"position": "right"})
+    ch.set_legend({"position": "right", "font": {"size": 12}})
 
 
 # ---------------------------------------------------------------- Torque Analysis
@@ -641,7 +661,10 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
         label = f"Surface Torque ff={ff:g}" if ff is not None else "Surface Torque"
         cols.append((label, tq_lab, tq(_interp(s["depth"], s["value"], grid))))
     c0 = _col("L")
-    ws.merge_range(2, c0, 2, c0 + len(cols) - 1, "MODELLED TORQUE", f.group)
+    if len(cols) == 1:  # tanpa kurva WellPlan (ekspor guest)
+        cols = []
+    else:
+        ws.merge_range(2, c0, 2, c0 + len(cols) - 1, "MODELLED TORQUE", f.group)
     for j, (h, u, vals) in enumerate(cols):
         ws.write(3, c0 + j, h, f.ghead)
         ws.write(4, c0 + j, u, f.gunit)
@@ -701,7 +724,7 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
                 "line": {"none": True},
                 "marker": {
                     "type": ACT_SYMBOL.get(op, "circle"),
-                    "size": 10,
+                    "size": 12,
                     "fill": {"color": COLORS["actual"]},
                     "border": {"color": MARKER_EDGE, "width": 1},
                 },
@@ -720,8 +743,10 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
     _depth_chart(
         ch, f"{head_title} TQ Analysis", f"Torque ({tq_lab})", f"Measured Depth ({du_cap})"
     )
-    ws.insert_chart("A1", ch, {"x_scale": 1.45, "y_scale": 3.2})
-    ws.print_area("A1:K47")
+    # grafik sangat besar (± 1.450 x 1.700 px); kolom A:K dilebarkan, data mulai kolom L
+    ws.set_column("A:K", 19)
+    ws.insert_chart("A1", ch, {"x_scale": 3.0, "y_scale": 5.9})
+    ws.print_area("A1:K88")
     ws.fit_to_pages(1, 1)
 
 

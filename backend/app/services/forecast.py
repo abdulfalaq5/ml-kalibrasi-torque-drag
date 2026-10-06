@@ -59,6 +59,9 @@ FEATURE_LABELS = {
     "plan_format": "Plan file format",
 }
 
+# grafik Excel sangat besar agar titik per kedalaman terlihat detail (± 1.700 x 1.600 px)
+CHART_SCALE = {"x_scale": 3.5, "y_scale": 5.5}
+
 
 def _label(f: str) -> str:
     return FEATURE_LABELS.get(f, f)
@@ -481,13 +484,16 @@ def export_forecast(fc: dict) -> bytes:
             "-" if fc["last_actual_depth"] is None else f"{fc['last_actual_depth']:,.0f} {du}",
         ),
         ("Local bias correction", "on" if fc["bias_correction"] else "off"),
-        (
-            "WellPlan curves",
-            "WellPlan + DD Calibrate offsets"
-            if fc["calibration"] == "calibrated"
-            else "WellPlan as modelled",
-        ),
     ]
+    if fc["calibration"] is not None:  # None = ekspor guest (tanpa WellPlan, K-45)
+        rows.append(
+            (
+                "WellPlan curves",
+                "WellPlan + DD Calibrate offsets"
+                if fc["calibration"] == "calibrated"
+                else "WellPlan as modelled",
+            )
+        )
     ws.write(0, 0, "Prediction Output Torque & Drag ML - Prediction", f.title)
     for i, (k, v) in enumerate(rows, start=2):
         ws.write(i, 0, k, f.bold)
@@ -504,8 +510,9 @@ def export_forecast(fc: dict) -> bytes:
         )
         ck = op.get("actual_check")
         chk = (
-            f" Check against {ck['n']} actual readings in the window: T&D model {ck['td_within']:.0%}, "
-            f"ML {ck['ml_within']:.0%}"
+            f" Check against {ck['n']} actual readings in the window: "
+            + (f"T&D model {ck['td_within']:.0%}, " if ck.get("td_within") is not None else "")
+            + f"ML {ck['ml_within']:.0%}"
             + (
                 f", ML + bias {ck['ml_bias_within']:.0%}"
                 if ck.get("ml_bias_within") is not None
@@ -567,7 +574,7 @@ def export_forecast(fc: dict) -> bytes:
                     "marker": {"type": "none"},
                 }
             )
-        ch.set_title({"name": f"{o['label']} prediction", "name_font": {"size": 11}})
+        ch.set_title({"name": f"{o['label']} prediction", "name_font": {"size": 16, "bold": True}})
         ch.set_x_axis(
             {
                 "name": f"{o['label']} ({o['unit']})",
@@ -581,8 +588,8 @@ def export_forecast(fc: dict) -> bytes:
                 "major_gridlines": {"visible": True, "line": {"color": "#e5e5e5"}},
             }
         )
-        ch.set_legend({"position": "bottom"})
-        ws.insert_chart(1, len(cols) + 1, ch, {"x_scale": 1.2, "y_scale": 1.8})
+        ch.set_legend({"position": "bottom", "font": {"size": 12}})
+        ws.insert_chart(1, len(cols) + 1, ch, CHART_SCALE)
 
     ws = wb.add_worksheet("Explanation")
     for j, h in enumerate(["Operation", "Method", "Feature", "Contribution to the change", "Unit"]):
