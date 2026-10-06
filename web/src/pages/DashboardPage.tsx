@@ -82,7 +82,8 @@ export default function DashboardPage() {
   const fcQs = fq
     ? `&fc_distance_ft=${fq.distance_ft}&fc_step_ft=${fq.step_ft}` +
       (fq.start_depth_ft != null ? `&fc_start_depth_ft=${fq.start_depth_ft}` : "") +
-      (fq.bias_correction != null ? `&fc_bias=${fq.bias_correction}` : "")
+      (fq.bias_correction != null ? `&fc_bias=${fq.bias_correction}` : "") +
+      (fq.direction ? `&fc_direction=${fq.direction}` : "")
     : "";
   // Without actual data only ML − WellPlan can be flagged
   const flagSeries: DiffKey = p && !p.has_actual ? "ml_minus_wp" : opts.flagSeries;

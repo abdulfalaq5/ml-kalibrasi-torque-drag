@@ -454,29 +454,35 @@ def _fc_block(ws, f, fc, op_list, r_group, c0, du_label, unit_label, conv=lambda
             (f"{p} - Prediction P10", unit_label, lo),
             (f"{p} - Prediction P90", unit_label, hi),
         ]
+        al = o.get("alert")
+        if al:
+            what = "Overpull alert" if al["kind"] == "overpull" else "Set-down alert"
+            cols.append((f"{p} - {what}", unit_label, conv(al["values"])))
         for j, (h, u, vals) in enumerate(cols):
             ws.write(r_group + 1, c + j, h, f.ghead)
             ws.write(r_group + 2, c + j, u, f.gunit)
             for i, v in enumerate(vals):
                 _write(ws, r_group + 3 + i, c + j, v, f.n0 if j == 0 else f.n2)
-        out[op] = (c, c + 1, c + 2, c + 3, len(o["depth"]), main)
-        c += 4
+        out[op] = (c, c + 1, c + 2, c + 3, len(o["depth"]), main, c + 4 if al else None)
+        c += len(cols)
     if out:
         ws.merge_range(
             r_group,
             c0,
             r_group,
             c - 1,
-            f"PREDICTION AHEAD {fc['start_depth']:,.0f} → {fc['end_depth']:,.0f} {fc['depth_unit']}"
+            ("TRIP OUT PREDICTION " if fc.get("direction") == "out" else "PREDICTION AHEAD ")
+            + f"{fc['start_depth']:,.0f} → {fc['end_depth']:,.0f} {fc['depth_unit']}"
             + (" (bias-corrected)" if fc.get("bias_correction") else ""),
             f.group,
         )
     return out
 
 
-def _fc_series(ch, name, fcpos, r_data, unit_label, distance_ft):
-    """Garis prediction ungu tebal + pita P10–P90 putus-putus + label nilai di ujung."""
-    for op, (cd, cm, clo, chi, n, main) in fcpos.items():
+def _fc_series(ch, name, fcpos, r_data, unit_label, distance_ft, direction="in"):
+    """Garis prediction ungu tebal + pita P10–P90 putus-putus + label nilai di ujung
+    (+ garis peringatan merah overpull / set-down)."""
+    for op, (cd, cm, clo, chi, n, main, cal) in fcpos.items():
         p = OP_SHORT[op]
         last = next((v for v in reversed(main) if v is not None), None)
         labels = [{"delete": True}] * (n - 1) + [
@@ -484,7 +490,12 @@ def _fc_series(ch, name, fcpos, r_data, unit_label, distance_ft):
         ]
         ch.add_series(
             {
-                "name": f"{p} - Prediction (next {distance_ft:g} ft)",
+                "name": f"{p} - Prediction ("
+                + (
+                    f"trip out {distance_ft:g} ft)"
+                    if direction == "out"
+                    else f"next {distance_ft:g} ft)"
+                ),
                 "categories": [name, r_data, cm, r_data + n - 1, cm],
                 "values": [name, r_data, cd, r_data + n - 1, cd],
                 "line": {"color": COLORS["forecast"], "width": 3.5},
@@ -501,6 +512,16 @@ def _fc_series(ch, name, fcpos, r_data, unit_label, distance_ft):
                 },
             }
         )
+        if cal is not None:
+            ch.add_series(
+                {
+                    "name": [name, r_data - 2, cal],
+                    "categories": [name, r_data, cal, r_data + n - 1, cal],
+                    "values": [name, r_data, cd, r_data + n - 1, cd],
+                    "line": {"color": COLORS["limit"], "width": 2.0, "dash_type": "dash"},
+                    "marker": {"type": "none"},
+                }
+            )
         for col, k in ((clo, "P10"), (chi, "P90")):
             ch.add_series(
                 {
@@ -669,7 +690,7 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title, fc=None):
     for k in range(3):
         line(m0 + 1 + 3 * k, nm, m0, m0 + 1 + 3 * k, COLORS["ml"], width=2.25)
     if fcpos:
-        _fc_series(ch, name, fcpos, 4, hk_lab, fc["distance_ft"])
+        _fc_series(ch, name, fcpos, 4, hk_lab, fc["distance_ft"], fc.get("direction", "in"))
     _depth_chart(
         ch,
         f"{head_title} DRAG Analysis",
@@ -839,7 +860,7 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
             }
         )
     if fcpos:
-        _fc_series(ch, name, fcpos, 5, tq_lab, fc["distance_ft"])
+        _fc_series(ch, name, fcpos, 5, tq_lab, fc["distance_ft"], fc.get("direction", "in"))
     _depth_chart(
         ch, f"{head_title} TQ Analysis", f"Torque ({tq_lab})", f"Measured Depth ({du_cap})"
     )

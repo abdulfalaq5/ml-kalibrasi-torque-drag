@@ -222,6 +222,7 @@ class ForecastIn(BaseModel):
     units: str = "imperial"
     model_id: int | None = None
     calibration: str | None = None
+    direction: str = "in"  # in = trip in / bor lebih dalam, out = trip out / cabut pipa (K-46)
 
 
 def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
@@ -229,6 +230,8 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
         raise HTTPException(400, "units must be imperial or si")
     if body.calibration not in (None, "calibrated", "raw"):
         raise HTTPException(400, "calibration must be calibrated or raw")
+    if body.direction not in ("in", "out"):
+        raise HTTPException(400, "direction must be 'in' (trip in) or 'out' (trip out)")
     try:
         fc = forecast_well(
             db,
@@ -240,6 +243,7 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
             body.units,
             _model(db, body.model_id),
             body.calibration,
+            body.direction,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -249,6 +253,7 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
         "step_ft": body.step_ft,
         "start_depth_ft": body.start_depth_ft,
         "bias_correction": body.bias_correction,
+        "direction": body.direction,
     }
     return fc
 
@@ -358,6 +363,7 @@ def export(
     fc_step_ft: float = 30.0,
     fc_start_depth_ft: float | None = None,
     fc_bias: bool | None = None,
+    fc_direction: str = Query("in", pattern="^(in|out)$"),
     db: Session = Depends(get_db),
 ):
     """fc_*: Prediction ahead yang sedang tampil di dashboard ikut diekspor (garis ungu)."""
@@ -377,6 +383,7 @@ def export(
                 step_ft=fc_step_ft,
                 start_depth_ft=fc_start_depth_ft,
                 bias_correction=fc_bias,
+                direction=fc_direction,
                 units=units,
                 model_id=model_id,
                 calibration=calibration,

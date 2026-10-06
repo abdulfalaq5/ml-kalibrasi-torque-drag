@@ -224,6 +224,39 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     assert fc["summary"]
     assert pu["backtest"] and 0 <= pu["backtest"]["within"] <= 1 and pu["tolerance"] == "8 klbf"
     assert fc["request"]["distance_ft"] == 300
+    # trip in: garis peringatan set-down pada slack off (prediction - toleransi)
+    so = fc["operations"]["slack_off"]
+    assert fc["direction"] == "in" and so["alert"]["kind"] == "set_down"
+    assert pu["alert"] is None
+    # trip out: jendela di atas kedalaman awal, urut arah gerak bit, overpull alert pada pick up
+    fo = auth_client.post(
+        f"/api/wells/{w_new.id}/forecast",
+        json={"distance_ft": 600, "direction": "out", "start_depth_ft": fc["end_depth"]},
+    )
+    assert fo.status_code == 200, fo.text
+    fo = fo.json()
+    assert fo["direction"] == "out" and fo["end_depth"] < fo["start_depth"]
+    po = fo["operations"]["pick_up"]
+    assert po["depth"][0] > po["depth"][-1]  # dari bawah ke atas
+    assert po["alert"]["kind"] == "overpull" and po["backtest"] is None
+    main = po["ml_corrected"] or po["ml"]
+    assert po["alert"]["values"][0] == pytest.approx(main[0] + 8, abs=0.05)
+    assert fo["operations"]["slack_off"]["alert"] is None
+    xo = auth_client.get(
+        f"/api/wells/{w_new.id}/export.xlsx?fc_distance_ft=600&fc_direction=out"
+        f"&fc_start_depth_ft={fc['end_depth']}"
+    )
+    assert xo.status_code == 200, xo.text
+    vals = [
+        str(c.value)
+        for row in openpyxl.load_workbook(io.BytesIO(xo.content))[
+            "Tripping Load Analysis - Graph"
+        ].iter_rows()
+        for c in row
+        if c.value
+    ]
+    assert any(v.startswith("TRIP OUT PREDICTION") for v in vals)
+    assert any("Overpull alert" in v for v in vals)
     # ekspor Excel dengan prediction yang sedang tampil: tabel + garis ungu di grafik
     xe = auth_client.get(f"/api/wells/{w_new.id}/export.xlsx?fc_distance_ft=300&fc_bias=true")
     assert xe.status_code == 200, xe.text

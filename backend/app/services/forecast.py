@@ -147,7 +147,17 @@ def forecast_well(
     unit_system: str = "imperial",
     model: MLModel | None = None,
     calibration: str | None = None,
+    direction: str = "in",
 ) -> dict:
+    """direction="in": trip in / bor lebih dalam (jendela di bawah kedalaman awal).
+    direction="out": trip out / cabut pipa (jendela di atas kedalaman awal, urut arah gerak bit).
+
+    Garis peringatan (alert) per arah: trip out -> pick up di atas prediction + toleransi client
+    (overpull, kemungkinan tight hole / pipa nyangkut); trip in -> slack off di bawah prediction -
+    toleransi (set-down / hang-up). Lihat K-46.
+    """
+    if direction not in ("in", "out"):
+        raise ValueError("direction must be 'in' (trip in) or 'out' (trip out)")
     if distance_ft <= 0 or distance_ft > 20000:
         raise ValueError("Prediction distance must be between 0 and 20,000 ft")
     step_ft = min(max(step_ft, 5.0), max(distance_ft / 2, 5.0))
@@ -174,22 +184,41 @@ def forecast_well(
         start = start_depth_ft * FT
     elif last_actual is not None:
         start = last_actual
+    elif direction == "out":
+        start = plan_hi
+        warnings.append(
+            "No actual data yet: the trip-out prediction starts at the bottom of the WellPlan T&D model"
+        )
     else:
         start = plan_lo
         warnings.append(
             "No actual data yet: the prediction starts at the top of the WellPlan T&D model"
         )
-    end = start + distance_ft * FT
-    if end > plan_hi + 1e-6:
-        warnings.append(
-            f"The WellPlan T&D model ends at {units.from_si(plan_hi, du):,.0f} {du}; "
-            "the prediction stops there (the ML needs the T&D model as input)"
-        )
-        end = plan_hi
-    if end <= start:
-        raise ValueError("The start depth is at or below the end of the WellPlan T&D model")
-    grid = np.unique(np.append(np.arange(start, end, step_ft * FT), end))
-    if last_actual is not None and start < last_actual - 1e-6:
+    if direction == "in":
+        end = start + distance_ft * FT
+        if end > plan_hi + 1e-6:
+            warnings.append(
+                f"The WellPlan T&D model ends at {units.from_si(plan_hi, du):,.0f} {du}; "
+                "the prediction stops there (the ML needs the T&D model as input)"
+            )
+            end = plan_hi
+        if end <= start:
+            raise ValueError("The start depth is at or below the end of the WellPlan T&D model")
+        grid = np.unique(np.append(np.arange(start, end, step_ft * FT), end))
+    else:
+        start = min(start, plan_hi)
+        end = start - distance_ft * FT
+        if end < plan_lo - 1e-6:
+            warnings.append(
+                f"The WellPlan T&D model starts at {units.from_si(plan_lo, du):,.0f} {du}; "
+                "the trip-out prediction stops there"
+            )
+            end = plan_lo
+        if end >= start:
+            raise ValueError("The start depth is at or above the top of the WellPlan T&D model")
+        # urut arah gerak bit: dari kedalaman awal ke atas
+        grid = np.unique(np.append(np.arange(end, start, step_ft * FT), start))[::-1]
+    if direction == "in" and last_actual is not None and start < last_actual - 1e-6:
         warnings.append(
             "The prediction starts before the last actual reading: readings after the start depth are not "
             "used by the prediction (nor by the bias correction); they are only used to check it (see "
@@ -231,7 +260,7 @@ def forecast_well(
         a_all = (
             actual[actual.operation == op].sort_values("depth_m") if not actual.empty else actual
         )
-        a = a_all[a_all.depth_m <= grid[0] + 1e-6] if len(a_all) else a_all
+        a = a_all[a_all.depth_m <= start + 1e-6] if len(a_all) else a_all
         if bias_correction and a is not None and len(a):
             a = a[a.depth_m >= a.depth_m.max() - BIAS_WINDOW_FT * FT].tail(BIAS_POINTS)
             fa = dsm.features_frame(w, op, a.depth_m.to_numpy(), plan, survey)
@@ -247,7 +276,29 @@ def forecast_well(
                     f"{OP_LABELS[op]}: fewer than 3 recent actual points; no bias correction"
                 )
         y_corr = y + bias if bias is not None else None
-        check = _actual_check(w, op, a_all, grid, plan, survey, bundle, bias, offsets.get(op, 0.0))
+        check = _actual_check(
+            w, op, a_all, grid, plan, survey, bundle, bias, offsets.get(op, 0.0), direction
+        )
+        # garis peringatan: trip out -> PU di atas prediction + toleransi; trip in -> SO di bawah
+        alert = None
+        y_ref = y_corr if y_corr is not None else y
+        tol_si = tolerance_si(op)
+        if direction == "out" and op == "pick_up":
+            alert = {"kind": "overpull", "values": conv(y_ref + tol_si, op)}
+        elif direction == "in" and op == "slack_off":
+            alert = {"kind": "set_down", "values": conv(y_ref - tol_si, op)}
+        if alert is not None:
+            tl = TOLERANCE_LABEL[OP_DIMENSION[op]]
+            alert["offset"] = tl
+            alert["text"] = (
+                f"Overpull alert while pulling out: a pick-up reading above the dashed red line "
+                f"(prediction + {tl}) at the same bit depth may mean tight hole or sticking pipe; "
+                "slow down, work the pipe and check hole cleaning."
+                if alert["kind"] == "overpull"
+                else f"Set-down alert while running in: a slack-off reading below the dashed red line "
+                f"(prediction − {tl}) at the same bit depth may mean a ledge, tight spot or "
+                "hang-up; slow down and check before forcing the string."
+            )
 
         # kurva WellPlan per OHFF di jendela forecast
         curves = dsm.plan_curves(plan, well.id, op)
@@ -284,10 +335,15 @@ def forecast_well(
             if lim.operation != op:
                 continue
             band = hi if lim.kind == "max" else lo
+            # trip out: "pertama" = paling dalam (arah gerak ke atas) -> balik tanda kedalaman
+            sgn = 1.0 if direction == "in" else -1.0
+            dep_t = sgn * f.depth_m.to_numpy()
             x_ml = first_crossing(
-                f.depth_m.to_numpy(), y_corr if y_corr is not None else y, lim.value_si, lim.kind
+                dep_t, y_corr if y_corr is not None else y, lim.value_si, lim.kind
             )
-            x_band = first_crossing(f.depth_m.to_numpy(), band, lim.value_si, lim.kind)
+            x_band = first_crossing(dep_t, band, lim.value_si, lim.kind)
+            x_ml = None if x_ml is None else sgn * x_ml
+            x_band = None if x_band is None else sgn * x_band
             crossings.append(
                 {
                     "kind": lim.kind,
@@ -302,7 +358,12 @@ def forecast_well(
             op, f, y_corr if y_corr is not None else y, u, du, total, drivers, changes, crossings
         )
         sentences.append(sentence)
-        acc = _backtest_accuracy(model, op, distance_ft, bias is not None, u)
+        # backtest model dihitung untuk prediction ke arah lebih dalam; tidak berlaku untuk trip out
+        acc = (
+            _backtest_accuracy(model, op, distance_ft, bias is not None, u)
+            if direction == "in"
+            else None
+        )
         ops_out[op] = {
             "label": OP_LABELS[op],
             "unit": units.UNIT_LABELS[u],
@@ -317,6 +378,7 @@ def forecast_well(
             "tolerance": TOLERANCE_LABEL[OP_DIMENSION[op]],
             "backtest": acc,
             "actual_check": check,
+            "alert": alert,
             "explanation": {
                 "method": method,
                 "drivers": drivers,
@@ -345,6 +407,7 @@ def forecast_well(
         if last_actual is None
         else round(units.from_si(last_actual, du), 1),
         "distance_ft": distance_ft,
+        "direction": direction,
         "bias_correction": bias_correction,
         "calibration": mode,
         "warnings": warnings,
@@ -354,13 +417,21 @@ def forecast_well(
 
 
 def _actual_check(
-    w, op, a_all, grid, plan, survey, bundle, bias, td_offset: float = 0.0
+    w, op, a_all, grid, plan, survey, bundle, bias, td_offset: float = 0.0, direction: str = "in"
 ) -> dict | None:
-    """Bila ada pembacaan aktual DI DALAM jendela prediction (prediction dimulai sebelum aktual terakhir),
-    bandingkan prediction dengan aktual itu: % titik dalam toleransi client dan rata-rata selisih."""
+    """Bila ada pembacaan aktual DI DALAM jendela prediction, bandingkan prediction dengan aktual
+    itu: % titik dalam toleransi client dan rata-rata selisih.
+
+    Trip out: jendela di atas kedalaman awal berisi pembacaan saat bor turun, yang sebagian juga
+    dipakai koreksi bias. Agar jujur, yang dilaporkan hanya ML tanpa bias (sumur ini tidak pernah
+    dipakai melatih model)."""
     if a_all is None or not len(a_all):
         return None
-    aw = a_all[(a_all.depth_m > grid[0] + 1e-6) & (a_all.depth_m <= grid[-1] + 1e-6)]
+    lo, hi = float(np.min(grid)), float(np.max(grid))
+    if direction == "in":
+        aw = a_all[(a_all.depth_m > lo + 1e-6) & (a_all.depth_m <= hi + 1e-6)]
+    else:
+        aw = a_all[(a_all.depth_m >= lo - 1e-6) & (a_all.depth_m < hi - 1e-6)]
     if aw.empty:
         return None
     fa = dsm.features_frame(w, op, aw.depth_m.to_numpy(), plan, survey)
@@ -381,7 +452,9 @@ def _actual_check(
         "ml_mean_abs": round(units.from_si(float(np.mean(np.abs(p - yv))), u), 2),
         "unit": "klbf" if u == "klbf" else "kft-lbf",
     }
-    if bias is not None:
+    if direction == "out":
+        out["note"] = "ML without bias (readings in the window were recorded while drilling down)"
+    elif bias is not None:
         out["ml_bias_within"] = within_frac(yv, p + bias, tol)
         out["ml_bias_mean_abs"] = round(units.from_si(float(np.mean(np.abs(p + bias - yv))), u), 2)
     return out
@@ -477,11 +550,18 @@ def export_forecast(fc: dict) -> bytes:
         ("Model", f"#{fc['model_id']}"),
         (
             "Prediction window",
-            f"{fc['start_depth']:,.0f} – {fc['end_depth']:,.0f} {du} ({fc['distance_ft']:g} ft ahead)",
+            f"{fc['start_depth']:,.0f} – {fc['end_depth']:,.0f} {du} ({fc['distance_ft']:g} ft "
+            + ("up, trip out)" if fc.get("direction") == "out" else "ahead)"),
         ),
         (
             "Last actual depth",
             "-" if fc["last_actual_depth"] is None else f"{fc['last_actual_depth']:,.0f} {du}",
+        ),
+        (
+            "Direction",
+            "Trip out (pulling pipe, shallower)"
+            if fc.get("direction") == "out"
+            else "Trip in / drilling ahead (deeper)",
         ),
         ("Local bias correction", "on" if fc["bias_correction"] else "off"),
     ]
@@ -522,7 +602,8 @@ def export_forecast(fc: dict) -> bytes:
             if ck
             else ""
         )
-        ws.write(r + j, 1, op["explanation"]["sentence"] + acc + chk, f.wrap)
+        al = f" {op['alert']['text']}" if op.get("alert") else ""
+        ws.write(r + j, 1, op["explanation"]["sentence"] + acc + chk + al, f.wrap)
         ws.set_row(r + j, 55)
     r += len(fc["operations"]) + 1
     ws.write(r, 0, "Warnings", f.bold)
@@ -543,6 +624,12 @@ def export_forecast(fc: dict) -> bytes:
         if o["ml_corrected"] is not None:
             cols.append(f"ML bias-corrected (bias {o['bias']:+g})")
             data.append(o["ml_corrected"])
+        if o.get("alert"):
+            cols.append(
+                ("Overpull alert (+" if o["alert"]["kind"] == "overpull" else "Set-down alert (−")
+                + f"{o['alert']['offset']})"
+            )
+            data.append(o["alert"]["values"])
         for s in o["wellplan"]:
             cols.append(f"{s['name']} ({o['unit']})")
             data.append(s["value"])
@@ -563,6 +650,8 @@ def export_forecast(fc: dict) -> bytes:
         ]
         if o["ml_corrected"] is not None:
             styles.append(("ML bias-corrected", "#4a3aa7", "solid", 1.75))
+        if o.get("alert"):
+            styles.append((cols[len(styles) + 1], COLORS["limit"], "dash", 2.0))
         styles += [(s["name"], ohff_color(s["ff"]), "solid", 1.25) for s in o["wellplan"]]
         for j, (lab, color, dash, width) in enumerate(styles, start=1):
             ch.add_series(

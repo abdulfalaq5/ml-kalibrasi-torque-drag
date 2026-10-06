@@ -17,6 +17,7 @@ import { useIsGuest } from "../role";
 export default function ForecastPanel({ wellId, units, modelId, calibration, forecast, onForecast, hasActual }: Props) {
   const guest = useIsGuest();
   const [distance, setDistance] = useState(300);
+  const [direction, setDirection] = useState<"in" | "out">("in");
   const [step, setStep] = useState(30);
   const [start, setStart] = useState("");
   // default on when the well already has actual readings (most accurate in the backtest)
@@ -29,6 +30,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
     step_ft: step,
     start_depth_ft: start ? Number(start) : null,
     bias_correction: bias,
+    direction,
     units,
     model_id: modelId ? Number(modelId) : null,
     calibration: calibration || null,
@@ -79,6 +81,16 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
       <div className="row space wrap">
         <h2>Prediction ahead</h2>
         <div className="row gap wrap small">
+          <label
+            className="inline"
+            title="Trip in: running in / drilling deeper (slack off is watched). Trip out: pulling pipe out of the hole (pick up is watched for overpull / sticking)."
+          >
+            Direction
+            <select value={direction} onChange={(e) => setDirection(e.target.value as "in" | "out")}>
+              <option value="in">Trip in ↓ (deeper)</option>
+              <option value="out">Trip out ↑ (pulling pipe)</option>
+            </select>
+          </label>
           <label className="inline">
             Distance
             <input type="number" min={10} step={50} value={distance} onChange={(e) => setDistance(Number(e.target.value))} style={{ width: 90 }} />
@@ -92,8 +104,15 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
               <option value={100}>100 ft</option>
             </select>
           </label>
-          <label className="inline" title="Default: the last actual depth">
-            From depth
+          <label
+            className="inline"
+            title={
+              direction === "out"
+                ? "Bit depth where pulling out starts. Default: the last actual depth"
+                : "Default: the last actual depth"
+            }
+          >
+            {direction === "out" ? "Pull from depth" : "From depth"}
             <input type="number" min={0} value={start} onChange={(e) => setStart(e.target.value)} placeholder="last actual" style={{ width: 110 }} />
             ft
           </label>
@@ -114,6 +133,12 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
           )}
         </div>
       </div>
+      <p className="small">
+        <b>Trip in ↓</b>: prediction while running in / drilling deeper; a dashed red <b>set-down alert</b> line is drawn
+        at slack off − tolerance. <b>Trip out ↑</b>: prediction while pulling pipe from the bit depth upwards; a dashed red{" "}
+        <b>overpull alert</b> line is drawn at pick up + tolerance. A real reading beyond the red line may mean tight hole or
+        sticking pipe.
+      </p>
       <p className="muted small">
         <b>To test the model on a well that already has actual readings</b>, enter an earlier <i>From depth</i>: the prediction
         then only uses data above that depth, and the column <i>Check against actual</i> compares it with the readings
@@ -134,6 +159,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
           )}
           <p className="small">
             <b>
+              {forecast.direction === "out" ? "Trip out ↑ " : "Trip in ↓ "}
               {fmt(forecast.start_depth, 0)} → {fmt(forecast.end_depth, 0)} {forecast.depth_unit}
             </b>{" "}
             <span className="muted">
@@ -152,7 +178,12 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                   <th className="num">Change</th>
                   <th className="num">P10–P90 at end</th>
                   {forecast.bias_correction && <th className="num">Bias-corrected at end</th>}
-                  <th className="num" title="Backtest on unseen wells for this distance">Expected accuracy</th>
+                  <th className="num" title="Backtest on unseen wells for this distance (drilling deeper only)">Expected accuracy</th>
+                  {ops.some((op) => forecast.operations[op]?.alert) && (
+                    <th className="num" title="Reading beyond this value at the end of the window = possible tight hole / sticking">
+                      Alert line at end
+                    </th>
+                  )}
                   {ops.some((op) => forecast.operations[op]?.actual_check) && (
                     <th className="num" title="Actual readings that lie inside the prediction window (prediction started before the last actual depth)">
                       Check against actual
@@ -191,14 +222,28 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                             <b>{Math.round(o.backtest.within * 100)}%</b> &lt; {o.tolerance}
                           </span>
                         ) : (
-                          "–"
+                          <span className="muted" title={forecast.direction === "out" ? "The model backtest covers drilling deeper only" : undefined}>
+                            –
+                          </span>
                         )}
                       </td>
+                      {ops.some((op) => forecast.operations[op]?.alert) && (
+                        <td className="num small nowrap">
+                          {o.alert ? (
+                            <span style={{ color: "#c0392b" }}>
+                              {o.alert.kind === "overpull" ? "> " : "< "}
+                              <b>{fmt(last(o.alert.values), 1)}</b> ({o.alert.kind === "overpull" ? "overpull" : "set-down"})
+                            </span>
+                          ) : (
+                            "–"
+                          )}
+                        </td>
+                      )}
                       {ops.some((op) => forecast.operations[op]?.actual_check) && (
                         <td className="num small nowrap">
                           {o.actual_check ? (
                             <span
-                              title={`${o.actual_check.n} actual readings in the window. Mean |error|: ML ${fmt(o.actual_check.ml_mean_abs, 1)}${o.actual_check.ml_bias_mean_abs != null ? `, ML + bias ${fmt(o.actual_check.ml_bias_mean_abs, 1)}` : ""} ${o.actual_check.unit}`}
+                              title={`${o.actual_check.note ? `${o.actual_check.note}. ` : ""}${o.actual_check.n} actual readings in the window. Mean |error|: ML ${fmt(o.actual_check.ml_mean_abs, 1)}${o.actual_check.ml_bias_mean_abs != null ? `, ML + bias ${fmt(o.actual_check.ml_bias_mean_abs, 1)}` : ""} ${o.actual_check.unit}`}
                             >
                               {o.actual_check.td_within != null && <>T&amp;D {Math.round(o.actual_check.td_within * 100)}% · </>}
                               ML{" "}
@@ -234,6 +279,14 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
               {forecast.operations[op]!.explanation.sentence}
             </p>
           ))}
+          {ops.map((op) => {
+            const al = forecast.operations[op]!.alert;
+            return al ? (
+              <div key={`al-${op}`} className="alert warn small">
+                ⚠ {al.text}
+              </div>
+            ) : null;
+          })}
           <p className="muted small">
             Expected accuracy = share of actual points within the client tolerance (8 klbf hookload, 0.8 kft-lbf torque)
             when this model predicted the same distance on wells it never saw

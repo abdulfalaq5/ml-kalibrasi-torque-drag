@@ -330,7 +330,10 @@ export type ForecastOp = {
     ml_bias_within?: number;
     ml_bias_mean_abs?: number;
     unit: string;
+    note?: string;
   } | null;
+  /** overpull alert (trip out, pick up) or set-down alert (trip in, slack off) */
+  alert?: { kind: "overpull" | "set_down"; values: (number | null)[]; offset: string; text: string } | null;
   explanation: {
     method: string;
     drivers: { feature: string; label: string; delta: number }[];
@@ -347,11 +350,18 @@ export type Forecast = {
   end_depth: number;
   last_actual_depth: number | null;
   distance_ft: number;
+  direction?: "in" | "out";
   bias_correction: boolean;
   calibration: "calibrated" | "raw";
   warnings: string[];
   summary: string;
   /** request parameters, reused to draw the same prediction in the Excel export */
-  request?: { distance_ft: number; step_ft: number; start_depth_ft: number | null; bias_correction: boolean | null };
+  request?: {
+    distance_ft: number;
+    step_ft: number;
+    start_depth_ft: number | null;
+    bias_correction: boolean | null;
+    direction?: "in" | "out";
+  };
   operations: Partial<Record<Op, ForecastOp>>;
 };

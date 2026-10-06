@@ -154,8 +154,13 @@ export default function ThreeProfileChart({
   const [fcZoom, setFcZoom] = useState(false);
   const fcWindow = useMemo((): [number, number] | null => {
     if (!forecast) return null;
-    const dist = Math.max(forecast.end_depth - forecast.start_depth, du === "ft" ? 100 : 30);
-    return [forecast.end_depth + 0.6 * dist, Math.max(0, forecast.start_depth - 2 * dist)];
+    const top = Math.min(forecast.start_depth, forecast.end_depth);
+    const bottom = Math.max(forecast.start_depth, forecast.end_depth);
+    const dist = Math.max(bottom - top, du === "ft" ? 100 : 30);
+    // trip in: more history above the window; trip out: the drilled hole below the bit is shown
+    return forecast.direction === "out"
+      ? [bottom + 0.8 * dist, Math.max(0, top - 0.6 * dist)]
+      : [bottom + 0.6 * dist, Math.max(0, top - 2 * dist)];
   }, [forecast, du]);
   useEffect(() => {
     if (fcWindow) {
@@ -234,7 +239,23 @@ export default function ThreeProfileChart({
           const main = (fo.ml_corrected ?? fo.ml).map((v) => (v == null ? null : v));
           const lo = fo.p10.map((v) => (v == null ? null : v + shift));
           const hi = fo.p90.map((v) => (v == null ? null : v + shift));
-          const name = `${p} prediction (next ${forecast!.distance_ft} ft)`;
+          const name =
+            forecast!.direction === "out"
+              ? `${p} prediction (trip out ${forecast!.distance_ft} ft)`
+              : `${p} prediction (next ${forecast!.distance_ft} ft)`;
+          if (fo.alert) {
+            const lab = fo.alert.kind === "overpull" ? "overpull alert" : "set-down alert";
+            out.push({
+              type: "scatter",
+              mode: "lines",
+              x: fo.alert.values,
+              y: fo.depth,
+              name: `${p} ${lab} (${fo.alert.kind === "overpull" ? "+" : "−"}${fo.alert.offset})`,
+              legendgroup: `fc-${op}`,
+              line: { color: COLOR.limit, width: 2.5, dash: "dash" },
+              hovertemplate: `%{x:,.1f} ${o.unit} at %{y:,.0f} ${du}<extra>${p} ${lab}</extra>`,
+            });
+          }
           out.push({
             type: "scatter",
             mode: "lines",
@@ -439,10 +460,10 @@ export default function ThreeProfileChart({
             xref: "paper",
             y: forecast.start_depth,
             yref: "y",
-            yanchor: "bottom",
+            yanchor: forecast.direction === "out" ? "top" : "bottom",
             xanchor: "left",
             showarrow: false,
-            text: `<b>Prediction start</b> · ${fmtD(forecast.start_depth)} ${du}${forecast.last_actual_depth != null && Math.abs(forecast.last_actual_depth - forecast.start_depth) < 1 ? " (last actual reading)" : ""}`,
+            text: `<b>${forecast.direction === "out" ? "Trip out start (bit depth)" : "Prediction start"}</b> · ${fmtD(forecast.start_depth)} ${du}${forecast.last_actual_depth != null && Math.abs(forecast.last_actual_depth - forecast.start_depth) < 1 ? " (last actual reading)" : ""}`,
             font: { size: 11, color: COLOR.forecast },
             bgcolor: "rgba(255,255,255,0.85)",
           },
@@ -451,10 +472,13 @@ export default function ThreeProfileChart({
             xref: "paper",
             y: forecast.end_depth,
             yref: "y",
-            yanchor: "top",
             xanchor: "left",
             showarrow: false,
-            text: `<b>Prediction end</b> · ${fmtD(forecast.end_depth)} ${du} (+${forecast.distance_ft} ft)`,
+            yanchor: forecast.direction === "out" ? "bottom" : "top",
+            text:
+              forecast.direction === "out"
+                ? `<b>Trip out end</b> · ${fmtD(forecast.end_depth)} ${du} (−${forecast.distance_ft} ft, pulling pipe)`
+                : `<b>Prediction end</b> · ${fmtD(forecast.end_depth)} ${du} (+${forecast.distance_ft} ft)`,
             font: { size: 11, color: COLOR.forecast },
             bgcolor: "rgba(255,255,255,0.85)",
           },
