@@ -17,7 +17,8 @@ from app.db.models import Dataset, MLModel, Well
 from app.services.operations import OP_LABELS
 
 # warna sama dengan dashboard (web/src/components/chartTheme.ts)
-COLORS = {"ml": "#eb6834", "actual": "#1baf7a", "limit": "#e34948"}
+COLORS = {"ml": "#eb6834", "actual": "#0e9f6e", "limit": "#e34948"}
+MARKER_EDGE = "#0b2e22"  # tepi gelap agar simbol titik aktual kontras
 # satu warna tetap per nilai OHFF di semua grafik (ramp biru ordinal, tervalidasi)
 OHFF_COLORS = {0.1: "#86b6ef", 0.2: "#5598e7", 0.3: "#2a78d6", 0.4: "#1c5cab", 0.5: "#104281"}
 DIFF_COLORS = {"wp_minus_actual": "#2a78d6", "ml_minus_actual": "#eb6834", "ml_minus_wp": "#4a3aa7"}

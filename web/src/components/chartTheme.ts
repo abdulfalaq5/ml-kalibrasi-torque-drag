@@ -3,7 +3,8 @@
 export const COLOR = {
   wellplan: "#2a78d6",
   ml: "#eb6834",
-  actual: "#1baf7a",
+  actual: "#0e9f6e", // darker green: >= 3:1 on the surface
+  markerEdge: "#0b2e22", // dark outline so point symbols stand out on lines
   mlMinusWp: "#4a3aa7",
   limit: "#e34948",
   flag: "rgba(237, 161, 0, 0.20)",

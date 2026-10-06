@@ -10,7 +10,7 @@
   --ok-bg: #e3f4ea; --ok-ink: #116b3a;
   --warn-bg: #fff4d6; --warn-ink: #7a5300;
   --bad-bg: #fde7e7; --bad-ink: #a11d1d;
-  --wp: #2a78d6; --ml: #eb6834; --act: #1baf7a; --flag: rgba(237, 161, 0, 0.35);
+  --wp: #2a78d6; --ml: #eb6834; --act: #0e9f6e; --flag: rgba(237, 161, 0, 0.35);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color: var(--text);

@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from app.db.models import ActualReading, MLModel, Survey, Well
 from app.services import dataset as dsm
 from app.services import units
-from app.services.export import COLORS, ohff_color
+from app.services.export import COLORS, MARKER_EDGE, ohff_color
 from app.services.operations import (
     BASELINE_FF,
     HOOKLOAD_OPS,
@@ -51,7 +51,7 @@ ACT_SYMBOL = {
     SLACK_OFF: "triangle",
     ROTATING: "square",
     TORQUE_OFF: "circle",
-    TORQUE_ON: "circle",
+    TORQUE_ON: "triangle",
 }
 OP_SHORT = {
     PICK_UP: "PU",
@@ -557,9 +557,9 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title):
                     "line": {"none": True},
                     "marker": {
                         "type": ACT_SYMBOL[op],
-                        "size": 5,
+                        "size": 10,
                         "fill": {"color": COLORS["actual"]},
-                        "border": {"color": "#ffffff"},
+                        "border": {"color": MARKER_EDGE, "width": 1},
                     },
                 }
             )
@@ -700,10 +700,10 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
                 "values": [name, 5, a0, 4 + len(ad), a0],
                 "line": {"none": True},
                 "marker": {
-                    "type": "circle",
-                    "size": 5,
+                    "type": ACT_SYMBOL.get(op, "circle"),
+                    "size": 10,
                     "fill": {"color": COLORS["actual"]},
-                    "border": {"color": "#ffffff"},
+                    "border": {"color": MARKER_EDGE, "width": 1},
                 },
             }
         )

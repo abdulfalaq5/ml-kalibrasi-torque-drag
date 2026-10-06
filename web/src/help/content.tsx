@@ -367,7 +367,7 @@ export const TOPICS: Topic[] = [
             [<><Swatch c={OHFF_COLOR["0.1"]} /> <Swatch c={OHFF_COLOR["0.5"]} /> Blue lines</>, "T&D model (WellPlan), one line per OHFF: lighter = lower friction factor, darker = higher. Same colour for the same OHFF in every chart."],
             [<><Swatch c="#eb6834" /> Orange line</>, "ML prediction for the whole well (PU - ML, SO - ML, ROT - ML)."],
             [<><Swatch c="#eb6834" /> Orange dashed lines</>, "Only when 'Uncertainty band (P10–P90)' is ticked: 80% of the actual readings are expected between the two dashed lines (design target). The real share is in Models → report, column 'Inside P10–P90 band': CV ≈ 80% by construction, blind = the test on unseen wells."],
-            [<><span style={{ color: "#1baf7a" }}>● ▲ ■</span> Green points</>, "Actual readings from the rig: ● pick up / torque off bottom, ▲ slack off / torque on bottom, ■ rotating weight."],
+            [<><span style={{ color: "#0e9f6e" }}>● ▲ ■</span> Green points</>, "Actual readings from the rig: ● pick up / torque off bottom, ▲ slack off / torque on bottom, ■ rotating weight."],
             [<><Swatch c="#4a3aa7" /> Thick purple line</>, "THE FORECAST N ft ahead (bias-corrected). The value at its end is written next to the ◆, e.g. 'PU 254 klbf @ 8,900 ft'."],
             ["Faded purple strip around the purple line", "Prediction range P10–P90: where the reading will most likely (target 80%) fall. How well the 80% holds: Models → report, column 'Inside P10–P90 band (CV / blind)'."],
             ["Very light purple shading across the chart, between two dashed purple lines", "The prediction window (from 'Prediction start' to 'Prediction end'). It only marks the area; it is not a value."],
@@ -716,7 +716,7 @@ export const TOPICS: Topic[] = [
               </span>
             ))}
             . ML prediction <span style={{ color: "#eb6834" }}>orange</span>, uncertainty band (P10–P90) orange{" "}
-            <b>dashed</b>, actual readings <span style={{ color: "#1baf7a" }}>green</span> points, operating limits red{" "}
+            <b>dashed</b>, actual readings <span style={{ color: "#0e9f6e" }}>green</span> points, operating limits red{" "}
             <b>dotted</b>.
           </Step>
           <Step n={4} title="Checkboxes">
@@ -755,7 +755,7 @@ export const TOPICS: Topic[] = [
       <>
         <Steps>
           <Step n={1} title="Dashboard → select the well → Prediction ahead">
-            Enter <Ui>Distance</Ui> (e.g. 300 ft). <Ui>From depth</Ui> is optional; default = the last actual depth (or the top
+            Enter <Ui>Distance</Ui> (e. <Ui>Step</Ui> (10 / 30 / 100 ft) = distance between computed points; each point is a small dot on the purple line. A smaller step only adds detail when the file has a survey or dense WellPlan points.g. 300 ft). <Ui>From depth</Ui> is optional; default = the last actual depth (or the top
             of the T&amp;D model when there is no actual data yet).
           </Step>
           <Step n={2} title="Local bias correction (on by default when the well has actual readings)">

@@ -153,12 +153,18 @@ Setelah mengisi panel **Prediction ahead** (contoh: Distance 300, From depth 8,6
 | ❸ | **Titik hijau di atas jendela** | Pembacaan aktual **sebelum** titik mulai. Inilah data yang dipakai untuk koreksi bias. |
 | ❹ | **Garis ungu putus-putus atas** "Prediction start · 8,600 ft" | **Titik mulai prediction** = "posisi rig sekarang". Bila *From depth* kosong, ini kedalaman aktual terakhir (ditulis "last actual reading"). |
 | ❺ | **Arsiran ungu sangat pudar selebar grafik** | **Jendela prediction**: rentang kedalaman yang diramal (8,600 → 8,900 ft). Hanya penanda area, **bukan** nilai. |
-| ❻ | **Garis ungu tebal** | **FORECAST-NYA**: ke mana hookload diperkirakan bergerak dalam 300 ft ke depan, sudah dikoreksi bias dari pembacaan terakhir. Ini garis yang paling penting dibaca. |
+| ❻ | **Garis ungu tebal** (dengan manik kecil) | **FORECAST-NYA**: ke mana hookload diperkirakan bergerak dalam 300 ft ke depan, sudah dikoreksi bias dari pembacaan terakhir. Ini garis yang paling penting dibaca. |
 | ❼ | **Pita ungu pudar miring** di sekitar garis ❻ | **Rentang kemungkinan P10–P90** prediction: pembacaan nanti kemungkinan besar (target 80%) jatuh di dalam pita ini. Makin lebar, makin tidak pasti. Seberapa tepat target 80% ini terpenuhi: lihat Models → kolom *Inside P10–P90 band* (bagian 4). |
 | ❽ | **Tulisan di ujung garis** "PU 254 klbf @ 8,900 ft" | **Nilai prediction di akhir jendela**. Contoh: pick up di 8,900 ft diperkirakan 254 klbf. Titik ◆ menandai ujungnya. |
 | ❾ | **Garis ungu putus-putus bawah** "Prediction end · 8,900 ft (+300 ft)" | **Akhir prediction** (titik mulai + jarak). |
 | ❿ | **Titik hijau di dalam jendela** | Pembacaan aktual sesudah titik mulai, **hanya** muncul bila Anda menguji dengan *From depth* lebih dangkal. Bandingkan dengan garis ungu: menempel = prediction tepat. Pada prediction sungguhan dari aktual terakhir, area ini kosong (belum dibor). |
 | ⓫ | **Garis merah titik-titik** "max PU" | Batas operasi. Di contoh, prediction PU (254) melewati batas 250 klbf, dan hal ini juga ditulis di kalimat *Cause and effect*. |
+
+**Manik kecil di garis ungu** = setiap kedalaman tempat sistem benar-benar menghitung prediction.
+Jaraknya diatur dengan pilihan **Step** di panel *Prediction ahead* (10 / 30 / 100 ft; bawaan 30 ft).
+Garis di antara manik adalah garis lurus, tanpa penghalusan. Garis ungu hanya bisa melengkung mengikuti
+data: bila file hanya punya titik rencana WellPlan tiap ±1,000 ft dan tanpa survey, garisnya
+hampir lurus. Laporan WellPlan (.xlsm, titik tiap 100 ft + survey) memberi garis yang lebih detail.
 
 Ringkas: **baca garis ungu tebal (❻) dan angka di ujungnya (❽)**. Pita pudar (❼) menunjukkan
 seberapa jauh angka itu bisa meleset. Arsiran selebar grafik (❺) hanya menandai area prediction.
@@ -180,7 +186,7 @@ Cara baca **sama dengan Hookload**, tetapi untuk torsi (ft-lbf) dengan dua kelom
 | ❶ | Garis biru kiri "Torque Off Bottom - OHFF : 0.3" | Rencana torsi saat berputar **tanpa** menyentuh dasar (bit di atas dasar). Lebih kecil. |
 | ❷ | Garis biru kanan "Torque On Bottom - OHFF : 0.3" | Rencana torsi saat **mengebor** (bit menyentuh dasar). Lebih besar. |
 | ❸ | Garis ungu tebal + pita | Prediction torsi on bottom 300 ft ke depan, dengan nilai di ujungnya. |
-| ❹ | Titik hijau ▲ | Pembacaan aktual torsi on bottom (● untuk off bottom). |
+| ❹ | Titik hijau ▲ (tepi gelap) | Pembacaan aktual torsi on bottom (● untuk off bottom). |
 
 Garis merah titik-titik "max Torque On Bottom" = batas torsi (mis. batas top drive).
 

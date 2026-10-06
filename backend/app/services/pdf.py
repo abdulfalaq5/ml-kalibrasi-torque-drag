@@ -32,7 +32,10 @@ from app.services.export import ohff_color  # noqa: E402
 from app.services.operations import OP_LABELS, OPERATIONS, SERIES_PREFIX  # noqa: E402
 from app.services.profile import well_profile  # noqa: E402
 
-C_WP, C_ML, C_ACT, C_MLWP, C_LIM = "#2a78d6", "#eb6834", "#1baf7a", "#4a3aa7", "#e34948"
+C_WP, C_ML, C_ACT, C_MLWP, C_LIM = "#2a78d6", "#eb6834", "#0e9f6e", "#4a3aa7", "#e34948"
+C_EDGE = "#0b2e22"  # tepi gelap simbol titik
+# simbol aktual sama dengan dashboard: ● PU/Toff, ▲ SO/Ton, ■ ROT
+ACT_MARKER = {"pick_up": "o", "slack_off": "^", "rotating_weight": "s", "torque_on_bottom": "^"}
 STATUS_LABEL = {
     "A": "Accepted",
     "B": "Accepted with warnings",
@@ -148,11 +151,11 @@ def _op_panel(ax, prof: dict, op: str) -> None:
         ax.plot(
             o["actual"]["value"],
             o["actual"]["depth"],
-            "o",
+            ACT_MARKER.get(op, "o"),
             color=C_ACT,
-            ms=3.5,
-            mec="white",
-            mew=0.5,
+            ms=6,
+            mec=C_EDGE,
+            mew=0.8,
             ls="none",
             label=f"{SERIES_PREFIX[op]} Actual",
         )
@@ -188,10 +191,10 @@ def _diff_panel(ax, prof: dict, target: str) -> None:
                 d["depth"],
                 "o" if key == "wp_minus_actual" else "D",
                 color=color,
-                ms=3.2,
+                ms=5.5,
                 ls="none",
-                mec="white",
-                mew=0.5,
+                mec=C_EDGE,
+                mew=0.7,
                 label=labels[key],
             )
     ax.axvline(0, color="black", lw=1.4)

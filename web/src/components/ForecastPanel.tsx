@@ -14,6 +14,7 @@ type Props = {
 /** Forecast N ft ahead of the last actual depth, with cause and effect. */
 export default function ForecastPanel({ wellId, units, modelId, calibration, forecast, onForecast, hasActual }: Props) {
   const [distance, setDistance] = useState(300);
+  const [step, setStep] = useState(30);
   const [start, setStart] = useState("");
   // default on when the well already has actual readings (most accurate in the backtest)
   const [bias, setBias] = useState(hasActual);
@@ -22,6 +23,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
 
   const body = () => ({
     distance_ft: distance,
+    step_ft: step,
     start_depth_ft: start ? Number(start) : null,
     bias_correction: bias,
     units,
@@ -78,6 +80,14 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
             Distance
             <input type="number" min={10} step={50} value={distance} onChange={(e) => setDistance(Number(e.target.value))} style={{ width: 90 }} />
             ft
+          </label>
+          <label className="inline" title="Depth interval between computed prediction points (one dot on the purple line per point)">
+            Step
+            <select value={step} onChange={(e) => setStep(Number(e.target.value))}>
+              <option value={10}>10 ft</option>
+              <option value={30}>30 ft</option>
+              <option value={100}>100 ft</option>
+            </select>
           </label>
           <label className="inline" title="Default: the last actual depth">
             From depth

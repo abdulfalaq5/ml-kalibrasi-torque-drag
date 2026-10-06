@@ -264,10 +264,12 @@ export default function ThreeProfileChart({
             legendgroup: `fc-${op}`,
             line: { color: COLOR.forecast, width: 4 },
             marker: {
-              size: main.map((_, i) => (i === 0 || i === last ? 11 : 0)),
+              // small dot at every computed depth, bigger at the start and the end
+              // (no white outline on the inner dots, so the line stays solid)
+              size: main.map((_, i) => (i === 0 || i === last ? 11 : 7)),
               symbol: main.map((_, i) => (i === last ? "diamond" : "circle")),
               color: COLOR.forecast,
-              line: { color: COLOR.surface, width: 1.5 },
+              line: { color: COLOR.surface, width: main.map((_, i) => (i === 0 || i === last ? 1.5 : 0)) },
             },
             text: main.map((v, i) =>
               i === last && v != null
@@ -289,9 +291,9 @@ export default function ThreeProfileChart({
             name: `${p} Actual`,
             marker: {
               color: COLOR.actual,
-              size: 8,
+              size: 13,
               symbol: SYMBOL[op] as "circle",
-              line: { color: COLOR.surface, width: 1.5 },
+              line: { color: COLOR.markerEdge, width: 1.5 },
             },
             hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} Actual</extra>`,
           });
@@ -320,9 +322,9 @@ export default function ThreeProfileChart({
           : {
               marker: {
                 color: DIFF_COLOR[key],
-                size: 8,
+                size: 12,
                 symbol: key === "wp_minus_actual" ? "circle" : "diamond",
-                line: { color: COLOR.surface, width: 1.5 },
+                line: { color: COLOR.markerEdge, width: 1.25 },
               },
             }),
         hovertemplate:
