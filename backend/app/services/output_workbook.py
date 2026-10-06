@@ -603,7 +603,7 @@ def _curve_note(prof) -> str:
         "Modelled curves: WellPlan T&D model + DD Calibrate offsets (as the Excel 'Graph reference'). "
         if mode == "calibrated"
         else "Modelled curves: WellPlan T&D model as modelled. "
-    ) + "One colour per OHFF; actual = points; ML forecast = orange."
+    ) + "One colour per OHFF; actual = points; ML prediction = orange."
 
 
 def _depth_chart(ch, title, x_title, y_title):

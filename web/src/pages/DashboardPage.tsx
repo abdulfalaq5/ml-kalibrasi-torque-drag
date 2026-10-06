@@ -178,7 +178,7 @@ export default function DashboardPage() {
           {selectedId && (
             <>
               <button className="btn" onClick={() => predict.mutate()} disabled={predict.isPending}>
-                {predict.isPending ? "Forecasting…" : "Forecast again"}
+                {predict.isPending ? "Predicting…" : "Run prediction again"}
               </button>
               <a
                 className="btn"
@@ -295,9 +295,9 @@ export default function DashboardPage() {
                 <span className="muted small">
                 {p.prediction
                   ? p.prediction.kind === "oof"
-                    ? `ML forecast out-of-fold (model #${p.prediction.model_id} never saw this well)`
-                    : `ML forecast, model #${p.prediction.model_id}`
-                  : "No ML forecast yet"}
+                    ? `ML prediction out-of-fold (model #${p.prediction.model_id} never saw this well)`
+                    : `ML prediction, model #${p.prediction.model_id}`
+                  : "No ML prediction yet"}
                 {p.model?.dataset_version ? ` · dataset v${p.model.dataset_version}` : ""}
                 </span>
               </span>
@@ -310,13 +310,13 @@ export default function DashboardPage() {
                     <span className="sw" style={{ background: c }} /> {ff}&nbsp;{" "}
                   </span>
                 ))}
-                · <span className="sw ml" /> ML forecast{opts.showBand ? " (dashed = P10–P90 band)" : ""} ·{" "}
+                · <span className="sw ml" /> ML prediction{opts.showBand ? " (dashed = P10–P90 band)" : ""} ·{" "}
                 <span className="dot act" /> Actual (points) · <span className="sw limit" /> operating limit (dotted)
                 {p.calibration.mode === "calibrated" && <> · T&amp;D Model includes the DD Calibrate offsets</>}
                 {forecast && (
                   <>
                     {" "}
-                    · <span className="sw" style={{ background: "#4a3aa7", height: 4 }} /> <b>Forecast</b> (thick purple line,
+                    · <span className="sw" style={{ background: "#4a3aa7", height: 4 }} /> <b>Prediction ahead</b> (thick purple line,
                     shaded band = P10–P90, value at the end of the window)
                   </>
                 )}

@@ -56,7 +56,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
       return;
     }
     const blob = await res.blob();
-    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "forecast.xlsx";
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "prediction.xlsx";
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = name;
@@ -72,7 +72,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
   return (
     <section className="card">
       <div className="row space wrap">
-        <h2>Forecast ahead</h2>
+        <h2>Prediction ahead</h2>
         <div className="row gap wrap small">
           <label className="inline">
             Distance
@@ -84,15 +84,15 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
             <input type="number" min={0} value={start} onChange={(e) => setStart(e.target.value)} placeholder="last actual" style={{ width: 110 }} />
             ft
           </label>
-          <label className="check" title="Shift the forecast by the median (actual − ML) of the last actual points">
+          <label className="check" title="Shift the prediction by the median (actual − ML) of the last actual points">
             <input type="checkbox" checked={bias} onChange={(e) => setBias(e.target.checked)} />
             Local bias correction
           </label>
           <button className="btn primary" onClick={run} disabled={busy || !(distance > 0)}>
-            {busy ? "Forecasting…" : "Forecast"}
+            {busy ? "Predicting…" : "Run prediction"}
           </button>
           <button className="btn" onClick={download} disabled={!forecast}>
-            ⬇ Forecast (.xlsx)
+            ⬇ Prediction (.xlsx)
           </button>
           {forecast && (
             <button className="btn ghost" onClick={() => onForecast(null)}>
@@ -102,12 +102,12 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
         </div>
       </div>
       <p className="muted small">
-        <b>To test the model on a well that already has actual readings</b>, enter an earlier <i>From depth</i>: the forecast
+        <b>To test the model on a well that already has actual readings</b>, enter an earlier <i>From depth</i>: the prediction
         then only uses data above that depth, and the column <i>Check against actual</i> compares it with the readings
-        that follow. Forecasts hookload and torque for the next N ft from the last actual depth with the active model: ML forecast,
+        that follow. Predicts hookload and torque for the next N ft from the last actual depth with the active model: ML prediction,
         uncertainty band (P10–P90) and the T&amp;D Model curve per OHFF. The explanation lists what drives the change (local SHAP
         contributions), plan changes (inclination, dogleg, interval type) and operating limits that would be reached. The
-        forecast window is shaded in the charts above.
+        prediction window is shaded in the charts above.
       </p>
       {err && <div className="alert error">{err}</div>}
       {forecast && (
@@ -140,7 +140,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                   {forecast.bias_correction && <th className="num">Bias-corrected at end</th>}
                   <th className="num" title="Backtest on unseen wells for this distance">Expected accuracy</th>
                   {ops.some((op) => forecast.operations[op]?.actual_check) && (
-                    <th className="num" title="Actual readings that lie inside the forecast window (forecast started before the last actual depth)">
+                    <th className="num" title="Actual readings that lie inside the prediction window (prediction started before the last actual depth)">
                       Check against actual
                     </th>
                   )}
@@ -219,7 +219,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
           ))}
           <p className="muted small">
             Expected accuracy = share of actual points within the client tolerance (10 klbf hookload, 2 kft-lbf torque)
-            when this model forecast the same distance on wells it never saw
+            when this model predicted the same distance on wells it never saw
             {forecast.bias_correction ? ", with local bias correction" : ", without bias correction"}. Contributions: {forecast.operations[ops[0]]?.explanation.method ?? "SHAP"} (the change of each feature's
             contribution between the start and the end of the window; "T&amp;D Model" = the change of the T&amp;D Model curve
             itself).

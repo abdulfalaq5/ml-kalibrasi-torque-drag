@@ -3,7 +3,7 @@
 Used by manual upload (api/files.py) and folder scan (services/inbox.py).
 Every file belongs to one group (purpose): "training" (ML reference) or "monitoring"
 (calculated/forecast only, never used for training). The groups never mix.
-After import: the well's data quality is recomputed and earlier forecasts are evaluated
+After import: the well's data quality is recomputed and earlier predictions are evaluated
 when actual data arrives.
 """
 

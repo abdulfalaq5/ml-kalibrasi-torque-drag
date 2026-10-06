@@ -242,7 +242,7 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
 
 @router.post("/{well_id}/forecast")
 def forecast(well_id: int, body: ForecastIn, db: Session = Depends(get_db)):
-    """Forecast N ft ahead of the last actual depth, with cause-and-effect explanation."""
+    """Prediction N ft ahead of the last actual depth, with cause-and-effect explanation."""
     return _forecast(db, well_id, body)
 
 
@@ -251,7 +251,7 @@ def forecast_xlsx(well_id: int, body: ForecastIn, db: Session = Depends(get_db))
     fc = _forecast(db, well_id, body)
     w = fc["well"]
     fname = (
-        f"{w['name']}_{(w['section_in'] or 0):g}in_forecast_{body.distance_ft:g}ft.xlsx".replace(
+        f"{w['name']}_{(w['section_in'] or 0):g}in_prediction_{body.distance_ft:g}ft.xlsx".replace(
             " ", "_"
         )
     )

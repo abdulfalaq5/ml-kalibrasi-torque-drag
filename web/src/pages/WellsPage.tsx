@@ -147,7 +147,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
           </>
         ) : (
           <>
-            <b>Monitoring</b> = wells to be drilled or being drilled. They are forecast and evaluated only and{" "}
+            <b>Monitoring</b> = wells to be drilled or being drilled. They are predicted and evaluated only and{" "}
             <b>never used for training</b>. After a well is finished, use <i>Promote to training</i> to copy it into{" "}
             <Link to="/training">Training Data</Link> (it then goes through the data quality gate).
           </>
@@ -226,7 +226,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
                 <th className="num">Actual points</th>
                 <th>OHFF</th>
                 <th>Status</th>
-                <th>Forecast</th>
+                <th>Prediction</th>
                 <th></th>
               </tr>
             </thead>

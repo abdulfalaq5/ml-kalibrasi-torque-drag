@@ -101,7 +101,8 @@ def well_profile(
         )
     else:
         warnings.append(
-            "This well has not been forecast with the active model yet. Click 'Forecast'."
+            "This well has not been predicted with the active model yet: click 'Run prediction again' "
+            "(top right) to draw the ML line."
         )
 
     has_actual = not actual.empty

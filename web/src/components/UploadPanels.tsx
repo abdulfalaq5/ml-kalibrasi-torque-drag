@@ -290,12 +290,12 @@ export function MonitoringUploadPanel() {
         setRes({ file: up, error: "The file could not be imported. Fix it as described below and upload again." });
         return;
       }
-      setBusy("Forecasting with the active model…");
+      setBusy("Predicting with the active model…");
       let warnings: string[] = [];
       try {
         warnings = (await api.post<{ warnings: string[] }>(`/api/wells/${up.well_id}/predict`)).warnings;
       } catch (e) {
-        setRes({ file: up, error: `Forecast failed: ${(e as Error).message}` });
+        setRes({ file: up, error: `Prediction failed: ${(e as Error).message}` });
         return;
       }
       setBusy("Preparing the result…");
@@ -313,10 +313,10 @@ export function MonitoringUploadPanel() {
 
   return (
     <section className="card">
-      <h2>Upload a monitoring well (forecast only)</h2>
+      <h2>Upload a monitoring well (prediction only)</h2>
       <p className="muted small">
         A well that is about to be drilled or is being drilled: the WellPlan T&amp;D model, plus actual readings so far if
-        available. The system forecasts hookload and torque with the active model.{" "}
+        available. The system predicts hookload and torque with the active model.{" "}
         <b>Monitoring data is never used for training.</b>
       </p>
       <Steps>
@@ -333,7 +333,7 @@ export function MonitoringUploadPanel() {
         <Step n={3} title="Fill in the data">
           <span className="small">
             Fill in the WellPlan results in <b>Drag</b> &amp; <b>Torque</b>, and <b>Survey</b> if available for a better
-            forecast. Original roadmap / WellPlan report files are accepted too.
+            prediction. Original roadmap / WellPlan report files are accepted too.
           </span>
         </Step>
         <Step n={4} title="Upload">
@@ -342,9 +342,9 @@ export function MonitoringUploadPanel() {
             {!ready ? "Select the well section and well type first (step 1)." : (busy ?? "Drop one file here or click to choose")}
           </div>
         </Step>
-        <Step n={5} title="Forecast result">
+        <Step n={5} title="Prediction result">
           {err && <div className="alert error">{err}</div>}
-          {!res && !err && <span className="muted small">A forecast summary and download links appear here.</span>}
+          {!res && !err && <span className="muted small">A prediction summary and download links appear here.</span>}
           {res?.error && (
             <div>
               <div className="alert error">{res.error}</div>
@@ -364,7 +364,7 @@ export function MonitoringUploadPanel() {
                 </div>
                 <div className="row gap wrap">
                   <Link className="btn primary" to={`/dashboard/${wid}`}>
-                    Open dashboard (forecast N ft ahead)
+                    Open dashboard (prediction N ft ahead)
                   </Link>
                   <a className="btn" href={`/api/wells/${wid}/export.xlsx`}>
                     ⬇ Prediction Output (.xlsx)
@@ -387,7 +387,7 @@ export function MonitoringUploadPanel() {
                     <th>Operation</th>
                     <th className="num">Final depth ({p.depth_unit})</th>
                     <th className="num">T&amp;D Model (OHFF 0.3)</th>
-                    <th className="num">ML forecast</th>
+                    <th className="num">ML prediction</th>
                     <th className="num">Uncertainty band (P10–P90)</th>
                     <th className="num">ML − T&amp;D Model</th>
                   </tr>
@@ -419,8 +419,8 @@ export function MonitoringUploadPanel() {
                 </tbody>
               </table>
               <p className="small muted">
-                The full forecast per depth is on the dashboard and in the Excel file. Upload the file again with new actual
-                readings as drilling progresses: the system compares this forecast with the actual data (Evaluations).
+                The full prediction per depth is on the dashboard and in the Excel file. Upload the file again with new actual
+                readings as drilling progresses: the system compares this prediction with the actual data (Evaluations).
               </p>
             </div>
           )}

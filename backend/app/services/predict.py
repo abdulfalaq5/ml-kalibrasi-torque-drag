@@ -22,11 +22,11 @@ def coverage_warnings(bundle: dict, section: str | None, well_type: str | None) 
     warns = []
     if section not in bundle["train_sections"]:
         warns.append(
-            f'Well section {section or "?"}" is not in the training data; the forecast is less reliable'
+            f'Well section {section or "?"}" is not in the training data; the prediction is less reliable'
         )
     if well_type not in bundle["train_types"]:
         warns.append(
-            f"Well type {well_type or '?'} is not in the training data; the forecast is less reliable"
+            f"Well type {well_type or '?'} is not in the training data; the prediction is less reliable"
         )
     n = bundle["train_combos"].get(f"{section}|{well_type}", 0)
     if 0 < n < MIN_WELLS_PER_GROUP:
@@ -53,12 +53,12 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
     plan, survey = dsm.load_plan(db, [well.id]), dsm.load_survey(db, [well.id])
     grid = dsm.plan_grid(db, well.id)
     if not len(grid):
-        raise ValueError("This well has no WellPlan T&D model results to forecast from")
+        raise ValueError("This well has no WellPlan T&D model results to predict from")
 
     warns = coverage_warnings(bundle, w.section, w.well_type)
     if survey.empty and "survey" in bundle["features"]["groups"]:
         warns.append(
-            "No survey: inclination/dogleg features use the training median (fill in the Survey sheet for a better forecast)"
+            "No survey: inclination/dogleg features use the training median (fill in the Survey sheet for a better prediction)"
         )
     lo, hi = bundle["depth_range_m"]
     if grid.max() > hi * 1.1 or grid.min() < lo * 0.9:
@@ -68,7 +68,7 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
         )
     if w.well_name in bundle.get("trained_wells", []):
         warns.append(
-            "This well is part of the model training data; see the out-of-fold forecast for a fair comparison"
+            "This well is part of the model training data; see the out-of-fold prediction for a fair comparison"
         )
 
     db.execute(
@@ -84,7 +84,7 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
     for op in bundle["operations"]:
         f = dsm.features_frame(w, op, grid, plan, survey).dropna(subset=["wp_base"])
         if f.empty:
-            warns.append(f"{OP_LABELS[op]}: no WellPlan T&D model result, not forecast")
+            warns.append(f"{OP_LABELS[op]}: no WellPlan T&D model result, not predicted")
             continue
         for c in ("section", "well_type", "plan_format", "interval_type"):
             f[c] = f[c].fillna("unknown").astype(str)
@@ -102,6 +102,19 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
     pred.warnings = list(warns)
     db.commit()
     return pred
+
+
+def refresh_monitoring_predictions(db: Session, model: MLModel) -> int:
+    """Setelah model baru aktif: buat ulang prediksi semua sumur monitoring dengan model itu,
+    supaya garis ML di dashboard tidak hilang (dashboard selalu memakai model aktif)."""
+    n = 0
+    for w in db.scalars(select(Well).where(Well.purpose == "monitoring")).all():
+        try:
+            predict_well(db, w, model)
+            n += 1
+        except ValueError:
+            pass
+    return n
 
 
 def prediction_for_dashboard(

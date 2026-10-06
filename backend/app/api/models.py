@@ -120,6 +120,9 @@ def activate(model_id: int, db: Session = Depends(get_db)):
     m.status = "done"
     m.active = True
     db.commit()
+    from app.services.predict import refresh_monitoring_predictions
+
+    refresh_monitoring_predictions(db, m)  # garis ML sumur monitoring memakai model yang baru aktif
     return model_out(m)
 
 

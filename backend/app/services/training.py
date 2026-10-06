@@ -12,6 +12,7 @@ Alur (lihat docs/keputusan.md K-10 .. K-26):
 7. Blind test dijalankan terpisah, SEKALI per model (run_blind_test).
 """
 
+import copy
 import logging
 import traceback
 import warnings
@@ -40,7 +41,7 @@ from app.core.config import get_settings
 from app.db.models import Dataset, MLModel, Prediction, PredictionPoint, Well
 from app.services import dataset as dsm
 from app.services.backtest import forecast_backtest
-from app.services.metrics import all_metrics, rmse, tolerance_si, within_frac
+from app.services.metrics import all_metrics, band_coverage, rmse, tolerance_si, within_frac
 from app.services.operations import BASELINE_FF, OPERATIONS
 
 log = logging.getLogger(__name__)
@@ -537,6 +538,10 @@ def train(
                     "wellplan": within_frac(d.target, d.wp_base, tolerance_si(op)),
                     "ml": within_frac(d.target, d.ml_oof, tolerance_si(op)),
                 },
+                # pita dibuat dari kuantil 10/90 residu out-of-fold yang sama -> ~80% (K-29)
+                "band_coverage": band_coverage(
+                    d.target, d.ml_oof, bundle["operations"][op]["band"]
+                ),
             },
             "forecast_backtest": forecast_backtest(d, op),
             "strategy": strategy,
@@ -629,6 +634,10 @@ def train(
     )
     _save_oof(db, model_row, pd.concat(oof_frames, ignore_index=True), bundle)
     _compare_and_activate(db, model_row)
+    if model_row.active:
+        from app.services.predict import refresh_monitoring_predictions
+
+        refresh_monitoring_predictions(db, model_row)
     model_row.finished_at = datetime.now(UTC)
     db.commit()
     return model_row
@@ -760,6 +769,7 @@ def run_blind_test(db: Session, model: MLModel) -> dict:
                 "wellplan": within_frac(d.target, d.wp_base, tolerance_si(op)),
                 "ml": within_frac(d.target, p, tolerance_si(op)),
             },
+            "band_coverage": band_coverage(d.target, p, entry.get("band")),
             "per_well": [
                 {
                     "well_name": w,
@@ -783,6 +793,40 @@ def run_blind_test(db: Session, model: MLModel) -> dict:
             except ValueError:
                 pass
     return model.blind_result
+
+
+def backfill_band_coverage(db: Session, model: MLModel) -> dict:
+    """Isi susulan '% di dalam pita P10–P90' untuk model lama (tanpa melatih ulang).
+
+    Validasi silang: pita = kuantil 10/90 residu out-of-fold -> secara konstruksi 80%.
+    Blind test: dihitung dari prediksi model yang sama pada sumur blind (bukan blind test ulang;
+    tidak ada keputusan model yang berubah).
+    """
+    m = copy.deepcopy(model.metrics or {})  # salinan penuh: perubahan JSON harus terdeteksi
+    bundle = joblib.load(model.path)
+    out = {}
+    for op, d in (m.get("operations") or {}).items():
+        lo, hi = bundle["operations"][op]["band"]
+        d.setdefault("overall", {})["band_coverage"] = d["overall"].get(
+            "band_coverage", BAND_Q[1] - BAND_Q[0]
+        )
+        out[op] = {"cv": d["overall"]["band_coverage"]}
+    model.metrics = _json_safe(m)
+    if model.blind_result:
+        br = copy.deepcopy(model.blind_result)
+        df = dsm.load_frozen(db.get(Dataset, model.dataset_id))
+        blind = df[df.is_blind]
+        for op, r in br.get("operations", {}).items():
+            dd = blind[blind.operation == op]
+            r["band_coverage"] = band_coverage(
+                dd.target,
+                bundle["operations"][op]["model"].predict(dd),
+                bundle["operations"][op]["band"],
+            )
+            out[op]["blind"] = r["band_coverage"]
+        model.blind_result = _json_safe(br)
+    db.commit()
+    return out
 
 
 def _json_safe(obj):

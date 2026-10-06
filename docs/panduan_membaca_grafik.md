@@ -18,7 +18,7 @@ Setiap grafik menjawab satu pertanyaan: **seberapa dekat perkiraan dengan kenyat
 | **T&D model (WellPlan)** | **Biru** (muda → tua) | Hitungan software perencanaan sebelum mengebor, satu garis per *friction factor* (OHFF). |
 | **ML (Machine Learning)** | **Oranye** | Perkiraan sistem setelah "belajar" dari puluhan sumur yang sudah dibor. |
 | **Actual** | **Titik hijau** | Pembacaan sebenarnya di rig. Inilah "kunci jawaban". |
-| **Forecast N ft ke depan** | **Ungu** | Perkiraan untuk kedalaman yang **belum** dibor (mis. 300 ft ke depan). |
+| **Prediction N ft ke depan** | **Ungu** | Perkiraan untuk kedalaman yang **belum** dibor (mis. 300 ft ke depan). |
 | **Batas operasi** | **Merah titik-titik** | Batas aman dari client (mis. kapasitas hookload, batas torsi top drive). |
 
 Aturan membaca:
@@ -36,14 +36,14 @@ Aturan membaca:
 | Bagian | Artinya |
 |---|---|
 | **T&D Model (one colour per OHFF)** | Contoh warna biru untuk tiap OHFF: 0.1 paling muda, 0.5 paling tua. Warnanya **sama di semua grafik**, jadi warna biru tertentu selalu berarti OHFF yang sama. |
-| **ML forecast** (garis oranye) | Garis perkiraan ML. |
+| **ML prediction** (garis oranye) | Garis perkiraan ML. |
 | **Actual (points)** (titik hijau) | Pembacaan lapangan. |
 | **operating limit (dotted)** (merah titik-titik) | Batas operasi. |
 | **T&D Model includes the DD Calibrate offsets** | Garis biru sudah ditambah koreksi "Calibrate" dari DD, sama dengan grafik *Graph reference* di Excel DD. |
 | **Names** | Singkatan: **PU** = pick up (angkat), **SO** = slack off (turunkan), **ROT** = rotating weight (berputar, satu garis saja). Bentuk titik aktual: ● PU / torque off bottom · ▲ SO / torque on bottom · ■ ROT. |
 | **Difference (Δ)** | Keterangan panel ketiga (lihat bagian 6). |
 | **"2 intervals \|ML − Actual\| > 5 klbf"** (kotak kuning) | Ada 2 rentang kedalaman yang selisihnya melebihi ambang yang dipilih, dan rentang itu diarsir kuning. |
-| **Forecast** (ungu, muncul setelah klik Forecast) | Garis ungu tebal = forecast; pita ungu pudar = rentang kemungkinan P10–P90. |
+| **Prediction** (ungu, muncul setelah klik **Run prediction**) | Garis ungu tebal = prediction; pita ungu pudar = rentang kemungkinan P10–P90. |
 
 ---
 
@@ -83,6 +83,23 @@ Centang **Uncertainty band (P10–P90)** di atas grafik (bawaan: tidak dicentang
 Jadi **80% pembacaan aktual diharapkan jatuh di antara dua garis putus-putus**. Makin lebar jaraknya,
 makin besar ketidakpastiannya.
 
+**Dari mana angka 80%?** Pita dibuat saat training: setiap sumur latih diprediksi oleh model yang
+tidak pernah melihat sumur itu, lalu diambil batas selisih 10% terbawah (P10) dan 10% teratas (P90).
+Jadi 80% adalah **target desain**, bukan hasil kebetulan.
+
+**Di mana mengecek hasil sebenarnya?** Menu **Models → Report** pada model aktif, kolom
+**Inside P10–P90 band (CV / blind)**:
+- **CV** (validasi silang pada sumur latih) selalu ≈ 80%, karena pita dibuat dari data itu.
+- **blind** (sumur blind test yang dikunci, tidak pernah dipakai melatih) adalah ujian sebenarnya:
+  makin dekat ke 80%, makin bisa dipercaya pitanya. Di bawah 80% berarti pita sedikit terlalu
+  sempit; di atas 80% berarti sedikit terlalu lebar.
+
+Angka yang sama juga ada di laporan model **Report (.xlsx)** (sheet Summary) dan **PDF summary**.
+Contoh model #6: CV 80% untuk semua operasi; blind 83% (PU), 74% (SO), 75% (ROT), 75% (torque off
+bottom), 83% (torque on bottom).
+
+Pita P10–P90 pada **prediction** (pita ungu, bagian 7) dibuat dengan cara yang sama.
+
 ---
 
 ## 5. Garis penuntun dan bar pembacaan
@@ -97,7 +114,7 @@ Arahkan kursor (mouse) ke grafik mana pun.
 | ❷ | **Bar pembacaan** di bawah | Ringkasan di kedalaman kursor untuk semua operasi: **WP** = T&D model, **ML** = perkiraan ML, **Act** = aktual terdekat; plus selisih (Δ). Contoh "PU: WP 272.7 · ML 283.4 · Act 260.9 klbf". |
 
 **Zoom:** tarik kotak di grafik untuk memperbesar. Klik dua kali untuk kembali. Tombol **Reset zoom**
-(atau **Show whole well** saat forecast) mengembalikan seluruh kedalaman.
+(atau **Show whole well** saat prediction) mengembalikan seluruh kedalaman.
 
 ---
 
@@ -122,33 +139,33 @@ Pilihan **Absolute / Percent**: selisih dalam satuan (klbf / ft-lbf) atau persen
 
 ---
 
-## 7. Forecast N ft ke depan — semua elemen ungu
+## 7. Prediction N ft ke depan — semua elemen ungu
 
-Setelah mengisi panel **Forecast ahead** (contoh: Distance 300, From depth 8,600) dan klik
-**Forecast**, halaman menggulir ke grafik dan **zoom otomatis** ke area forecast.
+Setelah mengisi panel **Prediction ahead** (contoh: Distance 300, From depth 8,600) dan klik
+**Run prediction**, halaman menggulir ke grafik dan **zoom otomatis** ke area prediction.
 
-![Forecast](img/baca_04_forecast.png)
+![Prediction](img/baca_04_forecast.png)
 
 | No | Yang terlihat | Artinya |
 |---|---|---|
 | ❶ | **Garis biru** | Rencana WellPlan (tetap tampil sebagai pembanding). |
 | ❷ | **Garis oranye** | Perkiraan ML untuk seluruh sumur **tanpa** koreksi bias. |
 | ❸ | **Titik hijau di atas jendela** | Pembacaan aktual **sebelum** titik mulai. Inilah data yang dipakai untuk koreksi bias. |
-| ❹ | **Garis ungu putus-putus atas** "Forecast start · 8,600 ft" | **Titik mulai forecast** = "posisi rig sekarang". Bila *From depth* kosong, ini kedalaman aktual terakhir (ditulis "last actual reading"). |
-| ❺ | **Arsiran ungu sangat pudar selebar grafik** | **Jendela forecast**: rentang kedalaman yang diramal (8,600 → 8,900 ft). Hanya penanda area, **bukan** nilai. |
+| ❹ | **Garis ungu putus-putus atas** "Prediction start · 8,600 ft" | **Titik mulai prediction** = "posisi rig sekarang". Bila *From depth* kosong, ini kedalaman aktual terakhir (ditulis "last actual reading"). |
+| ❺ | **Arsiran ungu sangat pudar selebar grafik** | **Jendela prediction**: rentang kedalaman yang diramal (8,600 → 8,900 ft). Hanya penanda area, **bukan** nilai. |
 | ❻ | **Garis ungu tebal** | **FORECAST-NYA**: ke mana hookload diperkirakan bergerak dalam 300 ft ke depan, sudah dikoreksi bias dari pembacaan terakhir. Ini garis yang paling penting dibaca. |
-| ❼ | **Pita ungu pudar miring** di sekitar garis ❻ | **Rentang kemungkinan P10–P90** forecast: pembacaan nanti kemungkinan besar (80%) jatuh di dalam pita ini. Makin lebar, makin tidak pasti. |
-| ❽ | **Tulisan di ujung garis** "PU 254 klbf @ 8,900 ft" | **Nilai forecast di akhir jendela**. Contoh: pick up di 8,900 ft diperkirakan 254 klbf. Titik ◆ menandai ujungnya. |
-| ❾ | **Garis ungu putus-putus bawah** "Forecast end · 8,900 ft (+300 ft)" | **Akhir forecast** (titik mulai + jarak). |
-| ❿ | **Titik hijau di dalam jendela** | Pembacaan aktual sesudah titik mulai, **hanya** muncul bila Anda menguji dengan *From depth* lebih dangkal. Bandingkan dengan garis ungu: menempel = forecast tepat. Pada forecast sungguhan dari aktual terakhir, area ini kosong (belum dibor). |
-| ⓫ | **Garis merah titik-titik** "max PU" | Batas operasi. Di contoh, forecast PU (254) melewati batas 250 klbf, dan hal ini juga ditulis di kalimat *Cause and effect*. |
+| ❼ | **Pita ungu pudar miring** di sekitar garis ❻ | **Rentang kemungkinan P10–P90** prediction: pembacaan nanti kemungkinan besar (target 80%) jatuh di dalam pita ini. Makin lebar, makin tidak pasti. Seberapa tepat target 80% ini terpenuhi: lihat Models → kolom *Inside P10–P90 band* (bagian 4). |
+| ❽ | **Tulisan di ujung garis** "PU 254 klbf @ 8,900 ft" | **Nilai prediction di akhir jendela**. Contoh: pick up di 8,900 ft diperkirakan 254 klbf. Titik ◆ menandai ujungnya. |
+| ❾ | **Garis ungu putus-putus bawah** "Prediction end · 8,900 ft (+300 ft)" | **Akhir prediction** (titik mulai + jarak). |
+| ❿ | **Titik hijau di dalam jendela** | Pembacaan aktual sesudah titik mulai, **hanya** muncul bila Anda menguji dengan *From depth* lebih dangkal. Bandingkan dengan garis ungu: menempel = prediction tepat. Pada prediction sungguhan dari aktual terakhir, area ini kosong (belum dibor). |
+| ⓫ | **Garis merah titik-titik** "max PU" | Batas operasi. Di contoh, prediction PU (254) melewati batas 250 klbf, dan hal ini juga ditulis di kalimat *Cause and effect*. |
 
 Ringkas: **baca garis ungu tebal (❻) dan angka di ujungnya (❽)**. Pita pudar (❼) menunjukkan
-seberapa jauh angka itu bisa meleset. Arsiran selebar grafik (❺) hanya menandai area forecast.
+seberapa jauh angka itu bisa meleset. Arsiran selebar grafik (❺) hanya menandai area prediction.
 
-Selama forecast tampil, arsiran kuning (interval ditandai) disembunyikan agar tidak bertumpuk.
-Tombol **Show whole well** kembali ke seluruh sumur; **Zoom to forecast** kembali ke area forecast;
-**Clear** di panel forecast menghapus forecast.
+Selama prediction tampil, arsiran kuning (interval ditandai) disembunyikan agar tidak bertumpuk.
+Tombol **Show whole well** kembali ke seluruh sumur; **Zoom to prediction** kembali ke area prediction;
+**Clear** di panel prediction menghapus prediction.
 
 ---
 
@@ -162,7 +179,7 @@ Cara baca **sama dengan Hookload**, tetapi untuk torsi (ft-lbf) dengan dua kelom
 |---|---|---|
 | ❶ | Garis biru kiri "Torque Off Bottom - OHFF : 0.3" | Rencana torsi saat berputar **tanpa** menyentuh dasar (bit di atas dasar). Lebih kecil. |
 | ❷ | Garis biru kanan "Torque On Bottom - OHFF : 0.3" | Rencana torsi saat **mengebor** (bit menyentuh dasar). Lebih besar. |
-| ❸ | Garis ungu tebal + pita | Forecast torsi on bottom 300 ft ke depan, dengan nilai di ujungnya. |
+| ❸ | Garis ungu tebal + pita | Prediction torsi on bottom 300 ft ke depan, dengan nilai di ujungnya. |
 | ❹ | Titik hijau ▲ | Pembacaan aktual torsi on bottom (● untuk off bottom). |
 
 Garis merah titik-titik "max Torque On Bottom" = batas torsi (mis. batas top drive).
@@ -171,9 +188,9 @@ Garis merah titik-titik "max Torque On Bottom" = batas torsi (mis. batas top dri
 
 ## 9. Tabel-tabel di bawah grafik
 
-### 9.1 Tabel Forecast ahead
+### 9.1 Tabel Prediction ahead
 
-![Tabel forecast](img/baca_07_tabel_forecast.png)
+![Tabel prediction](img/baca_07_tabel_forecast.png)
 
 | Kolom | Artinya |
 |---|---|
@@ -181,9 +198,9 @@ Garis merah titik-titik "max Torque On Bottom" = batas torsi (mis. batas top dri
 | **ML at start / ML at end** | Perkiraan ML (belum dikoreksi) di awal dan akhir jendela. |
 | **Change** | Perubahan selama jendela (+ naik, − turun). |
 | **P10–P90 at end** | Rentang kemungkinan di akhir jendela (sudah ikut digeser koreksi bias). |
-| **Bias-corrected at end** | **Nilai forecast yang dipakai** (= angka di ujung garis ungu). "(bias −20.4)" artinya pembacaan terakhir rata-rata 20.4 klbf di bawah ML, jadi forecast digeser turun sebesar itu. |
+| **Bias-corrected at end** | **Nilai prediction yang dipakai** (= angka di ujung garis ungu). "(bias −20.4)" artinya pembacaan terakhir rata-rata 20.4 klbf di bawah ML, jadi prediction digeser turun sebesar itu. |
 | **Expected accuracy** | Seberapa sering model ini tepat (dalam toleransi) untuk jarak yang sama pada **banyak sumur yang tidak pernah dilihatnya**. Mis. "99% < 10 klbf". |
-| **Check against actual** | Hanya muncul saat uji (*From depth* lebih dangkal): hasil forecast vs pembacaan aktual di jendela. "T&D 0% · ML + bias 100% (n=3)" artinya dari 3 pembacaan, rencana WellPlan tidak ada yang masuk toleransi, sedangkan forecast ML semuanya masuk. |
+| **Check against actual** | Hanya muncul saat uji (*From depth* lebih dangkal): hasil prediction vs pembacaan aktual di jendela. "T&D 0% · ML + bias 100% (n=3)" artinya dari 3 pembacaan, rencana WellPlan tidak ada yang masuk toleransi, sedangkan prediction ML semuanya masuk. |
 | **Main drivers** | Faktor terbesar yang membuat nilai berubah, mis. "T&D Model +6.7" = sebagian besar kenaikan mengikuti rencana WellPlan; "Inclination +3.1" = karena sudut sumur bertambah. |
 | **Cause and effect** | Kalimat ringkas per operasi: naik/turun berapa, apa penyebabnya, dan apakah batas operasi terlewati (termasuk "already exceeded at the start" bila sudah di atas batas sejak awal). |
 
@@ -228,7 +245,7 @@ Berguna untuk mencari bagian sumur yang paling sulit diperkirakan.
 |---|---|
 | **Export Excel** (format client "OUTPUT … Multiple T&D Road Map") | **Summary Outputs**: tabel *ACTUAL VS Machine Learning*, satu baris per kedalaman aktual; kolom "PU-MLPU" = aktual − ML (positif = aktual lebih berat dari ML); tabel metrik (R2, RMSE, MAE, MAPE); 2 gambar *Predicted vs Actual* (titik dekat garis merah putus-putus = tepat). **Tripping Load Analysis - Graph**: grafik hookload seperti panel Hookload, plus tabel angka (MODELLED, ACTUAL, TRIPPING DATA, ML PREDICTION). **Torque Analysis Off Btm / On Bottom**: sama untuk torsi (Kft.lbf). **PU/SO/ROT MW**: hasil WellPlan mentah per OHFF. |
 | **PDF** | Ringkasan cetak: kualitas data, versi model, metrik, batas operasi, 6 panel grafik (warna dan arti sama dengan dashboard). |
-| **⬇ Forecast (.xlsx)** | Sheet **Summary** (kalimat sebab-akibat + perkiraan akurasi + hasil cek), satu sheet per operasi (kedalaman, ML, P10, P90, nilai terkoreksi bias, T&D per OHFF, grafik), sheet **Explanation** (faktor penyebab, perubahan rencana, batas operasi). |
+| **⬇ Prediction (.xlsx)** | Sheet **Summary** (kalimat sebab-akibat + perkiraan akurasi + hasil cek), satu sheet per operasi (kedalaman, ML, P10, P90, nilai terkoreksi bias, T&D per OHFF, grafik), sheet **Explanation** (faktor penyebab, perubahan rencana, batas operasi). |
 
 ---
 
@@ -236,7 +253,7 @@ Berguna untuk mencari bagian sumur yang paling sulit diperkirakan.
 
 | Pertanyaan | Jawaban |
 |---|---|
-| Garis mana yang harus saya percaya? | Untuk kedalaman yang sudah dibor: lihat titik hijau (fakta). Untuk ke depan: **garis ungu tebal** (forecast) beserta pitanya. Garis oranye adalah perkiraan ML umum; garis biru adalah rencana awal. |
+| Garis mana yang harus saya percaya? | Untuk kedalaman yang sudah dibor: lihat titik hijau (fakta). Untuk ke depan: **garis ungu tebal** (prediction) beserta pitanya. Garis oranye adalah perkiraan ML umum; garis biru adalah rencana awal. |
 | Kenapa ada banyak garis biru? | Satu per OHFF (asumsi gesekan). Matikan **All OHFF curves** di atas grafik untuk hanya menampilkan OHFF 0.3. |
 | Kenapa pita ungu lebar? | Ketidakpastian besar. Biasanya pada torsi atau sumur yang jarang di data latih; baca peringatan kuning di atas grafik. |
 | Grafik terlalu ramai? | Matikan operasi yang tidak perlu (kotak centang Pick up / Slack off / …), atau zoom dengan menarik kotak. |

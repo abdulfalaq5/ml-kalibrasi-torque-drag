@@ -6,7 +6,7 @@ Baris "Calibrate" (koreksi DD) di sheet Drag/Torque opsional, posisinya sama den
 Sheet 'Instructions' dan 'Example ...' diabaikan saat impor.
 
 kind = "training"   : rencana WellPlan + data aktual (data acuan ML)
-kind = "monitoring" : rencana WellPlan (+ aktual sejauh sudah dibor), hanya untuk forecast
+kind = "monitoring" : rencana WellPlan (+ aktual sejauh sudah dibor), hanya untuk prediction
 """
 
 import io
@@ -85,7 +85,7 @@ def _instructions(wb, F, with_actual: bool) -> None:
     title = (
         "Training data template (WellPlan T&D model + actual field data)"
         if with_actual
-        else "Monitoring well template (WellPlan T&D model, for forecasting)"
+        else "Monitoring well template (WellPlan T&D model, for predicting)"
     )
     ws.write(0, 1, title, F["title"])
     steps = [
@@ -110,10 +110,10 @@ def _instructions(wb, F, with_actual: bool) -> None:
     else:
         steps.append(
             "Actual readings are not required. If the well is already being drilled, add a sheet "
-            "'T&D Actual Reading' (same layout as the training template) to compare and forecast ahead."
+            "'T&D Actual Reading' (same layout as the training template) to compare and predict ahead."
         )
     steps += [
-        "Sheet 'Survey' is optional (MD ft, inclination, azimuth, DLS deg/100ft). It improves the forecast.",
+        "Sheet 'Survey' is optional (MD ft, inclination, azimuth, DLS deg/100ft). It improves the prediction.",
         "Numbers only (dot as decimal separator); do not rename headers or insert columns. "
         "Empty rows are ignored.",
         "See the 'Example ...' sheets for a filled-in example. 'Instructions' and 'Example ...' sheets "
@@ -123,7 +123,7 @@ def _instructions(wb, F, with_actual: bool) -> None:
             "Training Data -> Upload. Select the well section and well type first."
             if with_actual
             else "Monitoring -> Upload. Select the well section and well type first. The system imports "
-            "the file, forecasts with the active model and shows the result (dashboard, Excel, PDF)."
+            "the file, predicts with the active model and shows the result (dashboard, Excel, PDF)."
         ),
     ]
     for i, t in enumerate(steps, start=2):

@@ -9,7 +9,7 @@ Part A is for users (engineers), part B for the server operator.
 ## What This System Does
 
 *A brief overview of the system, the data used, and the workflow from historical data to Torque &
-Drag forecasting.*
+Drag predicting.*
 
 Torque & Drag (T&D) models and actual field measurements are prepared and recorded by the
 Directional Driller (DD) during drilling operations. The dataset includes modeled and actual
@@ -18,7 +18,7 @@ measured depth.
 
 The Machine Learning (ML) system learns the relationship and patterns between historical T&D model
 outputs and actual field measurements from previously drilled wells. Based on these learned
-patterns, the system generates a forward-looking forecast of Torque & Drag behavior at upcoming
+patterns, the system generates a forward-looking prediction of Torque & Drag behavior at upcoming
 drilling depths.
 
 ## Workflow
@@ -27,12 +27,12 @@ drilling depths.
 1. Training Data: upload historical wells (select section + type)  ->  2. Data Quality: review status C
 3. Models: Freeze dataset + Train model, read the report, blind test
 4. Monitoring: upload the well being drilled (select section + type)
-5. Dashboard: charts, Forecast N ft ahead with cause and effect, operating limits
-6. Output: Excel / PDF / Forecast (.xlsx)  ->  7. Evaluations: forecast vs actual after drilling
+5. Dashboard: charts, Prediction N ft ahead with cause and effect, operating limits
+6. Output: Excel / PDF / Prediction (.xlsx)  ->  7. Evaluations: prediction vs actual after drilling
 ```
 
 **Training Data and Monitoring are never mixed.** Only Training Data teaches the ML model.
-Monitoring wells are forecast and evaluated only, even when they contain actual readings.
+Monitoring wells are predicted and evaluated only, even when they contain actual readings.
 
 ---
 
@@ -116,8 +116,8 @@ The first dataset also **locks ~20% of the wells as the blind test** (proportion
 ### 6. Monitoring
 Select **Well section** and **Well type**, optionally download the *Monitoring well template*,
 upload one file (T&D model, plus actual readings so far if available). The system imports, checks
-and forecasts with the active model, and shows a summary per operation (T&D model OHFF 0.3, ML
-forecast, P10–P90, ML − T&D model) with links to the dashboard, Excel and PDF. Upload the file again
+and predicts with the active model, and shows a summary per operation (T&D model OHFF 0.3, ML
+prediction, P10–P90, ML − T&D model) with links to the dashboard, Excel and PDF. Upload the file again
 as drilling progresses. After the well is finished, **Promote to training** copies it into Training
 Data (it then goes through the data quality gate).
 
@@ -129,32 +129,32 @@ Data (it then goes through the data quality gate).
   `Torque On Bottom - OHFF : 0.3`, `Torque Off Bottom - OHFF : 0.5`; ML `PU - ML`, actual
   `PU Actual`. PU and SO are told apart by name and position (as in the client's Excel); dashed
   lines are reserved for the uncertainty band.
-- One fixed colour per OHFF in every chart (light → dark blue for 0.1 → 0.5); ML forecast orange;
+- One fixed colour per OHFF in every chart (light → dark blue for 0.1 → 0.5); ML prediction orange;
   actual readings green points; **uncertainty band (P10–P90) dashed**; **operating limits dotted**
   red.
 - Defaults: **All OHFF curves** on, **Uncertainty band (P10–P90)** off.
 - Difference = A − B: right (+) = A is higher. Intervals with |Δ| above the threshold are shaded.
-- Training wells show an **unseen-well validation** forecast (a model that never saw that well).
+- Training wells show an **unseen-well validation** prediction (a model that never saw that well).
 
-### 8. Forecast N ft ahead
-Dashboard → **Forecast ahead**: enter the distance (e.g. 300 ft); the start is the last actual depth
+### 8. Prediction N ft ahead
+Dashboard → **Prediction ahead**: enter the distance (e.g. 300 ft); the start is the last actual depth
 (or the top of the T&D model). **Local bias correction** (median actual − ML of the last 10 actual
 points within 1,000 ft; display only) is **on by default** when the well has actual readings.
 The column **Expected accuracy** shows the backtest of the active model for that distance on wells
-it never saw: share of points within the client tolerance (< 10 klbf hookload, < 2 kft-lbf torque). Output per operation: ML forecast, P10–P90 and the
+it never saw: share of points within the client tolerance (< 10 klbf hookload, < 2 kft-lbf torque). Output per operation: ML prediction, P10–P90 and the
 T&D model per OHFF every 30 ft, plus **cause and effect**:
 - main drivers (local SHAP contributions to the change over the window),
 - plan changes (inclination, maximum dogleg, interval type),
-- operating limits reached by the forecast or the band, with the depth,
-- an automatic sentence, e.g. *"Pick up: from 8,450 to 8,750 ft the ML forecast is expected to rise
+- operating limits reached by the prediction or the band, with the depth,
+- an automatic sentence, e.g. *"Pick up: from 8,450 to 8,750 ft the ML prediction is expected to rise
   from 210.3 to 225.1 klbf (+14.8). Main drivers: T&D Model (+10.2), Inclination (+3.1)…"*.
 
-The window is shaded in the charts. **⬇ Forecast (.xlsx)** exports it (Summary, one sheet per
-operation with a chart, Explanation). The forecast stops where the WellPlan results end.
+The window is shaded in the charts. **⬇ Prediction (.xlsx)** exports it (Summary, one sheet per
+operation with a chart, Explanation). The prediction stops where the WellPlan results end.
 
 ### 8b. Accuracy against the client tolerance
 Every model reports the share of actual points with |ML − actual| < 10 klbf (hookload) or < 2 kft-lbf
-(torque): Models → report (main table, *Forecast backtest* tab for 300 / 600 / 1,000 ft), the model
+(torque): Models → report (main table, *Prediction backtest* tab for 300 / 600 / 1,000 ft), the model
 report Excel/PDF, and the dashboard metrics of each well.
 
 ### 9. Operating limits
@@ -176,10 +176,10 @@ reach the limit, and the minimum margin.
     wellbore data, drilling parameters, BHA and wellbore description, per-OHFF table), model as
     modelled. Surface torque while tripping is not in the source files and stays empty.
 - **PDF**: data quality, model & dataset versions, metrics, operating limits, six chart panels.
-- **Forecast (.xlsx)**, **model report (.xlsx / PDF)**, **data quality report (.xlsx)**.
+- **Prediction (.xlsx)**, **model report (.xlsx / PDF)**, **data quality report (.xlsx)**.
 
 ### 11. Evaluations
-When the actual data of a forecast monitoring well is uploaded later, the stored forecast is
+When the actual data of a prediction monitoring well is uploaded later, the stored prediction is
 compared with the actual data and with the T&D model automatically.
 
 ---
@@ -244,5 +244,5 @@ Then freeze a new dataset and train (the DD Calibrate feature group is tested au
 1. `make password` → new password, hand it over through a secure channel.
 2. Make sure `.env` has no `ADMIN_PASSWORD`.
 3. Test the full flow on the server: Training upload → Data Quality → Train → Blind test →
-   Monitoring upload → Forecast → Excel/PDF.
+   Monitoring upload → Prediction → Excel/PDF.
 4. Delete copies of client data on laptops within 14 days (Article 11(4)).

@@ -122,6 +122,9 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     assert op["learning_curve"] and op["explain"]["features"] and op["strategy"]
     assert m["feature_selection"][0]["group"] == "base"
     assert 0 <= op["overall"]["within"]["ml"] <= 1
+    assert (
+        abs(op["overall"]["band_coverage"] - 0.8) < 0.05
+    )  # pita P10–P90 dari residu OOF yang sama
     assert set(op["forecast_backtest"]["horizons"]) == {"300", "600", "1000"}
     assert "ML + bias" in op["forecast_backtest"]["horizons"]["300"]
     trained = set(m["dataset"]["train_combos"])
@@ -141,6 +144,7 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     b = auth_client.post(f"/api/models/{row.id}/blind-test")
     assert b.status_code == 200, b.text
     assert set(b.json()["wells"]) == set(blind["wells"])
+    assert all(0 <= v["band_coverage"] <= 1 for v in b.json()["operations"].values())
     assert auth_client.post(f"/api/models/{row.id}/blind-test").status_code == 400
 
     # --- laporan model

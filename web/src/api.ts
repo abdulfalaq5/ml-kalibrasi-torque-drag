@@ -206,7 +206,7 @@ export type OpMetrics = {
   explain?: { method: string; features: { feature: string; importance: number; direction: number }[]; note: string; physics_ok: boolean };
   algo_best?: Record<string, Metric & { candidate: string }>;
   candidates: Record<string, Metric>;
-  overall: { wellplan: Metric; ml: Metric; n_wells: number; ml_better_frac?: number; within?: Within };
+  overall: { wellplan: Metric; ml: Metric; n_wells: number; ml_better_frac?: number; within?: Within; band_coverage?: number };
   forecast_backtest?: Backtest;
   by_section: GroupRow[];
   by_type: GroupRow[];
@@ -225,7 +225,7 @@ export type ModelItem = {
   blind_result?: {
     wells: string[];
     run_at: string;
-    operations: Record<string, { wellplan: Metric; ml: Metric; ml_better_frac: number; within?: Within }>;
+    operations: Record<string, { wellplan: Metric; ml: Metric; ml_better_frac: number; within?: Within; band_coverage?: number }>;
   } | null;
   message: string | null;
   created_at: string;

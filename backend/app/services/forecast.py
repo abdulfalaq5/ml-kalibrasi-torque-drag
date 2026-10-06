@@ -1,10 +1,10 @@
-"""Forecast N ft ke depan dari kedalaman aktual terakhir, dengan penjelasan sebab-akibat.
+"""Prediction N ft ke depan dari kedalaman aktual terakhir, dengan penjelasan sebab-akibat.
 
 Per operasi: prediksi ML, band P10-P90, kurva WellPlan per OHFF (mentah / terkalibrasi DD),
 koreksi bias lokal opsional (median aktual - ML di titik aktual terakhir), lalu penjelasan:
   - kontribusi lokal SHAP: perubahan kontribusi tiap fitur antara awal dan akhir jendela
     (fallback: tukar nilai fitur satu per satu untuk SVR/MLP),
-  - perubahan rencana: inklinasi, DLS, tipe interval di jendela forecast,
+  - perubahan rencana: inklinasi, DLS, tipe interval di jendela prediction,
   - batas operasi yang terlewati (ML dan band),
   - satu kalimat ringkas otomatis (bahasa Inggris).
 Teks keluaran dalam bahasa Inggris.
@@ -115,7 +115,7 @@ def local_contributions(cm, start: pd.DataFrame, end: pd.DataFrame) -> tuple[str
 
 
 def _plan_changes(f: pd.DataFrame, du: str) -> dict:
-    """Perubahan geometri rencana di jendela forecast (dari survey)."""
+    """Perubahan geometri rencana di jendela prediction (dari survey)."""
     out: dict = {}
     if "inc_deg" in f and f.inc_deg.notna().any():
         out["inclination_deg"] = [
@@ -146,7 +146,7 @@ def forecast_well(
     calibration: str | None = None,
 ) -> dict:
     if distance_ft <= 0 or distance_ft > 20000:
-        raise ValueError("Forecast distance must be between 0 and 20,000 ft")
+        raise ValueError("Prediction distance must be between 0 and 20,000 ft")
     step_ft = min(max(step_ft, 5.0), max(distance_ft / 2, 5.0))
     model = model or active_model(db)
     if model is None or not model.path:
@@ -160,7 +160,7 @@ def forecast_well(
     survey = dsm.load_survey(db, [well.id])
     actual = dsm.load_actual(db, [well.id])
     if plan.empty:
-        raise ValueError("This well has no WellPlan T&D model results to forecast from")
+        raise ValueError("This well has no WellPlan T&D model results to predict from")
     plan_lo, plan_hi = float(plan.depth_m.min()), float(plan.depth_m.max())
 
     warnings: list[str] = []
@@ -174,13 +174,13 @@ def forecast_well(
     else:
         start = plan_lo
         warnings.append(
-            "No actual data yet: the forecast starts at the top of the WellPlan T&D model"
+            "No actual data yet: the prediction starts at the top of the WellPlan T&D model"
         )
     end = start + distance_ft * FT
     if end > plan_hi + 1e-6:
         warnings.append(
             f"The WellPlan T&D model ends at {units.from_si(plan_hi, du):,.0f} {du}; "
-            "the forecast stops there (the ML needs the T&D model as input)"
+            "the prediction stops there (the ML needs the T&D model as input)"
         )
         end = plan_hi
     if end <= start:
@@ -188,8 +188,8 @@ def forecast_well(
     grid = np.unique(np.append(np.arange(start, end, step_ft * FT), end))
     if last_actual is not None and start < last_actual - 1e-6:
         warnings.append(
-            "The forecast starts before the last actual reading: readings after the start depth are not "
-            "used by the forecast (nor by the bias correction); they are only used to check it (see "
+            "The prediction starts before the last actual reading: readings after the start depth are not "
+            "used by the prediction (nor by the bias correction); they are only used to check it (see "
             "'Check against actual')."
         )
 
@@ -324,7 +324,7 @@ def forecast_well(
         }
 
     if not ops_out:
-        raise ValueError("No operation could be forecast in this depth window")
+        raise ValueError("No operation could be predicted in this depth window")
     return {
         "well": {
             "id": well.id,
@@ -353,8 +353,8 @@ def forecast_well(
 def _actual_check(
     w, op, a_all, grid, plan, survey, bundle, bias, td_offset: float = 0.0
 ) -> dict | None:
-    """Bila ada pembacaan aktual DI DALAM jendela forecast (forecast dimulai sebelum aktual terakhir),
-    bandingkan forecast dengan aktual itu: % titik dalam toleransi client dan rata-rata selisih."""
+    """Bila ada pembacaan aktual DI DALAM jendela prediction (prediction dimulai sebelum aktual terakhir),
+    bandingkan prediction dengan aktual itu: % titik dalam toleransi client dan rata-rata selisih."""
     if a_all is None or not len(a_all):
         return None
     aw = a_all[(a_all.depth_m > grid[0] + 1e-6) & (a_all.depth_m <= grid[-1] + 1e-6)]
@@ -385,7 +385,7 @@ def _actual_check(
 
 
 def _backtest_accuracy(model: MLModel, op: str, distance_ft: float, with_bias: bool, u: str):
-    """Akurasi backtest model ini (sumur tidak dilihat) untuk horizon terdekat >= jarak forecast."""
+    """Akurasi backtest model ini (sumur tidak dilihat) untuk horizon terdekat >= jarak prediction."""
     bt = ((model.metrics or {}).get("operations", {}).get(op) or {}).get("forecast_backtest")
     if not bt:
         return None
@@ -415,7 +415,7 @@ def _sentence(op, f, y, u, du, total, drivers, changes, crossings) -> str:
     dv = round(v1 - v0, 1)
     trend = "rise" if dv > 0 else "fall" if dv < 0 else "stay about flat"
     s = (
-        f"{OP_LABELS[op]}: from {d0:,.0f} to {d1:,.0f} {du} the ML forecast is expected to {trend} "
+        f"{OP_LABELS[op]}: from {d0:,.0f} to {d1:,.0f} {du} the ML prediction is expected to {trend} "
         f"from {v0:,.1f} to {v1:,.1f} {ul} ({dv:+,.1f})."
     )
     main = [d for d in drivers if abs(d["delta"]) >= 0.1 * max(abs(units.from_si(total, u)), 1e-9)][
@@ -438,7 +438,7 @@ def _sentence(op, f, y, u, du, total, drivers, changes, crossings) -> str:
     if hits:
         c = hits[0]
         where = c["cross_ml"] if c["cross_ml"] is not None else c["cross_band"]
-        what = "the ML forecast" if c["cross_ml"] is not None else "the P10–P90 band"
+        what = "the ML prediction" if c["cross_ml"] is not None else "the P10–P90 band"
         lim = f"The {c['kind']} operating limit ({c['value']:,.1f} {ul})"
         if abs(where - d0) < 1.0:
             s += f" {lim} is already exceeded by {what} at the start ({where:,.0f} {du})."
@@ -450,7 +450,7 @@ def _sentence(op, f, y, u, du, total, drivers, changes, crossings) -> str:
 
 
 def export_forecast(fc: dict) -> bytes:
-    """Excel hasil forecast: tabel per kedalaman + lembar penjelasan."""
+    """Excel hasil prediction: tabel per kedalaman + lembar penjelasan."""
     import io
 
     import xlsxwriter
@@ -473,7 +473,7 @@ def export_forecast(fc: dict) -> bytes:
         ("Data group", w["purpose"]),
         ("Model", f"#{fc['model_id']}"),
         (
-            "Forecast window",
+            "Prediction window",
             f"{fc['start_depth']:,.0f} – {fc['end_depth']:,.0f} {du} ({fc['distance_ft']:g} ft ahead)",
         ),
         (
@@ -488,7 +488,7 @@ def export_forecast(fc: dict) -> bytes:
             else "WellPlan as modelled",
         ),
     ]
-    ws.write(0, 0, "Prediction Output Torque & Drag ML - Forecast", f.title)
+    ws.write(0, 0, "Prediction Output Torque & Drag ML - Prediction", f.title)
     for i, (k, v) in enumerate(rows, start=2):
         ws.write(i, 0, k, f.bold)
         ws.write(i, 1, "" if v is None else v)
@@ -567,7 +567,7 @@ def export_forecast(fc: dict) -> bytes:
                     "marker": {"type": "none"},
                 }
             )
-        ch.set_title({"name": f"{o['label']} forecast", "name_font": {"size": 11}})
+        ch.set_title({"name": f"{o['label']} prediction", "name_font": {"size": 11}})
         ch.set_x_axis(
             {
                 "name": f"{o['label']} ({o['unit']})",

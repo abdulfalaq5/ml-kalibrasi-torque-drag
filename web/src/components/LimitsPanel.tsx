@@ -47,7 +47,7 @@ export default function LimitsPanel({ profile }: { profile: Profile }) {
       <h3>Operating limits</h3>
       <p className="muted small">
         Limits from the client (e.g. hookload capacity, top drive torque limit, minimum slack off), for this well only or for
-        all wells in section {profile.well.section_in}". The system finds the first depth where the ML forecast, the
+        all wells in section {profile.well.section_in}". The system finds the first depth where the ML prediction, the
         P10–P90 band bound, and the T&amp;D Model reach the limit. Limits are dotted red lines in the charts; the area below the ML
         crossing depth is shaded red.
       </p>

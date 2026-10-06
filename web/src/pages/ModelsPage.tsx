@@ -138,7 +138,9 @@ function ModelDetail({ id }: { id: number }) {
         Dataset v{m.dataset?.version} (hash {m.dataset?.hash?.slice(0, 12)}) · {m.dataset?.wells_train} training wells,{" "}
         {m.dataset?.rows_train} points · {m.dataset?.wells_blind} blind test wells set aside. Cross-validation grouped by well
         (GroupKFold 5): a well being scored is never in that fold's training data. RMSE in SI. Mean RMSE ML/T&amp;D Model ratio:{" "}
-        <b>{fmt(m.skill, 3)}</b> (&lt; 1 = ML is better).
+        <b>{fmt(m.skill, 3)}</b> (&lt; 1 = ML is better). <b>Inside P10–P90 band</b>: share of actual readings inside
+        the ML uncertainty band; the target is 80% (exactly 80% on cross-validation by construction, the blind-test
+        value shows how well it holds on unseen wells).
       </p>
       {q.data.comparison?.decision && <div className={`alert ${q.data.status === "held" ? "warn" : ""}`}>{q.data.comparison.decision}</div>}
       <div className="table-wrap">
@@ -158,6 +160,12 @@ function ModelDetail({ id }: { id: number }) {
               </th>
               <th className="num">Blind: RMSE WP → ML</th>
               <th className="num">Blind within tolerance</th>
+              <th
+                className="num"
+                title="Share of actual readings inside the ML uncertainty band (P10–P90). Design target 80%: cross-validation is 80% by construction; the blind-test wells show how well the band holds on wells the model never saw."
+              >
+                Inside P10–P90 band (CV / blind)
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -185,6 +193,9 @@ function ModelDetail({ id }: { id: number }) {
                   </td>
                   <td className="num">{b ? `${fmt(b.wellplan.rmse)} → ${fmt(b.ml.rmse)}` : "–"}</td>
                   <td className="num nowrap">{b?.within ? `${pct(b.within.wellplan)} → ${pct(b.within.ml)}` : "–"}</td>
+                  <td className="num nowrap">
+                    {pct(d.overall.band_coverage)} / <b>{pct(b?.band_coverage)}</b>
+                  </td>
                 </tr>
               );
             })}
@@ -267,7 +278,7 @@ function ModelDetail({ id }: { id: number }) {
               ["strategy", "Single vs combination"],
               ["learning", "Learning curve"],
               ["explain", "SHAP"],
-              ["backtest", "Forecast backtest"],
+              ["backtest", "Prediction backtest"],
             ] as const
           ).map(([k, l]) => (
             <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>
@@ -490,9 +501,9 @@ function ModelDetail({ id }: { id: number }) {
           {view === "backtest" && (
             <>
               <p className="small muted">
-                Forecast N ft ahead from every actual depth on wells the model never saw. Share of actual points in the
+                Prediction N ft ahead from every actual depth on wells the model never saw. Share of actual points in the
                 window within the client tolerance (&lt; 10 klbf hookload, &lt; 2 kft-lbf torque). "+ bias" = local bias
-                correction from the last actual readings (the Forecast default when actual data exists).
+                correction from the last actual readings (the Prediction default when actual data exists).
               </p>
               {om.forecast_backtest ? (
                 <table>

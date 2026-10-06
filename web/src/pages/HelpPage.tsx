@@ -24,7 +24,7 @@ export default function HelpPage() {
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search: template, forecast, status C…"
+          placeholder="Search: template, prediction, status C…"
           aria-label="Search the guide"
         />
         {GROUPS.map((g) => {

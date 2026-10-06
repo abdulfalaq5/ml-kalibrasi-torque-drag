@@ -53,3 +53,14 @@ def bias_correction(y_hist, p_hist, min_points: int = 3) -> float | None:
     y, p = np.asarray(y_hist, float), np.asarray(p_hist, float)
     ok = np.isfinite(y) & np.isfinite(p)
     return float(np.median(y[ok] - p[ok])) if ok.sum() >= min_points else None
+
+
+def band_coverage(y, p, band: list[float] | tuple[float, float] | None) -> float:
+    """Bagian titik aktual di dalam pita P10–P90 (p + band[0] .. p + band[1]); target desain 80%."""
+    if not band:
+        return float("nan")
+    y, p = np.asarray(y, float), np.asarray(p, float)
+    ok = np.isfinite(y) & np.isfinite(p)
+    if not ok.any():
+        return float("nan")
+    return float(np.mean((y[ok] >= p[ok] + band[0]) & (y[ok] <= p[ok] + band[1])))

@@ -102,6 +102,10 @@ def _n(v, d=2):
         return str(v)
 
 
+def _pct1(v) -> str:
+    return "–" if v is None else f"{v * 100:.0f}%"
+
+
 def _pct_pair(w) -> str:
     if not w or w.get("ml") is None:
         return "–"
@@ -265,7 +269,7 @@ def well_pdf(
         ],
         ["Model", "-" if not m else f"#{m['id']} · dataset v{m.get('dataset_version')}"],
         [
-            "Forecast",
+            "Prediction",
             "-"
             if prof["prediction"] is None
             else (
@@ -411,6 +415,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
             "ML closer",
             "R² ML",
             "Within tol. WP → ML",
+            "In P10–P90",
         ]
     ]
     for op, d in ops.items():
@@ -427,20 +432,32 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
                 _n((d["overall"].get("ml_better_frac") or 0) * 100, 0) + "%",
                 _n(ml["r2"]),
                 _pct_pair(d["overall"].get("within")),
+                _pct1(d["overall"].get("band_coverage")),
             ]
         )
     els.append(_table(rows, st))
     els.append(
         Paragraph(
             "RMSE in SI (kN for hookload, kN·m for torque). 'ML closer' = share of points "
-            "where the ML forecast is closer to actual than WellPlan. 'Within tol.' = share of points "
-            "with |error| < 10 klbf (hookload) or < 2 kft-lbf (torque).",
+            "where the ML prediction is closer to actual than WellPlan. 'Within tol.' = share of points "
+            "with |error| < 10 klbf (hookload) or < 2 kft-lbf (torque). "
+            "'In P10–P90' = share of points inside the ML uncertainty band (target 80%).",
             st["small"],
         )
     )
     els.append(Paragraph("Blind test (run once, wells locked from the start)", st["h2"]))
     if model.blind_result:
-        rows = [["Operation", "Points", "RMSE WP", "RMSE ML", "ML closer", "Within tol. WP → ML"]]
+        rows = [
+            [
+                "Operation",
+                "Points",
+                "RMSE WP",
+                "RMSE ML",
+                "ML closer",
+                "Within tol. WP → ML",
+                "In P10–P90",
+            ]
+        ]
         for op, d in model.blind_result["operations"].items():
             rows.append(
                 [
@@ -450,6 +467,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
                     _n(d["ml"]["rmse"]),
                     _n((d.get("ml_better_frac") or 0) * 100, 0) + "%",
                     _pct_pair(d.get("within")),
+                    _pct1(d.get("band_coverage")),
                 ]
             )
         els.append(_table(rows, st))
@@ -473,12 +491,12 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
                 ]
             )
     if len(bt_rows) > 1:
-        els.append(Paragraph("Forecast backtest (share of points within tolerance)", st["h2"]))
+        els.append(Paragraph("Prediction backtest (share of points within tolerance)", st["h2"]))
         els.append(_table(bt_rows, st))
         els.append(
             Paragraph(
-                "Forecast N ft ahead from every actual depth on unseen wells. '+ bias' = local bias "
-                "correction from the last actual readings (the Forecast default when actual data exists).",
+                "Prediction N ft ahead from every actual depth on unseen wells. '+ bias' = local bias "
+                "correction from the last actual readings (the Prediction default when actual data exists).",
                 st["small"],
             )
         )

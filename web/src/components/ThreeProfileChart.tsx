@@ -231,7 +231,7 @@ export default function ThreeProfileChart({
           const main = (fo.ml_corrected ?? fo.ml).map((v) => (v == null ? null : v));
           const lo = fo.p10.map((v) => (v == null ? null : v + shift));
           const hi = fo.p90.map((v) => (v == null ? null : v + shift));
-          const name = `${p} forecast (next ${forecast!.distance_ft} ft)`;
+          const name = `${p} prediction (next ${forecast!.distance_ft} ft)`;
           out.push({
             type: "scatter",
             mode: "lines",
@@ -251,7 +251,7 @@ export default function ThreeProfileChart({
             fillcolor: COLOR.forecastBand,
             line: { width: 0, color: COLOR.forecast },
             legendgroup: `fc-${op}`,
-            name: `${p} forecast range (P10–P90)`,
+            name: `${p} prediction range (P10–P90)`,
             hoverinfo: "skip",
           });
           const last = main.length - 1;
@@ -437,7 +437,7 @@ export default function ThreeProfileChart({
             yanchor: "bottom",
             xanchor: "left",
             showarrow: false,
-            text: `<b>Forecast start</b> · ${fmtD(forecast.start_depth)} ${du}${forecast.last_actual_depth != null && Math.abs(forecast.last_actual_depth - forecast.start_depth) < 1 ? " (last actual reading)" : ""}`,
+            text: `<b>Prediction start</b> · ${fmtD(forecast.start_depth)} ${du}${forecast.last_actual_depth != null && Math.abs(forecast.last_actual_depth - forecast.start_depth) < 1 ? " (last actual reading)" : ""}`,
             font: { size: 11, color: COLOR.forecast },
             bgcolor: "rgba(255,255,255,0.85)",
           },
@@ -449,7 +449,7 @@ export default function ThreeProfileChart({
             yanchor: "top",
             xanchor: "left",
             showarrow: false,
-            text: `<b>Forecast end</b> · ${fmtD(forecast.end_depth)} ${du} (+${forecast.distance_ft} ft)`,
+            text: `<b>Prediction end</b> · ${fmtD(forecast.end_depth)} ${du} (+${forecast.distance_ft} ft)`,
             font: { size: 11, color: COLOR.forecast },
             bgcolor: "rgba(255,255,255,0.85)",
           },
@@ -612,7 +612,7 @@ export default function ThreeProfileChart({
               setZoomRev((x) => x + 1);
             }}
           >
-            Zoom to forecast
+            Zoom to prediction
           </button>
         )}
         <button className="btn small" onClick={resetZoom} disabled={!zoomed}>

@@ -31,8 +31,8 @@ export const TOPICS: Topic[] = [
     group: "Getting started",
     title: "What This System Does",
     summary:
-      "A brief overview of the system, the data used, and the workflow from historical data to Torque & Drag forecasting.",
-    keywords: "overview introduction wellplan friction factor ml calibration forecast directional driller",
+      "A brief overview of the system, the data used, and the workflow from historical data to Torque & Drag predicting.",
+    keywords: "overview introduction wellplan friction factor ml calibration prediction directional driller",
     body: (
       <>
         <p>
@@ -43,18 +43,18 @@ export const TOPICS: Topic[] = [
         <p>
           The Machine Learning (ML) system learns the relationship and patterns between historical T&amp;D model outputs and
           actual field measurements from previously drilled wells. Based on these learned patterns, the system generates a
-          forward-looking forecast of Torque &amp; Drag behavior at upcoming drilling depths.
+          forward-looking prediction of Torque &amp; Drag behavior at upcoming drilling depths.
         </p>
         <Flow
-          title="Workflow: historical data → ML → T&D forecast"
+          title="Workflow: historical data → ML → T&D prediction"
           nodes={[
             { title: "Training Data", desc: "historical wells: T&D model + actual", tone: "user", to: "/training" },
             { title: "Data Quality", desc: "A / B / C / X", tone: "system", to: "/quality" },
             { title: "Freeze dataset & train", desc: "validated on unseen wells", tone: "user", to: "/models" },
             { title: "Monitoring", desc: "well being drilled: T&D model (+ actual so far)", tone: "user", to: "/monitoring" },
-            { title: "T&D forecast", desc: "N ft ahead, P10–P90, cause and effect", tone: "out", to: "/dashboard" },
+            { title: "T&D prediction", desc: "N ft ahead, P10–P90, cause and effect", tone: "out", to: "/dashboard" },
             { title: "Excel / PDF", tone: "out" },
-            { title: "Evaluation", desc: "forecast vs actual", tone: "out", to: "/evaluations" },
+            { title: "Evaluation", desc: "prediction vs actual", tone: "out", to: "/evaluations" },
           ]}
         />
         <h3>Menus</h3>
@@ -62,11 +62,11 @@ export const TOPICS: Topic[] = [
           head={["Menu", "Purpose"]}
           rows={[
             [<Ui>Training Data</Ui>, "Historical wells (the ML reference): bulk import from folder, upload files/templates, well list"],
-            [<Ui>Monitoring</Ui>, "Wells to be drilled or being drilled: upload, forecast. Never used for training"],
+            [<Ui>Monitoring</Ui>, "Wells to be drilled or being drilled: upload, predict. Never used for training"],
             [<Ui>Data Quality</Ui>, "Status A/B/C/X per well section, reasons, the engineer's review decision, quality report"],
             [<Ui>Models</Ui>, "Freeze datasets, train and compare models, accuracy report, blind test"],
-            [<Ui>Dashboard</Ui>, "Charts (Hookload, Torque, Difference), forecast N ft ahead, operating limits, Excel and PDF"],
-            [<Ui>Evaluations</Ui>, "Forecast compared with actual data after drilling"],
+            [<Ui>Dashboard</Ui>, "Charts (Hookload, Torque, Difference), prediction N ft ahead, operating limits, Excel and PDF"],
+            [<Ui>Evaluations</Ui>, "Prediction compared with actual data after drilling"],
             [<Ui>How-to Guide</Ui>, "This page"],
           ]}
         />
@@ -74,11 +74,11 @@ export const TOPICS: Topic[] = [
         <Table
           head={["Term", "Meaning"]}
           rows={[
-            ["Well section", 'One file = one section of a well (e.g. 8.5"). Quality and forecasts are per well section.'],
+            ["Well section", 'One file = one section of a well (e.g. 8.5"). Quality and predictions are per well section.'],
             ["T&D model (WellPlan)", "The modelled hookload/torque. One curve per open hole friction factor (OHFF). Baseline = OHFF 0.3."],
             ["DD Calibrate", "Offsets entered by the DD at the top of the roadmap Drag/Torque sheets. A correction, not actual data."],
-            ["Training Data / Monitoring", "Historical wells that teach the ML / wells being drilled that are only forecast. Never mixed."],
-            ["Unseen-well validation", "Out-of-fold forecast for a training well from a model that never saw that well (a fair comparison)."],
+            ["Training Data / Monitoring", "Historical wells that teach the ML / wells being drilled that are only predicted. Never mixed."],
+            ["Unseen-well validation", "Out-of-fold prediction for a training well from a model that never saw that well (a fair comparison)."],
             ["Blind test", "About 20% of the wells are locked from the start and tested only once at the end."],
             ["Uncertainty band (P10–P90)", "The range in which 80% of the actual readings are expected."],
             ["Difference (Δ)", "A − B. Right (+) = A is higher, left (−) = A is lower."],
@@ -91,7 +91,7 @@ export const TOPICS: Topic[] = [
     id: "quick-start",
     group: "Getting started",
     title: "Quick Start",
-    summary: "One-page checklist: sign in → upload → forecast → output.",
+    summary: "One-page checklist: sign in → upload → prediction → output.",
     keywords: "quick start checklist first time tutorial practice files",
     body: (
       <>
@@ -112,12 +112,12 @@ export const TOPICS: Topic[] = [
           <Step n={5} title="Monitoring → upload the well being drilled">
             Select the Well section and Well type, drop the file (T&amp;D model + actual readings so far).
           </Step>
-          <Step n={6} title="Dashboard → Forecast ahead">
-            Enter the distance (e.g. 300 ft), click <Ui>Forecast</Ui>. Read the cause-and-effect sentences and the shaded
-            forecast window.
+          <Step n={6} title="Dashboard → Prediction ahead">
+            Enter the distance (e.g. 300 ft), click <Ui>Run prediction</Ui>. Read the cause-and-effect sentences and the shaded
+            prediction window.
           </Step>
           <Step n={7} title="Output">
-            <Ui>Export Excel</Ui>, <Ui>PDF</Ui>, <Ui>⬇ Forecast (.xlsx)</Ui>.
+            <Ui>Export Excel</Ui>, <Ui>PDF</Ui>, <Ui>⬇ Prediction (.xlsx)</Ui>.
           </Step>
         </Steps>
         <Tip>
@@ -133,8 +133,8 @@ export const TOPICS: Topic[] = [
     group: "Tutorial",
     title: "Tutorial: test the model on a well",
     summary:
-      "For first-time users: upload a well in Monitoring, read the result, forecast 300 ft ahead and check the ML against the actual readings.",
-    keywords: "tutorial beginner test model monitoring upload section type forecast check against actual accuracy tolerance step by step",
+      "For first-time users: upload a well in Monitoring, read the result, prediction 300 ft ahead and check the ML against the actual readings.",
+    keywords: "tutorial beginner test model monitoring upload section type prediction check against actual accuracy tolerance step by step",
     body: (
       <>
         <Tip>
@@ -148,14 +148,14 @@ export const TOPICS: Topic[] = [
           rows={[
             ["T&D model (WellPlan)", "What the planning software calculates for hookload and torque, one curve per friction factor (OHFF)."],
             ["Actual", "What was really read on the rig while drilling (pick up, slack off, rotating weight, torque)."],
-            ["ML forecast", "The system's estimate. It learned from many drilled wells how far the T&D model usually is from the actual readings."],
+            ["ML prediction", "The system's estimate. It learned from many drilled wells how far the T&D model usually is from the actual readings."],
             ["Training Data", "Old wells the ML learned from. You do not touch these to test the model."],
-            ["Monitoring", "Wells you want a forecast for. Uploading here never changes the ML, so it is the safe place to test."],
+            ["Monitoring", "Wells you want a prediction for. Uploading here never changes the ML, so it is the safe place to test."],
             ["Tolerance", "The client's pass mark: the ML is good when it is within 10 klbf (hookload) and 2 kft-lbf (torque) of the actual reading."],
           ]}
         />
         <p>
-          <b>Testing the model</b> = give the system a well it has never seen, let it forecast, and compare the forecast with
+          <b>Testing the model</b> = give the system a well it has never seen, let it predict, and compare the prediction with
           what was really read on the rig. The system does the comparison for you and shows a percentage: the share of actual
           readings that the ML hit within the tolerance. <b>90% or more is good</b>.
         </p>
@@ -166,7 +166,7 @@ export const TOPICS: Topic[] = [
             { title: "2. Monitoring: choose section & type", tone: "user", to: "/monitoring" },
             { title: "3. Upload the file", tone: "user" },
             { title: "4. Read the result", tone: "out" },
-            { title: "5. Dashboard: forecast 300 ft", tone: "user", to: "/dashboard" },
+            { title: "5. Dashboard: prediction 300 ft", tone: "user", to: "/dashboard" },
             { title: "6. Check against actual", tone: "out" },
             { title: "7. Download Excel / PDF", tone: "out" },
           ]}
@@ -196,7 +196,7 @@ export const TOPICS: Topic[] = [
         <h3>Part 2 — Upload the well in Monitoring</h3>
         <Steps>
           <Step n={1} title="Click Monitoring in the top bar">
-            The page "Upload a monitoring well (forecast only)" opens. It has five numbered steps.
+            The page "Upload a monitoring well (prediction only)" opens. It has five numbered steps.
           </Step>
           <Step n={2} title="Step 1 on the page: select the Well section and the Well type">
             Open the <Ui>Well section</Ui> list and pick the hole size (e.g. <b>8.5"</b>). Open <Ui>Well type</Ui> and pick{" "}
@@ -210,20 +210,20 @@ export const TOPICS: Topic[] = [
           </Step>
           <Step n={4} title="Step 4: upload">
             Drag the file onto the box, or click the box and choose the file. Wait a few seconds: "Importing and checking the
-            file…", then "Forecasting with the active model…".
+            file…", then "Predicting with the active model…".
           </Step>
-          <Step n={5} title="Step 5: read the forecast result">
+          <Step n={5} title="Step 5: read the prediction result">
             A table appears with one row per operation (Pick up, Slack off, Rotating weight, Torque off bottom, Torque on
             bottom) at the deepest depth:
             <ul>
               <li>
-                <b>T&amp;D Model (OHFF 0.3)</b> = the planning value, <b>ML forecast</b> = the system's value,{" "}
+                <b>T&amp;D Model (OHFF 0.3)</b> = the planning value, <b>ML prediction</b> = the system's value,{" "}
                 <b>Uncertainty band (P10–P90)</b> = the range in which the reading will most likely fall,{" "}
                 <b>ML − T&amp;D Model</b> = how much the system corrects the plan.
               </li>
               <li>Yellow messages are warnings worth reading (e.g. a well type rare in the training data).</li>
             </ul>
-            Click <Ui>Open dashboard (forecast N ft ahead)</Ui> to continue.
+            Click <Ui>Open dashboard (prediction N ft ahead)</Ui> to continue.
           </Step>
         </Steps>
         <Tip kind="warn">
@@ -238,7 +238,7 @@ export const TOPICS: Topic[] = [
           </Step>
           <Step n={2} title="Hookload panel (top)">
             Blue lines = T&amp;D model per OHFF (lighter blue = lower OHFF), names like <b>PU - OHFF : 0.3</b>. Orange line =
-            ML forecast (<b>PU - ML</b>). Green points = actual readings (<b>PU Actual</b>). <b>Good sign</b>: the green points
+            ML prediction (<b>PU - ML</b>). Green points = actual readings (<b>PU Actual</b>). <b>Good sign</b>: the green points
             sit on or close to the orange line.
           </Step>
           <Step n={3} title="Torque panel and Difference panel">
@@ -252,39 +252,39 @@ export const TOPICS: Topic[] = [
           </Step>
         </Steps>
 
-        <h3>Part 4 — Test the forecast 300 ft ahead</h3>
+        <h3>Part 4 — Test the prediction 300 ft ahead</h3>
         <p>
-          The real question while drilling is: <i>how good is the forecast for the next 300 ft?</i> You can test it on a well
+          The real question while drilling is: <i>how good is the prediction for the next 300 ft?</i> You can test it on a well
           that already has the actual readings, by pretending you are drilling at an earlier depth.
         </p>
         <Steps>
-          <Step n={1} title="Scroll down to the panel Forecast ahead">Below the charts.</Step>
-          <Step n={2} title="Distance: 300">The number of feet to forecast.</Step>
+          <Step n={1} title="Scroll down to the panel Prediction ahead">Below the charts.</Step>
+          <Step n={2} title="Distance: 300">The number of feet to prediction.</Step>
           <Step n={3} title="From depth: an earlier depth (for the test)">
-            Example: the actual readings go down to 9,500 ft. Type <b>9,000</b>. The forecast then only uses the data above
-            9,000 ft, exactly as if the rig were at 9,000 ft now. (Leave it empty for a real forecast from the last reading.)
+            Example: the actual readings go down to 9,500 ft. Type <b>9,000</b>. The prediction then only uses the data above
+            9,000 ft, exactly as if the rig were at 9,000 ft now. (Leave it empty for a real prediction from the last reading.)
           </Step>
           <Step n={4} title="Local bias correction: leave it ticked">
-            It shifts the forecast using the last actual readings above the start depth, like the DD's calibration. It is on by
+            It shifts the prediction using the last actual readings above the start depth, like the DD's calibration. It is on by
             default because it is the most accurate.
           </Step>
-          <Step n={5} title="Click Forecast — the charts jump to the forecast">
-            The page scrolls up to the charts and zooms to the forecast window automatically. What you see:
+          <Step n={5} title="Click Run prediction — the charts jump to the prediction">
+            The page scrolls up to the charts and zooms to the prediction window automatically. What you see:
             <ul>
               <li>
-                Two dashed purple lines: <b>Forecast start · 9,000 ft</b> and <b>Forecast end · 9,300 ft (+300 ft)</b>, with the
+                Two dashed purple lines: <b>Prediction start · 9,000 ft</b> and <b>Prediction end · 9,300 ft (+300 ft)</b>, with the
                 window between them lightly shaded.
               </li>
               <li>
-                A <b>thick purple line</b> per operation = <b>the forecast</b>: where hookload/torque is expected to go over the
+                A <b>thick purple line</b> per operation = <b>the prediction</b>: where hookload/torque is expected to go over the
                 next 300 ft. The shaded purple band around it = the likely range (P10–P90).
               </li>
               <li>
-                At the end of each purple line the <b>forecast value</b> is written, e.g. "PU 128 klbf @ 9,300 ft".
+                At the end of each purple line the <b>prediction value</b> is written, e.g. "PU 128 klbf @ 9,300 ft".
               </li>
-              <li>Green points inside the window = actual readings the forecast is tested against.</li>
+              <li>Green points inside the window = actual readings the prediction is tested against.</li>
             </ul>
-            <Ui>Show whole well</Ui> (above the charts) goes back to the full depth; <Ui>Zoom to forecast</Ui> returns to the
+            <Ui>Show whole well</Ui> (above the charts) goes back to the full depth; <Ui>Zoom to prediction</Ui> returns to the
             window.
           </Step>
           <Step n={6} title="Read the table">
@@ -315,7 +315,7 @@ export const TOPICS: Topic[] = [
             drag and torque graphs, PU/SO/ROT MW sheets.
           </Step>
           <Step n={2} title="PDF">A printable summary with the charts.</Step>
-          <Step n={3} title="⬇ Forecast (.xlsx)">The 300 ft forecast with the check and the cause-and-effect sentences.</Step>
+          <Step n={3} title="⬇ Prediction (.xlsx)">The 300 ft prediction with the check and the cause-and-effect sentences.</Step>
         </Steps>
 
         <h3>Part 6 — The model's own test report (optional)</h3>
@@ -324,8 +324,8 @@ export const TOPICS: Topic[] = [
             Main table, column <b>Within tolerance T&amp;D → ML</b>: result on all training wells, each judged by a model that
             never saw it. Column <b>Blind within tolerance</b>: result on the locked blind-test wells.
           </Step>
-          <Step n={2} title="Tab Forecast backtest">
-            How often the forecast 300 / 600 / 1,000 ft ahead was within tolerance on unseen wells, with and without bias
+          <Step n={2} title="Tab Prediction backtest">
+            How often the prediction 300 / 600 / 1,000 ft ahead was within tolerance on unseen wells, with and without bias
             correction.
           </Step>
         </Steps>
@@ -336,7 +336,7 @@ export const TOPICS: Topic[] = [
           rows={[
             ["The upload box is grey", "Choose Well section and Well type first (step 1)."],
             ["\"No active model yet\"", "Train a model in Models first, or ask the administrator."],
-            ["The forecast stops before 300 ft", "The WellPlan results end there; the ML needs them as input."],
+            ["The prediction stops before 300 ft", "The WellPlan results end there; the ML needs them as input."],
             ["No 'Check against actual' column", "There are no actual readings in the window: enter an earlier From depth."],
             ["Does my test change the ML?", "No. Monitoring wells are never used for training."],
             ["Remove the test well afterwards", "Monitoring → list of wells → Delete."],
@@ -352,12 +352,12 @@ export const TOPICS: Topic[] = [
     group: "Tutorial",
     title: "Reading the charts: every line and shading",
     summary: "What each colour, line, point, shaded area and table on the dashboard means, in plain words.",
-    keywords: "read chart legend line colour blue orange green purple red dashed dotted shading band P10 P90 forecast window difference metrics table beginner",
+    keywords: "read chart legend line colour blue orange green purple red dashed dotted shading band P10 P90 prediction window difference metrics table beginner",
     body: (
       <>
         <Tip>
           Depth goes <b>down</b> the chart (deeper = lower), values go <b>right</b> (heavier / more torque = further right). A
-          forecast is good when the <b>green points sit on its line</b>. The client's pass mark: within 10 klbf (hookload) and
+          prediction is good when the <b>green points sit on its line</b>. The client's pass mark: within 10 klbf (hookload) and
           2 kft-lbf (torque).
         </Tip>
         <h3>Colours</h3>
@@ -365,15 +365,15 @@ export const TOPICS: Topic[] = [
           head={["Colour", "What it is"]}
           rows={[
             [<><Swatch c={OHFF_COLOR["0.1"]} /> <Swatch c={OHFF_COLOR["0.5"]} /> Blue lines</>, "T&D model (WellPlan), one line per OHFF: lighter = lower friction factor, darker = higher. Same colour for the same OHFF in every chart."],
-            [<><Swatch c="#eb6834" /> Orange line</>, "ML forecast for the whole well (PU - ML, SO - ML, ROT - ML)."],
-            [<><Swatch c="#eb6834" /> Orange dashed lines</>, "Only when 'Uncertainty band (P10–P90)' is ticked: 80% of the actual readings are expected between the two dashed lines."],
+            [<><Swatch c="#eb6834" /> Orange line</>, "ML prediction for the whole well (PU - ML, SO - ML, ROT - ML)."],
+            [<><Swatch c="#eb6834" /> Orange dashed lines</>, "Only when 'Uncertainty band (P10–P90)' is ticked: 80% of the actual readings are expected between the two dashed lines (design target). The real share is in Models → report, column 'Inside P10–P90 band': CV ≈ 80% by construction, blind = the test on unseen wells."],
             [<><span style={{ color: "#1baf7a" }}>● ▲ ■</span> Green points</>, "Actual readings from the rig: ● pick up / torque off bottom, ▲ slack off / torque on bottom, ■ rotating weight."],
             [<><Swatch c="#4a3aa7" /> Thick purple line</>, "THE FORECAST N ft ahead (bias-corrected). The value at its end is written next to the ◆, e.g. 'PU 254 klbf @ 8,900 ft'."],
-            ["Faded purple strip around the purple line", "Forecast range P10–P90: where the reading will most likely (80%) fall."],
-            ["Very light purple shading across the chart, between two dashed purple lines", "The forecast window (from 'Forecast start' to 'Forecast end'). It only marks the area; it is not a value."],
+            ["Faded purple strip around the purple line", "Prediction range P10–P90: where the reading will most likely (target 80%) fall. How well the 80% holds: Models → report, column 'Inside P10–P90 band (CV / blind)'."],
+            ["Very light purple shading across the chart, between two dashed purple lines", "The prediction window (from 'Prediction start' to 'Prediction end'). It only marks the area; it is not a value."],
             [<><span style={{ color: "#e34948" }}>┆</span> Red dotted vertical line</>, "Operating limit (e.g. max pick up, top drive torque)."],
-            ["Very light red shading", "Depths below the first point where the ML forecast reaches the limit."],
-            ["Light yellow shading", "Flagged intervals: |difference| above the threshold in 'Flag intervals' (hidden while a forecast is shown)."],
+            ["Very light red shading", "Depths below the first point where the ML prediction reaches the limit."],
+            ["Light yellow shading", "Flagged intervals: |difference| above the threshold in 'Flag intervals' (hidden while a prediction is shown)."],
             ["Black dashed horizontal line (on hover)", "Guide line at the mouse depth in all panels; the bar below the charts lists every value at that depth (WP = T&D model, ML, Act = actual)."],
           ]}
         />
@@ -390,11 +390,11 @@ export const TOPICS: Topic[] = [
         <Table
           head={["Table / column", "Meaning"]}
           rows={[
-            ["Forecast: Bias-corrected at end", "The forecast value used (= the value at the end of the purple line). '(bias −20.4)' = the last readings were 20.4 below the ML, so the forecast was moved down by that."],
-            ["Forecast: P10–P90 at end", "Likely range at the end of the window."],
-            ["Forecast: Expected accuracy", "How often this model was within tolerance for this distance on wells it never saw."],
-            ["Forecast: Check against actual", "Only when testing with an earlier From depth: forecast vs the readings that follow ('ML + bias 100% (n=3)' = all 3 readings within tolerance)."],
-            ["Forecast: Main drivers / Cause and effect", "Why the values change (T&D model trend, inclination, dogleg …) and whether a limit is reached."],
+            ["Prediction: Bias-corrected at end", "The prediction value used (= the value at the end of the purple line). '(bias −20.4)' = the last readings were 20.4 below the ML, so the prediction was moved down by that."],
+            ["Prediction: P10–P90 at end", "Likely range at the end of the window."],
+            ["Prediction: Expected accuracy", "How often this model was within tolerance for this distance on wells it never saw."],
+            ["Prediction: Check against actual", "Only when testing with an earlier From depth: prediction vs the readings that follow ('ML + bias 100% (n=3)' = all 3 readings within tolerance)."],
+            ["Prediction: Main drivers / Cause and effect", "Why the values change (T&D model trend, inclination, dogleg …) and whether a limit is reached."],
             ["Metrics: RMSE / MAPE", "Average error in units / percent — smaller is better."],
             ["Metrics: R²", "How well the curve shape follows the actual readings — closer to 1 is better."],
             ["Metrics: Within tol. WP → ML", "The client's measure: share of readings within 10 klbf / 2 kft-lbf, for the T&D model and for the ML. 90% or more is good."],
@@ -599,7 +599,7 @@ export const TOPICS: Topic[] = [
             automatically.
           </Step>
           <Step n={3} title="Check Model history">
-            <b>Done + active</b> = used for forecasts. <b>Held</b> = worse than the active model (not activated automatically;{" "}
+            <b>Done + active</b> = used for predictions. <b>Held</b> = worse than the active model (not activated automatically;{" "}
             <Ui>Activate</Ui> manually if you are sure).
           </Step>
         </Steps>
@@ -632,7 +632,7 @@ export const TOPICS: Topic[] = [
             <b>RMSE T&amp;D model → RMSE ML</b>: mean error (smaller is better), in kN / kN·m. <b>ML vs T&amp;D model</b>:
             improvement in percent. <b>ML closer</b>: share of points where ML is closer to actual than the T&amp;D model.{" "}
             <b>Within tolerance</b>: share of points with |error| &lt; 10 klbf (hookload) or &lt; 2 kft-lbf (torque), the
-            client's acceptance criterion; tab <Ui>Forecast backtest</Ui> shows it for 300 / 600 / 1,000 ft ahead.
+            client's acceptance criterion; tab <Ui>Prediction backtest</Ui> shows it for 300 / 600 / 1,000 ft ahead.
           </Step>
           <Step n={3} title="Use the analysis tabs">
             <Ui>Section × type</Ui> (yellow rows = fewer than 3 wells, less reliable), <Ui>Depth</Ui>, <Ui>By well</Ui>,{" "}
@@ -656,26 +656,26 @@ export const TOPICS: Topic[] = [
   {
     id: "monitoring",
     group: "Step by step",
-    title: "6. Monitoring a well (forecast only)",
-    summary: "Upload a well to be drilled or being drilled; it is forecast but never used for training.",
-    keywords: "monitoring new well forecast template upload promote to training separate",
+    title: "6. Monitoring a well (prediction only)",
+    summary: "Upload a well to be drilled or being drilled; it is predicted but never used for training.",
+    keywords: "monitoring new well prediction template upload promote to training separate",
     body: (
       <>
         <Steps>
           <Step n={1} title="Monitoring → select Well section and Well type">Required before uploading.</Step>
           <Step n={2} title="Download the monitoring template (optional)">Or use the original WellPlan file of that well.</Step>
           <Step n={3} title="Fill in Well Info, Drag, Torque (Survey if available)">
-            Actual readings are optional: add the T&amp;D Actual Reading sheet with the readings so far to forecast ahead of the
+            Actual readings are optional: add the T&amp;D Actual Reading sheet with the readings so far to predict ahead of the
             current depth.
           </Step>
-          <Step n={4} title="Upload one file">The system imports, checks and forecasts with the active model.</Step>
+          <Step n={4} title="Upload one file">The system imports, checks and predicts with the active model.</Step>
           <Step n={5} title="Read the result">
-            Per operation at the final depth: T&amp;D model (OHFF 0.3), <b>ML forecast</b>, uncertainty band (P10–P90), ML − T&amp;D
-            model. Buttons <Ui>Open dashboard</Ui>, <Ui>⬇ Forecast (.xlsx)</Ui>, <Ui>⬇ Summary (PDF)</Ui>.
+            Per operation at the final depth: T&amp;D model (OHFF 0.3), <b>ML prediction</b>, uncertainty band (P10–P90), ML − T&amp;D
+            model. Buttons <Ui>Open dashboard</Ui>, <Ui>⬇ Prediction (.xlsx)</Ui>, <Ui>⬇ Summary (PDF)</Ui>.
           </Step>
           <Step n={6} title="While drilling">
             Upload the file again with new actual readings (same name and section): it replaces the previous version, and the
-            stored forecast is evaluated automatically (Evaluations).
+            stored prediction is evaluated automatically (Evaluations).
           </Step>
           <Step n={7} title="After the well is finished (optional)">
             <Ui>Promote to training</Ui> copies the well into Training Data. The copy goes through the data quality gate and is
@@ -684,7 +684,7 @@ export const TOPICS: Topic[] = [
         </Steps>
         <Tip kind="warn">
           Monitoring data never enters a dataset, even with complete actual data. Read the warnings: a section/type rare in the
-          training data, depths outside the training range, or a missing survey make the forecast less reliable.
+          training data, depths outside the training range, or a missing survey make the prediction less reliable.
         </Tip>
         <Go to="/monitoring">Open Monitoring</Go>
       </>
@@ -715,7 +715,7 @@ export const TOPICS: Topic[] = [
                 <Swatch c={c} /> {ff}{" "}
               </span>
             ))}
-            . ML forecast <span style={{ color: "#eb6834" }}>orange</span>, uncertainty band (P10–P90) orange{" "}
+            . ML prediction <span style={{ color: "#eb6834" }}>orange</span>, uncertainty band (P10–P90) orange{" "}
             <b>dashed</b>, actual readings <span style={{ color: "#1baf7a" }}>green</span> points, operating limits red{" "}
             <b>dotted</b>.
           </Step>
@@ -738,7 +738,7 @@ export const TOPICS: Topic[] = [
           </Step>
         </Steps>
         <Tip>
-          For wells used in training, the ML line is an <b>unseen-well validation</b> forecast (from a model that never saw that
+          For wells used in training, the ML line is an <b>unseen-well validation</b> prediction (from a model that never saw that
           well), so the comparison with actual data stays fair.
         </Tip>
         <Go to="/dashboard">Open Dashboard</Go>
@@ -748,32 +748,32 @@ export const TOPICS: Topic[] = [
   {
     id: "forecast",
     group: "Step by step",
-    title: "8. Forecast N ft ahead with cause and effect",
-    summary: "Forecast the next 300 ft (or any distance) from the last actual depth, with explanations.",
-    keywords: "forecast ahead distance 300 ft cause effect shap inclination dogleg interval limit bias correction export",
+    title: "8. Prediction N ft ahead with cause and effect",
+    summary: "Prediction the next 300 ft (or any distance) from the last actual depth, with explanations.",
+    keywords: "prediction ahead distance 300 ft cause effect shap inclination dogleg interval limit bias correction export",
     body: (
       <>
         <Steps>
-          <Step n={1} title="Dashboard → select the well → Forecast ahead">
+          <Step n={1} title="Dashboard → select the well → Prediction ahead">
             Enter <Ui>Distance</Ui> (e.g. 300 ft). <Ui>From depth</Ui> is optional; default = the last actual depth (or the top
             of the T&amp;D model when there is no actual data yet).
           </Step>
           <Step n={2} title="Local bias correction (on by default when the well has actual readings)">
-            Shifts the forecast by the median (actual − ML) of the last 10 actual points within 1,000 ft. For display only; the
+            Shifts the prediction by the median (actual − ML) of the last 10 actual points within 1,000 ft. For display only; the
             model is not changed. It is the most accurate option in the backtest.
           </Step>
-          <Step n={3} title="Click Forecast">
-            The forecast window is shaded in the charts. The table shows per operation: ML at the start and the end, the change,
+          <Step n={3} title="Click Run prediction">
+            The prediction window is shaded in the charts. The table shows per operation: ML at the start and the end, the change,
             P10–P90 at the end, the <b>expected accuracy</b> (backtest of the active model for this distance on unseen wells:
             share of points within &lt; 10 klbf hookload / &lt; 2 kft-lbf torque) and the main drivers.
           </Step>
           <Step n={4} title="Read the cause and effect">
-            One sentence per operation, e.g. <i>"Pick up: from 8,450 to 8,750 ft the ML forecast is expected to rise from 210.3
+            One sentence per operation, e.g. <i>"Pick up: from 8,450 to 8,750 ft the ML prediction is expected to rise from 210.3
             to 225.1 klbf (+14.8). Main drivers: T&amp;D model (+10.2), Inclination (+3.1), inclination 28° → 34°. The max
             operating limit (250.0 klbf) is reached by the P10–P90 band at 8,720 ft."</i>
           </Step>
           <Step n={5} title="Export">
-            <Ui>⬇ Forecast (.xlsx)</Ui>: Summary (sentences), one sheet per operation (depth, ML, P10, P90, T&amp;D model per OHFF
+            <Ui>⬇ Prediction (.xlsx)</Ui>: Summary (sentences), one sheet per operation (depth, ML, P10, P90, T&amp;D model per OHFF
             and a chart), Explanation (drivers, plan changes, operating limits).
           </Step>
         </Steps>
@@ -783,11 +783,11 @@ export const TOPICS: Topic[] = [
           rows={[
             ["Main drivers", "Local SHAP: change of each feature's contribution between the start and the end of the window (feature swap for SVR/MLP). 'T&D model' = change of the T&D model curve itself."],
             ["Plan changes", "Survey: inclination at the start and the end, maximum dogleg, interval type (vertical / build / tangent / drop / horizontal)."],
-            ["Operating limits", "First depth where the ML forecast or the P10–P90 band reaches a limit."],
+            ["Operating limits", "First depth where the ML prediction or the P10–P90 band reaches a limit."],
           ]}
         />
         <Tip kind="warn">
-          The ML needs the T&amp;D model as input: the forecast stops where the WellPlan results end (a warning says so).
+          The ML needs the T&amp;D model as input: the prediction stops where the WellPlan results end (a warning says so).
         </Tip>
       </>
     ),
@@ -819,8 +819,8 @@ export const TOPICS: Topic[] = [
     id: "export",
     group: "Step by step",
     title: "10. Excel and PDF output",
-    summary: "Per-well results, forecast, model report, quality report.",
-    keywords: "export excel pdf download report result forecast",
+    summary: "Per-well results, prediction, model report, quality report.",
+    keywords: "export excel pdf download report result prediction",
     body: (
       <>
         <Steps>
@@ -830,7 +830,7 @@ export const TOPICS: Topic[] = [
           <Step n={2} title="Dashboard → PDF">
             Summary: data quality, model & dataset versions, metrics, operating limits, six chart panels.
           </Step>
-          <Step n={3} title="Dashboard → ⬇ Forecast (.xlsx)">Forecast N ft ahead with cause and effect.</Step>
+          <Step n={3} title="Dashboard → ⬇ Prediction (.xlsx)">Prediction N ft ahead with cause and effect.</Step>
           <Step n={4} title="Models → Report (.xlsx) / PDF summary">Model accuracy report for the client.</Step>
           <Step n={5} title="Data Quality → Download quality report (.xlsx)">Status of every well and the reasons.</Step>
         </Steps>
@@ -842,12 +842,12 @@ export const TOPICS: Topic[] = [
     id: "evaluation",
     group: "Step by step",
     title: "11. Evaluation after drilling",
-    summary: "Earlier forecasts are compared with the actual data automatically.",
-    keywords: "evaluation forecast actual after drilling comparison accuracy",
+    summary: "Earlier predictions are compared with the actual data automatically.",
+    keywords: "evaluation prediction actual after drilling comparison accuracy",
     body: (
       <>
         <Steps>
-          <Step n={1} title="The well was forecast">Through Monitoring (before or while drilling).</Step>
+          <Step n={1} title="The well was predicted">Through Monitoring (before or while drilling).</Step>
           <Step n={2} title="Upload the file with its actual data">
             In <Ui>Monitoring</Ui>, with the same well name and section.
           </Step>
@@ -918,15 +918,15 @@ export const TOPICS: Topic[] = [
     id: "uc-monitor",
     group: "Use cases",
     title: "UC-3 · Monitoring a well while drilling",
-    summary: "The engineer follows a well being drilled and forecasts the next section of hole.",
-    keywords: "use case monitoring while drilling forecast ahead operating limit torque",
+    summary: "The engineer follows a well being drilled and predicts the next section of hole.",
+    keywords: "use case monitoring while drilling prediction ahead operating limit torque",
     body: (
       <>
         <Flow
           nodes={[
             { title: "Monitoring upload", desc: "T&D model + actual so far", tone: "user", to: "/monitoring" },
-            { title: "Forecast", tone: "system" },
-            { title: "Forecast 300 ft ahead", desc: "cause and effect", tone: "user", to: "/dashboard" },
+            { title: "Prediction", tone: "system" },
+            { title: "Prediction 300 ft ahead", desc: "cause and effect", tone: "user", to: "/dashboard" },
             { title: "Operating limits", tone: "user" },
             { title: "Excel / PDF to the team", tone: "out" },
           ]}
@@ -934,7 +934,7 @@ export const TOPICS: Topic[] = [
         <Steps>
           <Step n={1} title="Monitoring">Select section and type, upload. Note the warnings.</Step>
           <Step n={2} title="Dashboard">Compare ML with the T&amp;D model (with DD Calibrate); turn on the P10–P90 band.</Step>
-          <Step n={3} title="Forecast ahead">300 ft, optional bias correction. Read the drivers and the limit crossings.</Step>
+          <Step n={3} title="Prediction ahead">300 ft, optional bias correction. Read the drivers and the limit crossings.</Step>
           <Step n={4} title="Add operating limits">E.g. top drive torque. See where the upper band reaches the limit.</Step>
           <Step n={5} title="Repeat">Upload the file again after each new set of actual readings.</Step>
         </Steps>
@@ -945,11 +945,11 @@ export const TOPICS: Topic[] = [
     id: "uc-evaluate",
     group: "Use cases",
     title: "UC-4 · Evaluating after drilling",
-    summary: "How accurate was the earlier forecast?",
-    keywords: "use case evaluation post drilling forecast accuracy",
+    summary: "How accurate was the earlier prediction?",
+    keywords: "use case evaluation post drilling prediction accuracy",
     body: (
       <Steps>
-        <Step n={1} title="Upload the actual data of the forecast well">In Monitoring, same well name and section.</Step>
+        <Step n={1} title="Upload the actual data of the prediction well">In Monitoring, same well name and section.</Step>
         <Step n={2} title="Open Evaluations">Compare RMSE T&amp;D model vs ML and the share of points where ML is closer.</Step>
         <Step n={3} title="Use it for training (optional)">
           <Ui>Promote to training</Ui>: if the copy gets A/B, it is used in the next training run (UC-2).
@@ -989,9 +989,9 @@ export const TOPICS: Topic[] = [
   {
     id: "data-flow",
     group: "System flow",
-    title: "Data flow: from file to forecast",
+    title: "Data flow: from file to prediction",
     summary: "What the system does behind the scenes at each stage.",
-    keywords: "flow system process data parser import database dataset model forecast",
+    keywords: "flow system process data parser import database dataset model prediction",
     body: (
       <>
         <Flow
@@ -1020,8 +1020,8 @@ export const TOPICS: Topic[] = [
           nodes={[
             { title: "Train & validate per well", desc: "5 folds" },
             { title: "Active model", desc: "or held" },
-            { title: "Forecast", desc: "depth grid + P10–P90" },
-            { title: "Forecast N ft ahead", desc: "cause and effect", tone: "out" },
+            { title: "Prediction", desc: "depth grid + P10–P90" },
+            { title: "Prediction N ft ahead", desc: "cause and effect", tone: "out" },
             { title: "Dashboard / Excel / PDF / Evaluation", tone: "out" },
           ]}
         />
@@ -1091,11 +1091,11 @@ export const TOPICS: Topic[] = [
           ["Data quality report (.xlsx)", "Data Quality", "Status A/B/C/X, score, reasons, reviews"],
           ["Frozen dataset (.csv.gz)", "Models → Datasets → Download", "Training data + hash, blind wells"],
           ["Model report (.xlsx / PDF)", "Models → Report", "Accuracy per operation/section/type/depth/well, blind test, learning curve, SHAP"],
-          ["Monitoring forecast", "Monitoring → upload", "Summary table + Excel + PDF"],
+          ["Monitoring prediction", "Monitoring → upload", "Summary table + Excel + PDF"],
           ["Dashboard", "Dashboard", "Charts, band, operating limits, flagged intervals"],
-          ["Forecast N ft (.xlsx)", "Dashboard → Forecast ahead", "Forecast per depth, P10–P90, T&D model per OHFF, cause and effect"],
+          ["Prediction N ft (.xlsx)", "Dashboard → Prediction ahead", "Prediction per depth, P10–P90, T&D model per OHFF, cause and effect"],
           ["Prediction Output (.xlsx) / PDF", "Dashboard → Export Excel / PDF", "Client format: Summary Outputs, Tripping Load & Torque graphs, PU/SO/ROT MW sheets"],
-          ["Evaluation", "Evaluations", "Forecast vs actual after drilling"],
+          ["Evaluation", "Evaluations", "Prediction vs actual after drilling"],
         ]}
       />
     ),
@@ -1119,7 +1119,7 @@ export const TOPICS: Topic[] = [
           ["Why is my well status C?", "Open Data Quality and click the well: the critical reason is listed. See UC-5."],
           ["A new model is 'held'", "Its accuracy is worse than the active model. The previous model stays in use; you can activate it manually."],
           ["Can the blind test be repeated?", "No, it runs once per model on purpose so the result is fair."],
-          ["The ML line does not show", "The well has not been forecast: click Forecast again on the dashboard, or no model is active yet."],
+          ["The ML line does not show", "The well has not been predicted: click Run prediction again on the dashboard, or no model is active yet."],
           ["Units", "Choose imperial (ft, klbf, ft-lbf) or SI (m, kN, kN·m) on the dashboard."],
           ["Sign-in is locked", "Wait 15 minutes, or the operator runs make password."],
         ]}

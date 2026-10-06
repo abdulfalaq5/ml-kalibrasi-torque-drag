@@ -225,6 +225,8 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
         "Within tolerance T&D Model",
         "Within tolerance ML",
         "Blind within tolerance ML",
+        "Inside P10-P90 band (CV)",
+        "Inside P10-P90 band (blind)",
     ]
     for j, h in enumerate(hdr):
         ws.write(4, j, h, f.head)
@@ -258,6 +260,8 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
             (13, wi.get("wellplan")),
             (14, wi.get("ml")),
             (15, (b.get("within") or {}).get("ml")),
+            (16, d["overall"].get("band_coverage")),
+            (17, b.get("band_coverage")),
         ):
             if v is not None:
                 ws.write(i, j, v, f.pct)
@@ -268,18 +272,19 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
         r - 1,
         0,
         "Tolerance (client): |ML - actual| < 10 klbf for hookload, < 2 kft-lbf for torque. "
-        "Share of actual points within tolerance; cross-validation on unseen wells.",
+        "Share of actual points within tolerance; cross-validation on unseen wells. "
+        "Inside P10-P90 band: share of actual points inside the ML uncertainty band (target 80%).",
     )
     r += 1
     ws.write(r, 0, "Dataset notes", f.bold)
     for j, n in enumerate(m.get("notes", [])[:200]):
         ws.write(r + 1 + j, 0, n)
 
-    ws = wb.add_worksheet("Forecast backtest")
+    ws = wb.add_worksheet("Prediction backtest")
     ws.write(
         0,
         0,
-        "Forecast N ft ahead from every actual depth (unseen wells): share of actual points in the "
+        "Prediction N ft ahead from every actual depth (unseen wells): share of actual points in the "
         "window within tolerance (10 klbf / 2 kft-lbf), and the 90th percentile error (SI). "
         "'+ bias' = local bias correction from the last <= 10 actual points within 1,000 ft.",
     )

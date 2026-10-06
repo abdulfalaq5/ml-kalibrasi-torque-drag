@@ -62,7 +62,7 @@ def upload(
     """Upload one Excel file. Purpose, well section and well type are selected by the user first.
 
     purpose=training   -> reference data for the ML model (enters the dataset if quality passes)
-    purpose=monitoring -> a well being drilled; forecast/evaluation only, never used for training
+    purpose=monitoring -> a well being drilled; prediction/evaluation only, never used for training
     """
     settings = get_settings()
     if purpose not in PURPOSES:

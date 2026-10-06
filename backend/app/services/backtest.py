@@ -1,8 +1,8 @@
-"""Backtest forecast N ft ke depan pada prediksi out-of-fold (sumur tidak dilihat model).
+"""Backtest prediction N ft ke depan pada prediksi out-of-fold (sumur tidak dilihat model).
 
-Dari setiap kedalaman aktual (minimal 3 titik aktual sebelumnya), forecast H ft ke depan dinilai
+Dari setiap kedalaman aktual (minimal 3 titik aktual sebelumnya), prediction H ft ke depan dinilai
 terhadap pembacaan aktual di jendela (kedalaman, kedalaman + H]. Koreksi bias lokal sama dengan
-fitur Forecast: median (aktual - prediksi) dari <= 10 titik aktual terakhir dalam 1.000 ft.
+fitur Prediction: median (aktual - prediksi) dari <= 10 titik aktual terakhir dalam 1.000 ft.
 Hasil: % titik dalam toleransi client (10 klbf / 2 kft-lbf) dan error persentil 90.
 """
 

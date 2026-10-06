@@ -3,7 +3,7 @@
 Aplikasi web untuk mengimpor file WellPlan + data aktual sumur (Excel), memeriksa kualitas data,
 melatih dan membandingkan model kalibrasi (Ridge, XGBoost, Random Forest, SVR, MLP opsional),
 menguji model pada sumur yang tidak pernah dilihat (validasi per sumur + blind test), membuat
-forecast sumur monitoring (termasuk forecast N ft ke depan dengan penjelasan sebab-akibat), dan
+prediction sumur monitoring (termasuk prediction N ft ke depan dengan penjelasan sebab-akibat), dan
 menampilkan hasilnya dalam dashboard (Hookload, Torque, Difference), ekspor Excel, dan ringkasan
 PDF. Aplikasi memakai satu akun admin. **Seluruh layar dan keluaran berbahasa Inggris** (feedback
 client #1); dokumen internal tetap berbahasa Indonesia.
@@ -130,15 +130,15 @@ Lalu di web: **Training Data → Scan folder**. Lanjutkan sesuai `docs/panduan.m
 |---|---|---|
 | Laporan audit file | `make audit` → `data/audit/laporan_audit.md` + CSV | Format, sheet, satuan, titik, matriks sumur × section × tipe, penyimpangan per file |
 | Template isian | Training Data / Monitoring → langkah 2 | `TnD_template_training.xlsx` (rencana + aktual) dan `TnD_template_monitoring.xlsx`, dengan Instructions dan Example |
-| Forecast sumur monitoring | Monitoring → unggah | Tabel forecast per operasi + tombol dashboard, Excel, PDF |
-| Forecast N ft + sebab-akibat | Dashboard → Forecast ahead (koreksi bias bawaan aktif bila ada data aktual; kolom akurasi backtest) | ML, P10–P90, T&D model per OHFF, faktor penyebab (SHAP lokal), perubahan rencana, batas terlewati, kalimat otomatis; ekspor `.xlsx` |
+| Prediction sumur monitoring | Monitoring → unggah | Tabel prediction per operasi + tombol dashboard, Excel, PDF |
+| Prediction N ft + sebab-akibat | Dashboard → Prediction ahead (koreksi bias bawaan aktif bila ada data aktual; kolom akurasi backtest) | ML, P10–P90, T&D model per OHFF, faktor penyebab (SHAP lokal), perubahan rencana, batas terlewati, kalimat otomatis; ekspor `.xlsx` |
 | Hasil pindai folder | Training Data → Scan folder | Per file (accepted / warning / duplicate / rejected + alasan) dan per sumur-section (status A/B/C) |
 | Laporan kualitas data | Data Quality → Download (.xlsx) | Status A/B/C/X, skor, alasan, rasio aktual/WellPlan, riwayat tinjauan |
 | Dataset beku | Models → Datasets → Download | Snapshot CSV + hash, daftar sumur, sumur blind test, sumur dikecualikan |
 | Laporan model | Models → Report (.xlsx) / PDF summary | Metrik validasi silang & blind test per operasi, per section/tipe/kedalaman/sumur, perbandingan algoritma, uji fitur, kurva belajar, SHAP |
-| Dashboard | Dashboard | Hookload, Torque, Difference; kurva T&D model per OHFF (warna tetap per OHFF, bawaan + offset Calibrate DD = crossplot Excel), band P10–P90, operating limits, zona forecast |
+| Dashboard | Dashboard | Hookload, Torque, Difference; kurva T&D model per OHFF (warna tetap per OHFF, bawaan + offset Calibrate DD = crossplot Excel), band P10–P90, operating limits, zona prediction |
 | Ekspor per sumur | Dashboard → Export Excel / PDF | Format template client `OUTPUT … Multiple T&D Road Map`: `Summary Outputs`, `Tripping Load Analysis - Graph`, `Torque Analysis Off Btm/On Bottom`, `ROT/SO/PU MW <mud weight>`; PDF |
-| Evaluasi | Evaluations | Forecast sumur monitoring vs data aktualnya (otomatis setelah data aktual diunggah) |
+| Evaluasi | Evaluations | Prediction sumur monitoring vs data aktualnya (otomatis setelah data aktual diunggah) |
 
 Hasil pada data Training (Okt 2026) dirangkum di `data/reports/` (tidak di Git, berisi nama sumur).
 

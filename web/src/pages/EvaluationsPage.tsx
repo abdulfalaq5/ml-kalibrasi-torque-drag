@@ -8,13 +8,13 @@ export default function EvaluationsPage() {
   return (
     <div className="page">
       <section className="card">
-        <h2>Forecast vs actual evaluation</h2>
+        <h2>Prediction vs actual evaluation</h2>
         <p className="muted small">
-          For monitoring wells: the forecast is made from the WellPlan file before actual data exists. When a file with that
-          well's actual data is uploaded later, the system automatically compares the stored forecast with the actual data and
-          with the T&amp;D Model. "ML closer" = share of points where the ML forecast is closer to actual than the T&amp;D Model.
+          For monitoring wells: the prediction is made from the WellPlan file before actual data exists. When a file with that
+          well's actual data is uploaded later, the system automatically compares the stored prediction with the actual data and
+          with the T&amp;D Model. "ML closer" = share of points where the ML prediction is closer to actual than the T&amp;D Model.
         </p>
-        {!list.length && <p className="muted">No evaluations yet. Flow: forecast a monitoring well → upload its actual data later → the result appears here.</p>}
+        {!list.length && <p className="muted">No evaluations yet. Flow: predict a monitoring well → upload its actual data later → the result appears here.</p>}
         {list.map((e) => (
           <div key={e.id} className="eval-card">
             <div className="row space wrap">
@@ -24,7 +24,7 @@ export default function EvaluationsPage() {
                 </Link>
               </b>
               <span className="muted small">
-                model #{e.model_id} · forecast {fmtDate(e.predicted_at)} · evaluated {fmtDate(e.evaluated_at)}
+                model #{e.model_id} · predicted {fmtDate(e.predicted_at)} · evaluated {fmtDate(e.evaluated_at)}
               </span>
             </div>
             <table>
