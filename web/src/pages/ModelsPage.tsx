@@ -155,7 +155,7 @@ function ModelDetail({ id }: { id: number }) {
               <th>ML vs T&amp;D Model</th>
               <th className="num">ML closer</th>
               <th className="num">R² ML</th>
-              <th className="num" title="Share of actual points with |error| < 10 klbf (hookload) / < 2 kft-lbf (torque)">
+              <th className="num" title="Share of actual points with |error| < 8 klbf (hookload) / < 0.8 kft-lbf (torque)">
                 Within tolerance T&amp;D → ML
               </th>
               <th className="num">Blind: RMSE WP → ML</th>
@@ -502,7 +502,7 @@ function ModelDetail({ id }: { id: number }) {
             <>
               <p className="small muted">
                 Prediction N ft ahead from every actual depth on wells the model never saw. Share of actual points in the
-                window within the client tolerance (&lt; 10 klbf hookload, &lt; 2 kft-lbf torque). "+ bias" = local bias
+                window within the client tolerance (&lt; 8 klbf hookload, &lt; 0.8 kft-lbf torque). "+ bias" = local bias
                 correction from the last actual readings (the Prediction default when actual data exists).
               </p>
               {om.forecast_backtest ? (

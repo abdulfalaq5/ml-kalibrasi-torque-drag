@@ -221,7 +221,7 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     assert pu["explanation"]["drivers"] and pu["explanation"]["sentence"].startswith("Pick up")
     assert pu["explanation"]["limit_crossings"]  # batas 50 klbf di atas
     assert fc["summary"]
-    assert pu["backtest"] and 0 <= pu["backtest"]["within"] <= 1 and pu["tolerance"] == "10 klbf"
+    assert pu["backtest"] and 0 <= pu["backtest"]["within"] <= 1 and pu["tolerance"] == "8 klbf"
 
     # uji model pada sumur yang punya aktual: forecast dimulai sebelum aktual terakhir
     tw = next(

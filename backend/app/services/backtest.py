@@ -3,7 +3,7 @@
 Dari setiap kedalaman aktual (minimal 3 titik aktual sebelumnya), prediction H ft ke depan dinilai
 terhadap pembacaan aktual di jendela (kedalaman, kedalaman + H]. Koreksi bias lokal sama dengan
 fitur Prediction: median (aktual - prediksi) dari <= 10 titik aktual terakhir dalam 1.000 ft.
-Hasil: % titik dalam toleransi client (10 klbf / 2 kft-lbf) dan error persentil 90.
+Hasil: % titik dalam toleransi client (8 klbf / 0.8 kft-lbf) dan error persentil 90.
 """
 
 import numpy as np

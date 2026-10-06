@@ -30,15 +30,18 @@ def all_metrics(y, p) -> dict:
     return {"rmse": rmse(y, p), "mape": mape(y, p), "r2": r2(y, p), "n": int(len(y))}
 
 
-# Toleransi client: |ML - aktual| < 10 klbf (hookload) dan < 2 kft-lbf (torsi). Lihat K-43.
-TOLERANCE_LABEL = {"force": "10 klbf", "torque": "2 kft-lbf"}
+# Toleransi client: |ML - aktual| < 8 klbf (hookload) dan < 0.8 kft-lbf (torsi). Lihat K-43, K-44.
+TOL_HOOKLOAD_KLBF, TOL_TORQUE_KFTLBF = 8.0, 0.8
+TOLERANCE_LABEL = {"force": "8 klbf", "torque": "0.8 kft-lbf"}
 
 
 def tolerance_si(op: str) -> float:
     from app.services import units
     from app.services.operations import OP_DIMENSION
 
-    return units.to_si(10, "klbf") if OP_DIMENSION[op] == "force" else units.to_si(2000, "ft-lbf")
+    if OP_DIMENSION[op] == "force":
+        return units.to_si(TOL_HOOKLOAD_KLBF, "klbf")
+    return units.to_si(TOL_TORQUE_KFTLBF, "kft-lbf")
 
 
 def within_frac(y, p, tol: float) -> float:

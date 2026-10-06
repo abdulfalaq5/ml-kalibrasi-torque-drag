@@ -443,7 +443,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         Paragraph(
             "RMSE in SI (kN for hookload, kN·m for torque). 'ML closer' = share of points "
             "where the ML prediction is closer to actual than WellPlan. 'Within tol.' = share of points "
-            "with |error| < 10 klbf (hookload) or < 2 kft-lbf (torque). "
+            "with |error| < 8 klbf (hookload) or < 0.8 kft-lbf (torque). "
             "'In P10–P90' = share of points inside the ML uncertainty band (target 80%).",
             st["small"],
         )

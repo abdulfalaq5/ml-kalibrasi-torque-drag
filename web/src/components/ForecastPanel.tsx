@@ -228,7 +228,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
             </p>
           ))}
           <p className="muted small">
-            Expected accuracy = share of actual points within the client tolerance (10 klbf hookload, 2 kft-lbf torque)
+            Expected accuracy = share of actual points within the client tolerance (8 klbf hookload, 0.8 kft-lbf torque)
             when this model predicted the same distance on wells it never saw
             {forecast.bias_correction ? ", with local bias correction" : ", without bias correction"}. Contributions: {forecast.operations[ops[0]]?.explanation.method ?? "SHAP"} (the change of each feature's
             contribution between the start and the end of the window; "T&amp;D Model" = the change of the T&amp;D Model curve

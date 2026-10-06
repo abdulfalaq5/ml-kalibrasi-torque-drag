@@ -829,6 +829,68 @@ def backfill_band_coverage(db: Session, model: MLModel) -> dict:
     return out
 
 
+def recompute_tolerance(db: Session, model: MLModel) -> dict:
+    """Hitung ulang '% dalam toleransi' dan backtest prediction setelah toleransi client berubah
+    (tanpa melatih ulang, tanpa blind test ulang; tidak ada keputusan model yang berubah).
+
+    Validasi silang: prediksi out-of-fold tersimpan (kind="oof") diinterpolasi ke kedalaman aktual.
+    Blind test: prediksi model yang sama pada sumur blind.
+    """
+    m = copy.deepcopy(model.metrics or {})
+    df = dsm.load_frozen(db.get(Dataset, model.dataset_id))
+    pts = pd.DataFrame(
+        db.execute(
+            select(
+                Prediction.well_id,
+                PredictionPoint.operation,
+                PredictionPoint.depth_m,
+                PredictionPoint.ml_si,
+            )
+            .join(PredictionPoint, PredictionPoint.prediction_id == Prediction.id)
+            .where(Prediction.model_id == model.id, Prediction.kind == "oof")
+        ).all(),
+        columns=["well_id", "operation", "depth_m", "ml_si"],
+    )
+    out: dict = {}
+    for op, entry in (m.get("operations") or {}).items():
+        d = df[(~df.is_blind) & (df.operation == op)].reset_index(drop=True)
+        d["ml_oof"] = np.nan
+        for wid, g in pts[pts.operation == op].groupby("well_id"):
+            g = g.sort_values("depth_m")
+            idx = d.well_id == wid
+            dep = d.loc[idx, "depth_m"].to_numpy()
+            inside = (dep >= g.depth_m.iloc[0]) & (dep <= g.depth_m.iloc[-1])
+            d.loc[idx, "ml_oof"] = np.where(inside, np.interp(dep, g.depth_m, g.ml_si), np.nan)
+        d = d.dropna(subset=["ml_oof"])
+        if d.empty:
+            continue
+        tol = tolerance_si(op)
+        entry.setdefault("overall", {})["within"] = {
+            "wellplan": within_frac(d.target, d.wp_base, tol),
+            "ml": within_frac(d.target, d.ml_oof, tol),
+        }
+        entry["forecast_backtest"] = forecast_backtest(d, op)
+        out[op] = {"cv": entry["overall"]["within"]}
+    model.metrics = _json_safe(m)
+    if model.blind_result and model.path:
+        bundle = joblib.load(model.path)
+        br = copy.deepcopy(model.blind_result)
+        blind = df[df.is_blind]
+        for op, r in br.get("operations", {}).items():
+            dd = blind[blind.operation == op]
+            if dd.empty or op not in bundle["operations"]:
+                continue
+            p = bundle["operations"][op]["model"].predict(dd)
+            r["within"] = {
+                "wellplan": within_frac(dd.target, dd.wp_base, tolerance_si(op)),
+                "ml": within_frac(dd.target, p, tolerance_si(op)),
+            }
+            out.setdefault(op, {})["blind"] = r["within"]
+        model.blind_result = _json_safe(br)
+    db.commit()
+    return out
+
+
 def _json_safe(obj):
     if isinstance(obj, dict):
         return {str(k): _json_safe(v) for k, v in obj.items()}

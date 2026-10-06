@@ -25,7 +25,7 @@ Aturan membaca:
 - **Sumbu tegak = kedalaman (Depth, ft)**. **Makin ke bawah = makin dalam**, seperti sumur sebenarnya.
 - **Sumbu datar = nilai** (hookload dalam klbf, torsi dalam ft-lbf). **Makin ke kanan = makin besar/berat.**
 - Perkiraan dianggap **bagus** bila **titik hijau menempel ke garisnya**. Batas lulus dari client:
-  selisih **< 10 klbf** untuk hookload dan **< 2 kft-lbf** (2,000 ft-lbf) untuk torsi.
+  selisih **< 8 klbf** untuk hookload dan **< 0.8 kft-lbf** (800 ft-lbf) untuk torsi.
 
 ---
 
@@ -205,7 +205,7 @@ Garis merah titik-titik "max Torque On Bottom" = batas torsi (mis. batas top dri
 | **Change** | Perubahan selama jendela (+ naik, − turun). |
 | **P10–P90 at end** | Rentang kemungkinan di akhir jendela (sudah ikut digeser koreksi bias). |
 | **Bias-corrected at end** | **Nilai prediction yang dipakai** (= angka di ujung garis ungu). "(bias −20.4)" artinya pembacaan terakhir rata-rata 20.4 klbf di bawah ML, jadi prediction digeser turun sebesar itu. |
-| **Expected accuracy** | Seberapa sering model ini tepat (dalam toleransi) untuk jarak yang sama pada **banyak sumur yang tidak pernah dilihatnya**. Mis. "99% < 10 klbf". |
+| **Expected accuracy** | Seberapa sering model ini tepat (dalam toleransi) untuk jarak yang sama pada **banyak sumur yang tidak pernah dilihatnya**. Mis. "99% < 8 klbf". |
 | **Check against actual** | Hanya muncul saat uji (*From depth* lebih dangkal): hasil prediction vs pembacaan aktual di jendela. "T&D 0% · ML + bias 100% (n=3)" artinya dari 3 pembacaan, rencana WellPlan tidak ada yang masuk toleransi, sedangkan prediction ML semuanya masuk. |
 | **Main drivers** | Faktor terbesar yang membuat nilai berubah, mis. "T&D Model +6.7" = sebagian besar kenaikan mengikuti rencana WellPlan; "Inclination +3.1" = karena sudut sumur bertambah. |
 | **Cause and effect** | Kalimat ringkas per operasi: naik/turun berapa, apa penyebabnya, dan apakah batas operasi terlewati (termasuk "already exceeded at the start" bila sudah di atas batas sejak awal). |
@@ -222,7 +222,7 @@ Garis merah titik-titik "max Torque On Bottom" = batas torsi (mis. batas top dri
 | **RMSE WP / RMSE ML** | Rata-rata besar kesalahan (T&D model / ML) terhadap aktual, dalam satuan. | Lebih **kecil** |
 | **MAPE WP / MAPE ML** | Rata-rata kesalahan dalam persen. | Lebih **kecil** |
 | **R² WP / R² ML** | Seberapa baik bentuk kurva mengikuti aktual (1.00 = sempurna). | Mendekati **1** |
-| **Within tol. WP → ML** | **Ukuran utama client**: persen pembacaan aktual yang selisihnya < 10 klbf (hookload) / < 2 kft-lbf (torsi). "70% → 96%" = rencana WellPlan 70%, ML 96%. | Mendekati **100%** (≥ 90% = bagus) |
+| **Within tol. WP → ML** | **Ukuran utama client**: persen pembacaan aktual yang selisihnya < 8 klbf (hookload) / < 0.8 kft-lbf (torsi). "70% → 96%" = rencana WellPlan 70%, ML 96%. | Mendekati **100%** (≥ 90% = bagus) |
 
 ### 9.3 5 depths with the largest difference
 

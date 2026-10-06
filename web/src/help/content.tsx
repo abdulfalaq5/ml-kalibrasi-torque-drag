@@ -151,7 +151,7 @@ export const TOPICS: Topic[] = [
             ["ML prediction", "The system's estimate. It learned from many drilled wells how far the T&D model usually is from the actual readings."],
             ["Training Data", "Old wells the ML learned from. You do not touch these to test the model."],
             ["Monitoring", "Wells you want a prediction for. Uploading here never changes the ML, so it is the safe place to test."],
-            ["Tolerance", "The client's pass mark: the ML is good when it is within 10 klbf (hookload) and 2 kft-lbf (torque) of the actual reading."],
+            ["Tolerance", "The client's pass mark: the ML is good when it is within 8 klbf (hookload) and 0.8 kft-lbf (torque) of the actual reading."],
           ]}
         />
         <p>
@@ -295,7 +295,7 @@ export const TOPICS: Topic[] = [
               </li>
               <li>
                 <b>Expected accuracy</b> — how the model did for the same distance on many wells it never saw (e.g. "99% &lt;
-                10 klbf"). Your result should be close to it.
+                8 klbf"). Your result should be close to it.
               </li>
               <li>
                 <b>Cause and effect</b> sentences explain why the values rise or fall (inclination, dogleg, T&amp;D model) and
@@ -357,8 +357,8 @@ export const TOPICS: Topic[] = [
       <>
         <Tip>
           Depth goes <b>down</b> the chart (deeper = lower), values go <b>right</b> (heavier / more torque = further right). A
-          prediction is good when the <b>green points sit on its line</b>. The client's pass mark: within 10 klbf (hookload) and
-          2 kft-lbf (torque).
+          prediction is good when the <b>green points sit on its line</b>. The client's pass mark: within 8 klbf (hookload) and
+          0.8 kft-lbf (torque).
         </Tip>
         <h3>Colours</h3>
         <Table
@@ -397,7 +397,7 @@ export const TOPICS: Topic[] = [
             ["Prediction: Main drivers / Cause and effect", "Why the values change (T&D model trend, inclination, dogleg …) and whether a limit is reached."],
             ["Metrics: RMSE / MAPE", "Average error in units / percent — smaller is better."],
             ["Metrics: R²", "How well the curve shape follows the actual readings — closer to 1 is better."],
-            ["Metrics: Within tol. WP → ML", "The client's measure: share of readings within 10 klbf / 2 kft-lbf, for the T&D model and for the ML. 90% or more is good."],
+            ["Metrics: Within tol. WP → ML", "The client's measure: share of readings within 8 klbf / 0.8 kft-lbf, for the T&D model and for the ML. 90% or more is good."],
             ["Operating limits: … reaches", "First depth where the ML, the ML band or the T&D model reaches the limit; 'not reached' = never. Minimum ML margin < 0 = the limit is exceeded."],
           ]}
         />
@@ -631,7 +631,7 @@ export const TOPICS: Topic[] = [
           <Step n={2} title="Read the main table">
             <b>RMSE T&amp;D model → RMSE ML</b>: mean error (smaller is better), in kN / kN·m. <b>ML vs T&amp;D model</b>:
             improvement in percent. <b>ML closer</b>: share of points where ML is closer to actual than the T&amp;D model.{" "}
-            <b>Within tolerance</b>: share of points with |error| &lt; 10 klbf (hookload) or &lt; 2 kft-lbf (torque), the
+            <b>Within tolerance</b>: share of points with |error| &lt; 8 klbf (hookload) or &lt; 0.8 kft-lbf (torque), the
             client's acceptance criterion; tab <Ui>Prediction backtest</Ui> shows it for 300 / 600 / 1,000 ft ahead.
           </Step>
           <Step n={3} title="Use the analysis tabs">
@@ -765,7 +765,7 @@ export const TOPICS: Topic[] = [
           <Step n={3} title="Click Run prediction">
             The prediction window is shaded in the charts. The table shows per operation: ML at the start and the end, the change,
             P10–P90 at the end, the <b>expected accuracy</b> (backtest of the active model for this distance on unseen wells:
-            share of points within &lt; 10 klbf hookload / &lt; 2 kft-lbf torque) and the main drivers.
+            share of points within &lt; 8 klbf hookload / &lt; 0.8 kft-lbf torque) and the main drivers.
           </Step>
           <Step n={4} title="Read the cause and effect">
             One sentence per operation, e.g. <i>"Pick up: from 8,450 to 8,750 ft the ML prediction is expected to rise from 210.3

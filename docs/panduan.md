@@ -141,7 +141,7 @@ Dashboard → **Prediction ahead**: enter the distance (e.g. 300 ft); the start 
 (or the top of the T&D model). **Local bias correction** (median actual − ML of the last 10 actual
 points within 1,000 ft; display only) is **on by default** when the well has actual readings.
 The column **Expected accuracy** shows the backtest of the active model for that distance on wells
-it never saw: share of points within the client tolerance (< 10 klbf hookload, < 2 kft-lbf torque). Output per operation: ML prediction, P10–P90 and the
+it never saw: share of points within the client tolerance (< 8 klbf hookload, < 0.8 kft-lbf torque). Output per operation: ML prediction, P10–P90 and the
 T&D model per OHFF every 30 ft, plus **cause and effect**:
 - main drivers (local SHAP contributions to the change over the window),
 - plan changes (inclination, maximum dogleg, interval type),
@@ -153,7 +153,7 @@ The window is shaded in the charts. **⬇ Prediction (.xlsx)** exports it (Summa
 operation with a chart, Explanation). The prediction stops where the WellPlan results end.
 
 ### 8b. Accuracy against the client tolerance
-Every model reports the share of actual points with |ML − actual| < 10 klbf (hookload) or < 2 kft-lbf
+Every model reports the share of actual points with |ML − actual| < 8 klbf (hookload) or < 0.8 kft-lbf
 (torque): Models → report (main table, *Prediction backtest* tab for 300 / 600 / 1,000 ft), the model
 report Excel/PDF, and the dashboard metrics of each well.
 

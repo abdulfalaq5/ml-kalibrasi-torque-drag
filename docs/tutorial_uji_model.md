@@ -16,7 +16,7 @@ Penjelasan rinci setiap garis dan arsiran di grafik: `docs/panduan_membaca_grafi
 | **ML prediction** | Perkiraan sistem. Sistem belajar dari banyak sumur yang sudah dibor: seberapa jauh T&D model biasanya meleset dari aktual. |
 | **Training Data** | Sumur lama tempat ML belajar. Untuk menguji model, bagian ini **tidak perlu disentuh**. |
 | **Monitoring** | Sumur yang ingin diprediksi. Unggahan di sini **tidak pernah mengubah ML**, jadi aman untuk uji. |
-| **Toleransi** | Batas lulus dari client: ML dianggap tepat bila selisihnya dengan aktual **< 10 klbf** (hookload) dan **< 2 kft-lbf** (torsi). |
+| **Toleransi** | Batas lulus dari client: ML dianggap tepat bila selisihnya dengan aktual **< 8 klbf** (hookload) dan **< 0.8 kft-lbf** (torsi). |
 
 **Menguji model** = memberi sistem sumur yang belum pernah ia lihat, meminta prediction, lalu
 membandingkannya dengan pembacaan sebenarnya di rig. Sistem menghitung perbandingannya sendiri dan
@@ -122,7 +122,7 @@ yang lebih dangkal.
    - **Check against actual** = hasil uji. Contoh: "T&D 60% · ML + bias **100%** (n=10)" artinya dari
      10 pembacaan aktual di 300 ft berikutnya, T&D model tepat 60%, ML tepat 100% (dalam toleransi).
    - **Expected accuracy** = hasil model untuk jarak yang sama pada banyak sumur yang tidak pernah
-     dilihatnya (mis. "99% < 10 klbf"). Hasil uji Anda sebaiknya mendekati angka ini.
+     dilihatnya (mis. "99% < 8 klbf"). Hasil uji Anda sebaiknya mendekati angka ini.
    - **Cause and effect** = kalimat yang menjelaskan kenapa nilai naik atau turun (inklinasi,
      dogleg, T&D model) dan apakah batas operasi terlampaui.
 7. **Ulangi di kedalaman lain** (mis. atas, tengah, bawah section) untuk melihat apakah model bagus

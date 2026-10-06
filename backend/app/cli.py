@@ -100,6 +100,25 @@ def backfill_band(model_id: int | None) -> int:
     return 0
 
 
+def recompute_tol(model_id: int | None) -> int:
+    from app.db.models import MLModel
+    from app.services.training import recompute_tolerance
+
+    with SessionLocal() as db:
+        q = select(MLModel).where(MLModel.status == "done", MLModel.path.isnot(None))
+        models = [db.get(MLModel, model_id)] if model_id else db.scalars(q).all()
+        for m in models:
+            if m is None:
+                print("Model not found", file=sys.stderr)
+                return 1
+            for op, v in recompute_tolerance(db, m).items():
+                txt = ", ".join(
+                    f"{k} T&D {x['wellplan']:.0%} -> ML {x['ml']:.0%}" for k, x in v.items()
+                )
+                print(f"model #{m.id} {op}: {txt}")
+    return 0
+
+
 def recompute_quality() -> int:
     from app.services.quality import recompute_all
 
@@ -122,6 +141,11 @@ def main() -> int:
     sub.add_parser("recompute-quality", help="Recompute the data quality of every well")
     pb = sub.add_parser("backfill-band", help="Add the P10–P90 band coverage to an existing model")
     pb.add_argument("--model-id", type=int, help="Default: the active model")
+    pt = sub.add_parser(
+        "recompute-tolerance",
+        help="Recompute 'within tolerance' and the prediction backtest after a tolerance change",
+    )
+    pt.add_argument("--model-id", type=int, help="Default: every finished model")
     args = ap.parse_args()
     if args.cmd == "set-admin-password":
         return set_admin_password(args.username)
@@ -129,6 +153,8 @@ def main() -> int:
         return refresh_meta()
     if args.cmd == "backfill-band":
         return backfill_band(args.model_id)
+    if args.cmd == "recompute-tolerance":
+        return recompute_tol(args.model_id)
     if args.cmd == "recompute-quality":
         return recompute_quality()
     return 1

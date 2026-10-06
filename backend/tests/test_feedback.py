@@ -227,5 +227,5 @@ def test_forecast_backtest_bias_correction_removes_constant_offset():
     h = bt["horizons"]["300"]
     assert h["T&D model"]["within"] == 0.0
     assert h["T&D model + bias"]["within"] == 1.0 and h["ML + bias"]["within"] == 1.0
-    assert h["ML"]["within"] == 1.0  # 5 klbf < 10 klbf
+    assert h["ML"]["within"] == 1.0  # 5 klbf < 8 klbf
     assert within_frac([0, 0], [1, 100], tolerance_si("pick_up")) == 0.5
