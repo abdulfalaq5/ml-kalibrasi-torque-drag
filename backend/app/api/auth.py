@@ -57,7 +57,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect username or password")
     request.session.clear()
     request.session["user"] = user.username
-    return {"username": user.username}
+    return {"username": user.username, "role": user.role}
 
 
 @router.post("/logout")
@@ -67,5 +67,5 @@ def logout(request: Request, _: str = Depends(require_admin)):
 
 
 @router.get("/me")
-def me(user: str = Depends(require_admin)):
-    return {"username": user}
+def me(request: Request, user: str = Depends(require_admin)):
+    return {"username": user, "role": getattr(request.state, "role", "admin")}

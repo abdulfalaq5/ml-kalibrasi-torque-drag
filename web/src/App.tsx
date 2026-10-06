@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
+import { fetchMe } from "./role";
 import LoginPage from "./pages/LoginPage";
 import WellsPage from "./pages/WellsPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -14,7 +15,7 @@ export default function App() {
   const qc = useQueryClient();
   const me = useQuery({
     queryKey: ["me"],
-    queryFn: () => api.get<{ username: string }>("/api/auth/me"),
+    queryFn: fetchMe,
   });
   const [, force] = useState(0);
 
@@ -36,6 +37,35 @@ export default function App() {
     qc.setQueryData(["me"], null);
     force((x) => x + 1);
   };
+
+  if (me.data.role === "guest") {
+    // guest: Monitoring + Dashboard only
+    return (
+      <div className="app">
+        <header className="topbar">
+          <div className="brand">Torque &amp; Drag ML Calibration</div>
+          <nav>
+            <NavLink to="/monitoring">Monitoring</NavLink>
+            <NavLink to="/dashboard">Dashboard</NavLink>
+          </nav>
+          <div className="user">
+            <span className="muted">{me.data.username} (guest)</span>
+            <button className="btn ghost" onClick={logout}>
+              Sign out
+            </button>
+          </div>
+        </header>
+        <main>
+          <Routes>
+            <Route path="/monitoring" element={<WellsPage key="monitoring" purpose="monitoring" />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/dashboard/:wellId" element={<DashboardPage />} />
+            <Route path="*" element={<Navigate to="/monitoring" replace />} />
+          </Routes>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app">

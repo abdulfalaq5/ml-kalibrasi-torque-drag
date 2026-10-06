@@ -16,6 +16,7 @@ import {
   statusTone,
   TYPES,
 } from "../api";
+import { useIsGuest } from "../role";
 import QualityBadge from "./QualityBadge";
 
 type Upload = FileItem & {
@@ -310,6 +311,7 @@ export function MonitoringUploadPanel() {
   });
   const p = res?.profile;
   const wid = res?.file.well_id;
+  const guest = useIsGuest();
 
   return (
     <section className="card">
@@ -366,12 +368,16 @@ export function MonitoringUploadPanel() {
                   <Link className="btn primary" to={`/dashboard/${wid}`}>
                     Open dashboard (prediction N ft ahead)
                   </Link>
-                  <a className="btn" href={`/api/wells/${wid}/export.xlsx`}>
-                    ⬇ Prediction Output (.xlsx)
-                  </a>
-                  <a className="btn" href={`/api/wells/${wid}/report.pdf`}>
-                    ⬇ Summary (PDF)
-                  </a>
+                  {!guest && (
+                    <>
+                      <a className="btn" href={`/api/wells/${wid}/export.xlsx`}>
+                        ⬇ Prediction Output (.xlsx)
+                      </a>
+                      <a className="btn" href={`/api/wells/${wid}/report.pdf`}>
+                        ⬇ Summary (PDF)
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
               {(res.warnings ?? []).length > 0 && (
@@ -386,10 +392,10 @@ export function MonitoringUploadPanel() {
                   <tr>
                     <th>Operation</th>
                     <th className="num">Final depth ({p.depth_unit})</th>
-                    <th className="num">T&amp;D Model (OHFF 0.3)</th>
+                    {!guest && <th className="num">T&amp;D Model (OHFF 0.3)</th>}
                     <th className="num">ML prediction</th>
                     <th className="num">Uncertainty band (P10–P90)</th>
-                    <th className="num">ML − T&amp;D Model</th>
+                    {!guest && <th className="num">ML − T&amp;D Model</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -407,19 +413,21 @@ export function MonitoringUploadPanel() {
                           {OP_LABEL[op]} <span className="muted small">({o.unit})</span>
                         </td>
                         <td className="num">{fmt(ml.d, 0)}</td>
-                        <td className="num">{fmt(wp, 1)}</td>
+                        {!guest && <td className="num">{fmt(wp, 1)}</td>}
                         <td className="num">
                           <b>{fmt(ml.v, 1)}</b>
                         </td>
                         <td className="num">{lo.v !== null ? `${fmt(lo.v, 1)} – ${fmt(hi.v, 1)}` : "–"}</td>
-                        <td className="num">{dl.v === null ? "–" : `${dl.v > 0 ? "+" : ""}${fmt(dl.v, 1)}`}</td>
+                        {!guest && (
+                          <td className="num">{dl.v === null ? "–" : `${dl.v > 0 ? "+" : ""}${fmt(dl.v, 1)}`}</td>
+                        )}
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
               <p className="small muted">
-                The full prediction per depth is on the dashboard and in the Excel file. Upload the file again with new actual
+                The full prediction per depth is on the dashboard{guest ? "" : " and in the Excel file"}. Upload the file again with new actual
                 readings as drilling progresses: the system compares this prediction with the actual data (Evaluations).
               </p>
             </div>

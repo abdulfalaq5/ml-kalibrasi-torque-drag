@@ -324,7 +324,7 @@ export type ForecastOp = {
   backtest: { horizon_ft: number; method: string; within: number; p90: number; td_within: number | null } | null;
   actual_check: {
     n: number;
-    td_within: number;
+    td_within: number | null;
     ml_within: number;
     ml_mean_abs: number;
     ml_bias_within?: number;

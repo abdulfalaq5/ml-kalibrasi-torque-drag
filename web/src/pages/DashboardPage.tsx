@@ -12,6 +12,7 @@ import ThreeProfileChart, {
   TORQUE_OPS,
 } from "../components/ThreeProfileChart";
 import { DIFF_KEYS, DIFF_LABEL, DiffKey, OHFF_COLOR } from "../components/chartTheme";
+import { useIsGuest } from "../role";
 
 const pctTxt = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v * 100)}%`);
 
@@ -19,6 +20,7 @@ export default function DashboardPage() {
   const { wellId } = useParams();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const guest = useIsGuest();
   const wells = useQuery({ queryKey: ["wells"], queryFn: () => api.get<WellItem[]>("/api/wells") });
   const [section, setSection] = useState("");
   const [wtype, setWtype] = useState("");
@@ -28,7 +30,11 @@ export default function DashboardPage() {
   const [group, setGroup] = useState<"" | "training" | "monitoring">("");
   const [calibration, setCalibration] = useState<"" | "calibrated" | "raw">("");
   const [forecast, setForecast] = useState<Forecast | null>(null);
-  const models = useQuery({ queryKey: ["models"], queryFn: () => api.get<ModelItem[]>("/api/models") });
+  const models = useQuery({
+    queryKey: ["models"],
+    queryFn: () => api.get<ModelItem[]>("/api/models"),
+    enabled: !guest,
+  });
   const usable = (models.data ?? []).filter((m) => m.status === "done" || m.status === "held");
   const [opts, setOpts] = useState<ChartOptions>({
     ops: Object.fromEntries(OPS.map((o) => [o, true])) as Record<Op, boolean>,
@@ -97,6 +103,7 @@ export default function DashboardPage() {
     <div className="page wide">
       <section className="card filters">
         <div className="row gap wrap">
+          {!guest && (
           <label className="inline">
             Data group
             <select value={group} onChange={(e) => setGroup(e.target.value as typeof group)}>
@@ -105,6 +112,7 @@ export default function DashboardPage() {
               <option value="monitoring">{PURPOSE_LABEL.monitoring}</option>
             </select>
           </label>
+          )}
           <label className="inline">
             Well section
             <select value={section} onChange={(e) => setSection(e.target.value)}>
@@ -125,6 +133,7 @@ export default function DashboardPage() {
               ))}
             </select>
           </label>
+          {!guest && (
           <label className="inline">
             Quality
             <select value={quality} onChange={(e) => setQuality(e.target.value as "" | QStatus)}>
@@ -136,6 +145,7 @@ export default function DashboardPage() {
               ))}
             </select>
           </label>
+          )}
           <label className="inline">
             Well
             <select value={selectedId ?? ""} onChange={(e) => nav(`/dashboard/${e.target.value}`)}>
@@ -155,6 +165,8 @@ export default function DashboardPage() {
               <option value="si">SI (m, kN, kN·m)</option>
             </select>
           </label>
+          {!guest && (
+          <>
           <label className="inline">
             Model
             <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
@@ -174,24 +186,30 @@ export default function DashboardPage() {
               <option value="raw">As modelled</option>
             </select>
           </label>
+          </>
+          )}
           <div className="spacer" />
           {selectedId && (
             <>
               <button className="btn" onClick={() => predict.mutate()} disabled={predict.isPending}>
                 {predict.isPending ? "Predicting…" : "Run prediction again"}
               </button>
-              <a
-                className="btn"
-                href={`/api/wells/${selectedId}/report.pdf?${qs}&target=${opts.diffTarget}`}
-              >
-                PDF
-              </a>
-              <a
-                className="btn primary"
-                href={`/api/wells/${selectedId}/export.xlsx?${qs}&target=${opts.diffTarget}`}
-              >
-                Export Excel
-              </a>
+              {!guest && (
+                <>
+                  <a
+                    className="btn"
+                    href={`/api/wells/${selectedId}/report.pdf?${qs}&target=${opts.diffTarget}`}
+                  >
+                    PDF
+                  </a>
+                  <a
+                    className="btn primary"
+                    href={`/api/wells/${selectedId}/export.xlsx?${qs}&target=${opts.diffTarget}`}
+                  >
+                    Export Excel
+                  </a>
+                </>
+              )}
             </>
           )}
         </div>
@@ -217,15 +235,19 @@ export default function DashboardPage() {
                 {OP_LABEL[o]}
               </label>
             ))}
-            <label className="check">
-              <input type="checkbox" checked={opts.showFF} onChange={(e) => set("showFF", e.target.checked)} />
-              All OHFF curves
-            </label>
+            {!guest && (
+              <label className="check">
+                <input type="checkbox" checked={opts.showFF} onChange={(e) => set("showFF", e.target.checked)} />
+                All OHFF curves
+              </label>
+            )}
             <label className="check">
               <input type="checkbox" checked={opts.showBand} onChange={(e) => set("showBand", e.target.checked)} />
               Uncertainty band (P10–P90)
             </label>
           </fieldset>
+          {!guest && (
+          <>
           <fieldset>
             <legend>Difference (Δ) chart</legend>
             <select value={opts.diffTarget} onChange={(e) => set("diffTarget", e.target.value as Op)}>
@@ -270,6 +292,8 @@ export default function DashboardPage() {
               {modeUnit}
             </label>
           </fieldset>
+          </>
+          )}
         </div>
       </section>
 
@@ -302,6 +326,25 @@ export default function DashboardPage() {
                 </span>
               </span>
             </div>
+            {guest ? (
+              <div className="small legend-note">
+                <div>
+                  <span className="sw ml" /> ML prediction{opts.showBand ? " (dashed = P10–P90 band)" : ""} ·{" "}
+                  <span className="dot act" /> Actual (points)
+                  {forecast && (
+                    <>
+                      {" "}
+                      · <span className="sw" style={{ background: "#4a3aa7", height: 4 }} /> <b>Prediction ahead</b> (thick
+                      purple line, shaded band = P10–P90, value at the end of the window)
+                    </>
+                  )}
+                </div>
+                <div>
+                  <b>Names:</b> PU = pick up, SO = slack off, ROT = rotating weight. Actual markers: ● PU / torque off bottom ·
+                  ▲ SO / torque on bottom · ■ ROT.
+                </div>
+              </div>
+            ) : (
             <div className="small legend-note">
               <div>
                 <b>T&amp;D Model (one colour per OHFF):</b>{" "}
@@ -337,7 +380,14 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-            <ThreeProfileChart profile={p} options={{ ...opts, flagSeries }} intervals={intervals} forecast={forecast} />
+            )}
+            <ThreeProfileChart
+              profile={p}
+              options={{ ...opts, flagSeries }}
+              intervals={guest ? [] : intervals}
+              forecast={forecast}
+              simple={guest}
+            />
           </section>
 
           <ForecastPanel
@@ -365,8 +415,9 @@ export default function DashboardPage() {
               </ul>
             </details>
           )}
-          <LimitsPanel profile={p} />
-          <div className="grid2">
+          {!guest && <LimitsPanel profile={p} />}
+          <div className={guest ? "" : "grid2"}>
+            {!guest && (
             <section className="card">
               <h3>
                 5 depths with the largest difference · {DIFF_LABEL[flagSeries]} · {OP_LABEL[opts.diffTarget]}
@@ -415,6 +466,7 @@ export default function DashboardPage() {
                 </>
               )}
             </section>
+            )}
             <section className="card">
               <h3>Metrics for this well</h3>
               {p.has_actual ? (
@@ -422,14 +474,14 @@ export default function DashboardPage() {
                   <thead>
                     <tr>
                       <th>Operation</th>
-                      <th className="num">RMSE WP</th>
+                      {!guest && <th className="num">RMSE WP</th>}
                       <th className="num">RMSE ML</th>
-                      <th className="num">MAPE WP</th>
+                      {!guest && <th className="num">MAPE WP</th>}
                       <th className="num">MAPE ML</th>
-                      <th className="num">R² WP</th>
+                      {!guest && <th className="num">R² WP</th>}
                       <th className="num">R² ML</th>
                       <th className="num" title="Share of actual points with |error| below the client tolerance">
-                        Within tol. WP → ML
+                        {guest ? "Within tolerance" : "Within tol. WP → ML"}
                       </th>
                     </tr>
                   </thead>
@@ -441,14 +493,15 @@ export default function DashboardPage() {
                           <td>
                             {OP_LABEL[o]} <span className="muted small">({p.operations[o].unit})</span>
                           </td>
-                          <td className="num">{fmt(m?.wellplan?.rmse)}</td>
+                          {!guest && <td className="num">{fmt(m?.wellplan?.rmse)}</td>}
                           <td className="num">{fmt(m?.ml?.rmse)}</td>
-                          <td className="num">{fmt(m?.wellplan?.mape, 1)}%</td>
+                          {!guest && <td className="num">{fmt(m?.wellplan?.mape, 1)}%</td>}
                           <td className="num">{fmt(m?.ml?.mape, 1)}%</td>
-                          <td className="num">{fmt(m?.wellplan?.r2)}</td>
+                          {!guest && <td className="num">{fmt(m?.wellplan?.r2)}</td>}
                           <td className="num">{fmt(m?.ml?.r2)}</td>
                           <td className="num nowrap">
-                            {pctTxt(m?.wellplan?.within)} → <b>{pctTxt(m?.ml?.within)}</b>{" "}
+                            {!guest && <>{pctTxt(m?.wellplan?.within)} → </>}
+                            <b>{pctTxt(m?.ml?.within)}</b>{" "}
                             <span className="muted small">(&lt; {p.operations[o].tolerance})</span>
                           </td>
                         </tr>

@@ -21,7 +21,7 @@ MIN_LEN = 12
 
 def set_admin_password(username: str | None) -> int:
     with SessionLocal() as db:
-        user = db.scalar(select(AdminUser).limit(1))
+        user = db.scalar(select(AdminUser).where(AdminUser.role == "admin").limit(1))
         if user is None:
             username = username or input("New admin username: ").strip()
             if not username:
@@ -100,6 +100,31 @@ def backfill_band(model_id: int | None) -> int:
     return 0
 
 
+def set_user(username: str, role: str) -> int:
+    """Buat atau ubah akun dengan peran tertentu (mis. guest). Password dibaca dari prompt."""
+    with SessionLocal() as db:
+        user = db.scalar(select(AdminUser).where(AdminUser.username == username))
+        if user is None:
+            user = AdminUser(username=username, password_hash="", role=role)
+            db.add(user)
+        elif user.role == "admin" and role != "admin":
+            n_admin = db.query(AdminUser).filter(AdminUser.role == "admin").count()
+            if n_admin <= 1:
+                print("Cannot demote the only admin account.", file=sys.stderr)
+                return 1
+        user.role = role
+        pw = getpass.getpass(f"Password for '{username}' ({role}): ")
+        if len(pw) < MIN_LEN:
+            print(f"Password must be at least {MIN_LEN} characters.", file=sys.stderr)
+            return 1
+        user.password_hash = hash_password(pw)
+        user.updated_at = utcnow()
+        db.execute(delete(LoginAttempt).where(LoginAttempt.username == username))
+        db.commit()
+        print(f"Account '{username}' saved with role {role}.")
+    return 0
+
+
 def recompute_tol(model_id: int | None) -> int:
     from app.db.models import MLModel
     from app.services.training import recompute_tolerance
@@ -141,6 +166,9 @@ def main() -> int:
     sub.add_parser("recompute-quality", help="Recompute the data quality of every well")
     pb = sub.add_parser("backfill-band", help="Add the P10–P90 band coverage to an existing model")
     pb.add_argument("--model-id", type=int, help="Default: the active model")
+    pu = sub.add_parser("set-user", help="Create or update an account with a role (admin/guest)")
+    pu.add_argument("--username", required=True)
+    pu.add_argument("--role", choices=["admin", "guest"], default="guest")
     pt = sub.add_parser(
         "recompute-tolerance",
         help="Recompute 'within tolerance' and the prediction backtest after a tolerance change",
@@ -153,6 +181,8 @@ def main() -> int:
         return refresh_meta()
     if args.cmd == "backfill-band":
         return backfill_band(args.model_id)
+    if args.cmd == "set-user":
+        return set_user(args.username, args.role)
     if args.cmd == "recompute-tolerance":
         return recompute_tol(args.model_id)
     if args.cmd == "recompute-quality":

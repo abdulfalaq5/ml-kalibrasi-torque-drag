@@ -124,11 +124,14 @@ export default function ThreeProfileChart({
   options,
   intervals,
   forecast,
+  simple = false,
 }: {
   profile: Profile;
   options: ChartOptions;
   intervals: Interval[];
   forecast?: Forecast | null;
+  /** guest view: only actual + ML / prediction (no Difference panel, no limits) */
+  simple?: boolean;
 }) {
   const narrow = useNarrow();
   const [hoverDepth, setHoverDepth] = useState<number | null>(null);
@@ -361,7 +364,7 @@ export default function ThreeProfileChart({
     const limitOps = key === "hookload" ? HOOKLOAD_OPS : key === "torque" ? TORQUE_OPS : [];
     const limitShapes: Partial<Plotly.Shape>[] = [];
     const limitNotes: Partial<Plotly.Annotations>[] = [];
-    for (const op of limitOps) {
+    for (const op of simple ? [] : limitOps) {
       if (!options.ops[op]) continue;
       for (const lim of profile.operations[op].limits ?? []) {
         limitShapes.push({
@@ -512,7 +515,7 @@ export default function ThreeProfileChart({
   };
 
   const diffUnit = options.diffMode === "abs" ? target.unit : "%";
-  const panels: { key: PanelKey; title: string; data: Plotly.Data[]; xTitle: string }[] = [
+  const allPanels: { key: PanelKey; title: string; data: Plotly.Data[]; xTitle: string }[] = [
     { key: "hookload", title: `Hookload (${hkUnit})`, data: traces.hookload, xTitle: `Hookload (${hkUnit})` },
     { key: "torque", title: `Torque (${tqUnit})`, data: traces.torque, xTitle: `Torque (${tqUnit})` },
     {
@@ -522,6 +525,7 @@ export default function ThreeProfileChart({
       xTitle: `← lower (−)   Difference Δ (${diffUnit})   higher (+) →`,
     },
   ];
+  const panels = simple ? allPanels.filter((p) => p.key !== "diff") : allPanels;
   // layouts are rebuilt only when inputs change (Plotly.react is cheap when equal)
   const layouts = useMemo(
     () => Object.fromEntries(panels.map((p) => [p.key, makeLayout(p.key, p.xTitle)])) as Record<
@@ -648,10 +652,17 @@ export default function ThreeProfileChart({
             </b>
             {readout.rows.map((r) => (
               <span key={r.label}>
-                {r.label}: <i className="k wp">WP</i> {f(r.wp)} · <i className="k ml">ML</i> {f(r.ml)} ·{" "}
+                {r.label}:{" "}
+                {!simple && (
+                  <>
+                    <i className="k wp">WP</i> {f(r.wp)} ·{" "}
+                  </>
+                )}
+                <i className="k ml">ML</i> {f(r.ml)} ·{" "}
                 <i className="k act">Act</i> {f(r.act)} {r.unit}
               </span>
             ))}
+            {!simple && (
             <span>
               Δ {OP_LABEL[options.diffTarget]}:{" "}
               {readout.diffs.map((d) => (
@@ -661,6 +672,7 @@ export default function ThreeProfileChart({
               ))}
               {target.unit}
             </span>
+            )}
           </>
         ) : (
           <span className="muted">

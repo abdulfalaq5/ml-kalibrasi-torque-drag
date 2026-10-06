@@ -35,6 +35,8 @@ class AdminUser(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    # admin = semua menu; guest = hanya Monitoring + Dashboard, tanpa kurva WellPlan (K-45)
+    role: Mapped[str] = mapped_column(String(16), default="admin", server_default="admin")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

@@ -1,12 +1,13 @@
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
+from app.core.security import is_guest
 from app.db.models import PURPOSES, UploadedFile
 from app.db.session import get_db
 from app.services.classify import classify_section
@@ -52,6 +53,7 @@ def file_out(f: UploadedFile, db: Session | None = None) -> dict:
 @router.post("")
 # sync def: impor berat dijalankan di threadpool, tidak memblokir event loop
 def upload(
+    request: Request,
     file: UploadFile = File(...),
     purpose: str = Form(...),
     section_in: float = Form(...),
@@ -65,6 +67,8 @@ def upload(
     purpose=monitoring -> a well being drilled; prediction/evaluation only, never used for training
     """
     settings = get_settings()
+    if is_guest(request) and purpose != "monitoring":
+        raise HTTPException(403, "The guest account can only upload monitoring wells")
     if purpose not in PURPOSES:
         raise HTTPException(400, "Purpose must be 'training' or 'monitoring'")
     if well_type not in WELL_TYPES:
@@ -108,9 +112,12 @@ def upload(
 
 @router.get("")
 def list_files(
+    request: Request,
     purpose: str | None = Query(None, pattern="^(training|monitoring)$"),
     db: Session = Depends(get_db),
 ):
+    if is_guest(request):
+        purpose = "monitoring"
     q = (
         select(UploadedFile)
         .options(selectinload(UploadedFile.issues), selectinload(UploadedFile.well))

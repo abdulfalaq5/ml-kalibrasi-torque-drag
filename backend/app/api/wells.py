@@ -1,11 +1,12 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.security import is_guest
 from app.db.models import (
     ActualReading,
     MLModel,
@@ -20,6 +21,7 @@ from app.db.session import get_db
 from app.services.evaluation import evaluate_well_predictions
 from app.services.export import export_well
 from app.services.forecast import export_forecast, forecast_well
+from app.services.guest_view import forecast_for_guest, profile_for_guest
 from app.services.importer import OK_STATUSES, import_file
 from app.services.operations import OPERATIONS, WELL_TYPES
 from app.services.pdf import well_pdf
@@ -101,9 +103,12 @@ def well_out(db: Session, w: Well, ctx: dict | None = None) -> dict:
 
 @router.get("")
 def list_wells(
+    request: Request,
     purpose: str | None = Query(None, pattern="^(training|monitoring)$"),
     db: Session = Depends(get_db),
 ):
+    if is_guest(request):
+        purpose = "monitoring"
     q = select(Well).options(selectinload(Well.files)).order_by(Well.name, Well.section_in)
     if purpose:
         q = q.where(Well.purpose == purpose)
@@ -241,8 +246,11 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
 
 
 @router.post("/{well_id}/forecast")
-def forecast(well_id: int, body: ForecastIn, db: Session = Depends(get_db)):
+def forecast(well_id: int, body: ForecastIn, request: Request, db: Session = Depends(get_db)):
     """Prediction N ft ahead of the last actual depth, with cause-and-effect explanation."""
+    if is_guest(request):
+        body.model_id = None  # guest selalu memakai model aktif
+        return forecast_for_guest(_forecast(db, well_id, body))
     return _forecast(db, well_id, body)
 
 
@@ -263,7 +271,11 @@ def forecast_xlsx(well_id: int, body: ForecastIn, db: Session = Depends(get_db))
 
 
 @router.post("/{well_id}/predict")
-def predict(well_id: int, model_id: int | None = None, db: Session = Depends(get_db)):
+def predict(
+    well_id: int, request: Request, model_id: int | None = None, db: Session = Depends(get_db)
+):
+    if is_guest(request):
+        model_id = None
     w = _get(db, well_id)
     try:
         p = predict_well(db, w, _model(db, model_id))
@@ -284,11 +296,14 @@ def _model(db: Session, model_id: int | None) -> MLModel | None:
 @router.get("/{well_id}/profile")
 def profile(
     well_id: int,
+    request: Request,
     units: str = Query("imperial", pattern="^(imperial|si)$"),
     model_id: int | None = None,
     calibration: str | None = Query(None, pattern="^(calibrated|raw)$"),
     db: Session = Depends(get_db),
 ):
+    if is_guest(request):
+        return profile_for_guest(well_profile(db, _get(db, well_id), units, None, "raw"))
     return well_profile(db, _get(db, well_id), units, _model(db, model_id), calibration)
 
 

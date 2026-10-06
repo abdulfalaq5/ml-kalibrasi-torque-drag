@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.security import require_admin
 from app.db.models import QualityReview, Well, WellQuality
 from app.db.session import get_db
 from app.services.export import export_quality_report
@@ -86,7 +85,7 @@ def review(well_id: int, body: ReviewIn, request: Request, db: Session = Depends
             well_id=well_id,
             decision=body.decision,
             reason=body.reason.strip(),
-            reviewer=require_admin(request),
+            reviewer=request.session.get("user"),  # sesi sudah divalidasi oleh dependensi router
         )
     )
     db.commit()

@@ -17,6 +17,7 @@ import {
 } from "../api";
 import InboxPanel from "../components/InboxPanel";
 import { MonitoringUploadPanel, TrainingUploadPanel } from "../components/UploadPanels";
+import { useIsGuest } from "../role";
 import QualityBadge from "../components/QualityBadge";
 
 type GroupBy = "none" | "section" | "type" | "section_type" | "quality";
@@ -59,6 +60,7 @@ function groupKey(w: WellItem, g: GroupBy): string {
 export default function WellsPage({ purpose }: { purpose: Purpose }) {
   const qc = useQueryClient();
   const training = purpose === "training";
+  const guest = useIsGuest();
   const wells = useQuery({
     queryKey: ["wells", purpose],
     queryFn: () => api.get<WellItem[]>(`/api/wells?purpose=${purpose}`),
@@ -144,6 +146,11 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
           <>
             <b>Training Data</b> = historical wells, the only reference the ML model learns from. Wells being drilled now go to{" "}
             <Link to="/monitoring">Monitoring</Link>.
+          </>
+        ) : guest ? (
+          <>
+            <b>Monitoring</b> = wells to be drilled or being drilled. Upload a file to get the ML prediction, then open the{" "}
+            <Link to="/dashboard">Dashboard</Link>.
           </>
         ) : (
           <>
@@ -289,7 +296,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
                         <Link className="btn small" to={`/dashboard/${w.id}`}>
                           Dashboard
                         </Link>{" "}
-                        {!training && (
+                        {!training && !guest && (
                           <button
                             className="btn small"
                             disabled={promote.isPending}
