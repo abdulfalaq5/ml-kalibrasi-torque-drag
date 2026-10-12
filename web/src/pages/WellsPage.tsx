@@ -17,7 +17,7 @@ import {
 } from "../api";
 import InboxPanel from "../components/InboxPanel";
 import { MonitoringUploadPanel, TrainingUploadPanel } from "../components/UploadPanels";
-import { useIsGuest } from "../role";
+import { useIsGuest, useUsers } from "../role";
 import QualityBadge from "../components/QualityBadge";
 
 type GroupBy = "none" | "section" | "type" | "section_type" | "quality";
@@ -61,6 +61,8 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
   const qc = useQueryClient();
   const training = purpose === "training";
   const guest = useIsGuest();
+  const showOwner = !training && !guest; // admin: owner of each monitoring well (K-47)
+  const users = useUsers(showOwner);
   const wells = useQuery({
     queryKey: ["wells", purpose],
     queryFn: () => api.get<WellItem[]>(`/api/wells?purpose=${purpose}`),
@@ -86,7 +88,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
     });
 
   const invalidate = () => {
-    for (const k of ["wells", "files", "quality"]) qc.invalidateQueries({ queryKey: [k] });
+    for (const k of ["wells", "files", "quality", "users"]) qc.invalidateQueries({ queryKey: [k] });
   };
   const patch = useMutation({
     mutationFn: ({ id, body }: { id: number; body: Record<string, unknown> }) => api.patch(`/api/wells/${id}`, body),
@@ -137,7 +139,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
   }
   const sections = [...new Set(all.map((w) => w.section_in ?? "?"))].sort((a, b) => Number(b) - Number(a));
   const fileList = (files.data ?? []).filter((f) => !fileStatus || f.status === fileStatus);
-  const COLS = 12;
+  const COLS = showOwner ? 13 : 12;
 
   return (
     <div className="page">
@@ -224,6 +226,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
             <thead>
               <tr>
                 <th>Well</th>
+                {showOwner && <th>Owner</th>}
                 <th>Section</th>
                 <th>Type</th>
                 <th>Quality</th>
@@ -252,6 +255,25 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
                       <td>
                         <b>{w.name}</b>
                       </td>
+                      {showOwner && (
+                        <td>
+                          <select
+                            value={w.owner_id ?? ""}
+                            title="Only the owner (and admins) can see this well"
+                            onChange={(e) =>
+                              patch.mutate({ id: w.id, body: { owner_id: e.target.value ? Number(e.target.value) : null } })
+                            }
+                          >
+                            <option value="">– none (admin only) –</option>
+                            {(users.data ?? []).map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.username}
+                                {u.role === "admin" ? " (admin)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      )}
                       <td>
                         <select
                           value={w.section_in ?? ""}

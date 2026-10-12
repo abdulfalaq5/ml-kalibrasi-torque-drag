@@ -10,6 +10,7 @@ import ModelsPage from "./pages/ModelsPage";
 import QualityPage from "./pages/QualityPage";
 import EvaluationsPage from "./pages/EvaluationsPage";
 import HelpPage from "./pages/HelpPage";
+import UsersPage from "./pages/UsersPage";
 
 export default function App() {
   const qc = useQueryClient();
@@ -49,7 +50,7 @@ export default function App() {
             <NavLink to="/dashboard">Dashboard</NavLink>
           </nav>
           <div className="user">
-            <span className="muted">{me.data.username} (guest)</span>
+            <span className="muted">{me.data.username}</span>
             <button className="btn ghost" onClick={logout}>
               Sign out
             </button>
@@ -78,6 +79,7 @@ export default function App() {
           <NavLink to="/models">Models</NavLink>
           <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/evaluations">Evaluations</NavLink>
+          <NavLink to="/users">Users</NavLink>
           <NavLink to="/help">How-to Guide</NavLink>
         </nav>
         <div className="user">
@@ -95,6 +97,7 @@ export default function App() {
           <Route path="/quality" element={<QualityPage />} />
           <Route path="/models" element={<ModelsPage />} />
           <Route path="/evaluations" element={<EvaluationsPage />} />
+          <Route path="/users" element={<UsersPage />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/help/:topic" element={<HelpPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />

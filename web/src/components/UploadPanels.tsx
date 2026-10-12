@@ -16,7 +16,7 @@ import {
   statusTone,
   TYPES,
 } from "../api";
-import { useIsGuest } from "../role";
+import { useIsGuest, useUsers } from "../role";
 import QualityBadge from "./QualityBadge";
 
 type Upload = FileItem & {
@@ -107,13 +107,14 @@ function useDrop(multiple: boolean, disabled: boolean, onDrop: (f: File[]) => vo
   });
 }
 
-async function upload(f: File, purpose: Purpose, choice: WellChoice): Promise<Upload> {
+async function upload(f: File, purpose: Purpose, choice: WellChoice, ownerId?: string): Promise<Upload> {
   const fd = new FormData();
   fd.append("file", f);
   fd.append("purpose", purpose);
   fd.append("section_in", choice.section_in);
   fd.append("well_type", choice.well_type);
   if (choice.well_name.trim()) fd.append("well_name", choice.well_name.trim());
+  if (ownerId) fd.append("owner_id", ownerId);
   return api.post<Upload>("/api/files", fd);
 }
 
@@ -274,6 +275,9 @@ function lastValue(depth: number[], value: (number | null)[]) {
 
 export function MonitoringUploadPanel() {
   const qc = useQueryClient();
+  const guest = useIsGuest();
+  const users = useUsers(!guest);
+  const [owner, setOwner] = useState(""); // "" = the uploader (admin) owns the well
   const [choice, setChoice] = useState<WellChoice>(EMPTY);
   const ready = !!choice.section_in && !!choice.well_type;
   const [busy, setBusy] = useState<string | null>(null);
@@ -286,7 +290,7 @@ export function MonitoringUploadPanel() {
     setRes(null);
     try {
       setBusy("Importing and checking the file…");
-      const up = await upload(f, "monitoring", choice);
+      const up = await upload(f, "monitoring", choice, owner);
       if (up.status === "failed" || !up.well_id) {
         setRes({ file: up, error: "The file could not be imported. Fix it as described below and upload again." });
         return;
@@ -311,7 +315,6 @@ export function MonitoringUploadPanel() {
   });
   const p = res?.profile;
   const wid = res?.file.well_id;
-  const guest = useIsGuest();
 
   return (
     <section className="card">
@@ -324,6 +327,22 @@ export function MonitoringUploadPanel() {
       <Steps>
         <Step n={1} title="Select the well section and well type">
           <WellChoiceFields value={choice} onChange={setChoice} />
+          {!guest && (
+            <label className="inline small" style={{ marginTop: 8 }}>
+              Owner
+              <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+                <option value="">Me (admin)</option>
+                {(users.data ?? [])
+                  .filter((u) => u.role === "guest")
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.username}
+                    </option>
+                  ))}
+              </select>
+              <span className="muted">the user who will see this well</span>
+            </label>
+          )}
         </Step>
         <Step n={2} title="Download the template (optional)">
           <a className="btn" href="/api/templates/monitoring.xlsx">

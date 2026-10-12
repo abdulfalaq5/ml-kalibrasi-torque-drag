@@ -110,11 +110,19 @@ def import_file(
     source: str = "upload",
     well_type: str | None = None,
     purpose: str = "training",
+    uploaded_by: int | None = None,
+    owner_id: int | None = None,
+    owner_only: bool = False,
+    reassign_owner: bool = False,
 ) -> UploadedFile:
+    """owner_id: pemilik sumur baru (K-47). owner_only: akun guest, hanya boleh menambah ke sumur
+    miliknya. reassign_owner: admin memilih pemilik secara eksplisit, sumur lama ikut dipindahkan."""
     if purpose not in PURPOSES:
         raise ValueError(f"Unknown purpose '{purpose}'")
     existing = find_by_checksum(db, checksum, purpose)
-    if existing is not None:
+    if existing is not None and not (
+        owner_only and (existing.well is None or existing.well.owner_id != owner_id)
+    ):
         return existing
 
     uf = UploadedFile(
@@ -125,6 +133,7 @@ def import_file(
         source=source,
         rel_path=rel_path,
         purpose=purpose,
+        uploaded_by=uploaded_by,
     )
     db.add(uf)
     db.flush()
@@ -163,6 +172,13 @@ def import_file(
         )
     if not pw.has_errors and section is None:
         pw.error("Section (hole size) not found; select the Section before uploading")
+    if not pw.has_errors and owner_only:
+        other = _find_well(db, name, section, purpose)
+        if other is not None and other.owner_id != owner_id:
+            pw.error(
+                f'Well {name} {section:g}" is already registered by another user; '
+                "use a different well name"
+            )
 
     if pw.has_errors:
         uf.status = "failed"
@@ -171,7 +187,10 @@ def import_file(
         db.commit()
         return uf
 
+    is_new = _find_well(db, name, section, purpose) is None
     well = _get_or_create_well(db, name, section, purpose)
+    if is_new or reassign_owner:
+        well.owner_id = owner_id
     uf.well_id = well.id
     uf.version = _replace_previous(db, well, uf)
     _save_data(db, well, uf, pw)
@@ -204,10 +223,14 @@ def _name_from_filename(filename: str) -> str:
     return re.split(r"[_\s]+", stem)[0] or stem
 
 
-def _get_or_create_well(db: Session, name: str, section: float | None, purpose: str) -> Well:
+def _find_well(db: Session, name: str, section: float | None, purpose: str) -> Well | None:
     q = select(Well).where(Well.name == name, Well.purpose == purpose)
     q = q.where(Well.section_in.is_(None) if section is None else Well.section_in == section)
-    well = db.scalar(q)
+    return db.scalar(q)
+
+
+def _get_or_create_well(db: Session, name: str, section: float | None, purpose: str) -> Well:
+    well = _find_well(db, name, section, purpose)
     if well is None:
         well = Well(name=name, section_in=section, purpose=purpose, meta={})
         db.add(well)

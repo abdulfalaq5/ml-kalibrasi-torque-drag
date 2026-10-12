@@ -95,6 +95,9 @@ export type WellItem = {
   id: number;
   name: string;
   purpose: Purpose;
+  /** monitoring well owner (K-47): a user sees only their own wells, the admin sees all */
+  owner_id: number | null;
+  owner: string | null;
   quality: QStatus;
   quality_score: number | null;
   plan_format: string | null;
@@ -109,6 +112,16 @@ export type WellItem = {
   ff_scenarios: number[];
   prediction: "oof" | "full" | null;
   files: { id: number; filename: string; status: string; version: number }[];
+};
+export type Role = "admin" | "guest";
+export const ROLE_LABEL: Record<Role, string> = { admin: "Admin", guest: "User (monitoring only)" };
+export type UserItem = {
+  id: number;
+  username: string;
+  role: Role;
+  created_at: string | null;
+  updated_at: string;
+  monitoring_wells: number;
 };
 export type QStatus = "A" | "B" | "C" | "X";
 export const Q_LABEL: Record<QStatus, string> = {

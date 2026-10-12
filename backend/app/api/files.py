@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
-from app.core.security import is_guest
-from app.db.models import PURPOSES, UploadedFile
+from app.core.security import current_user_id, is_guest
+from app.db.models import PURPOSES, AdminUser, UploadedFile, Well
 from app.db.session import get_db
 from app.services.classify import classify_section
 from app.services.importer import ALLOWED_EXT, import_file, store_upload
@@ -59,16 +59,24 @@ def upload(
     section_in: float = Form(...),
     well_type: str = Form(...),
     well_name: str | None = Form(None),
+    owner_id: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Upload one Excel file. Purpose, well section and well type are selected by the user first.
 
     purpose=training   -> reference data for the ML model (enters the dataset if quality passes)
     purpose=monitoring -> a well being drilled; prediction/evaluation only, never used for training
+    owner_id (admin, monitoring only) -> the user who owns the well; default = the uploader
     """
     settings = get_settings()
-    if is_guest(request) and purpose != "monitoring":
+    guest = is_guest(request)
+    me = current_user_id(request)
+    if guest and purpose != "monitoring":
         raise HTTPException(403, "The guest account can only upload monitoring wells")
+    if owner_id is not None and (guest or purpose != "monitoring"):
+        raise HTTPException(400, "An owner can only be chosen by an admin for a monitoring well")
+    if owner_id is not None and db.get(AdminUser, owner_id) is None:
+        raise HTTPException(400, "Unknown user")
     if purpose not in PURPOSES:
         raise HTTPException(400, "Purpose must be 'training' or 'monitoring'")
     if well_type not in WELL_TYPES:
@@ -105,6 +113,10 @@ def upload(
         section_in,
         well_type=well_type,
         purpose=purpose,
+        uploaded_by=me,
+        owner_id=(owner_id or me) if purpose == "monitoring" else None,
+        owner_only=guest,
+        reassign_owner=owner_id is not None,
     )
     db.refresh(uf)
     return file_out(uf, db)
@@ -116,13 +128,18 @@ def list_files(
     purpose: str | None = Query(None, pattern="^(training|monitoring)$"),
     db: Session = Depends(get_db),
 ):
-    if is_guest(request):
-        purpose = "monitoring"
     q = (
         select(UploadedFile)
         .options(selectinload(UploadedFile.issues), selectinload(UploadedFile.well))
         .order_by(UploadedFile.id.desc())
     )
+    if is_guest(request):  # hanya file monitoring milik guest ini (K-47)
+        purpose = "monitoring"
+        me = current_user_id(request)
+        q = q.outerjoin(Well, UploadedFile.well_id == Well.id).where(
+            (Well.owner_id == me)
+            | (UploadedFile.well_id.is_(None) & (UploadedFile.uploaded_by == me))
+        )
     if purpose:
         q = q.where(UploadedFile.purpose == purpose)
     return [file_out(f) for f in db.scalars(q)]

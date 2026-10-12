@@ -6,9 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import is_guest
+from app.core.security import current_user_id, is_guest
 from app.db.models import (
     ActualReading,
+    AdminUser,
     MLModel,
     PlanResult,
     Prediction,
@@ -61,6 +62,7 @@ def _context(db: Session, ids: list[int] | None = None) -> dict:
     for r in db.scalars(select(QualityReview).order_by(QualityReview.created_at, QualityReview.id)):
         reviews[r.well_id] = r  # terakhir menang
     return {
+        "users": dict(db.execute(select(AdminUser.id, AdminUser.username)).all()),
         "survey": counts(Survey),
         "plan": counts(PlanResult),
         "actual": counts(ActualReading),
@@ -79,6 +81,8 @@ def well_out(db: Session, w: Well, ctx: dict | None = None) -> dict:
         "id": w.id,
         "name": w.name,
         "purpose": w.purpose,
+        "owner_id": w.owner_id,
+        "owner": ctx["users"].get(w.owner_id),
         "quality": effective_status(wq, ctx["reviews"].get(w.id)),
         "quality_score": wq.score if wq else None,
         "plan_format": (w.meta or {}).get("plan_format"),
@@ -107,9 +111,10 @@ def list_wells(
     purpose: str | None = Query(None, pattern="^(training|monitoring)$"),
     db: Session = Depends(get_db),
 ):
-    if is_guest(request):
-        purpose = "monitoring"
     q = select(Well).options(selectinload(Well.files)).order_by(Well.name, Well.section_in)
+    if is_guest(request):  # hanya sumur monitoring milik guest ini (K-47)
+        purpose = "monitoring"
+        q = q.where(Well.owner_id == current_user_id(request))
     if purpose:
         q = q.where(Well.purpose == purpose)
     wells = db.scalars(q).all()
@@ -143,12 +148,21 @@ def get_well(well_id: int, db: Session = Depends(get_db)):
 class WellPatch(BaseModel):
     section_in: float | None = None
     well_type: str | None = None
+    owner_id: int | None = None  # admin: pindahkan sumur monitoring ke user lain (K-47)
 
 
 @router.patch("/{well_id}")
-def patch_well(well_id: int, body: WellPatch, db: Session = Depends(get_db)):
-    """Koreksi manual section / tipe sumur."""
+def patch_well(well_id: int, body: WellPatch, request: Request, db: Session = Depends(get_db)):
+    """Koreksi manual section / tipe sumur; admin juga bisa mengganti pemilik sumur monitoring."""
     w = _get(db, well_id)
+    if "owner_id" in body.model_fields_set:
+        if is_guest(request):
+            raise HTTPException(403, "Only an admin can change the owner of a well")
+        if w.purpose != "monitoring":
+            raise HTTPException(400, "Only monitoring wells have an owner")
+        if body.owner_id is not None and db.get(AdminUser, body.owner_id) is None:
+            raise HTTPException(400, "Unknown user")
+        w.owner_id = body.owner_id
     changed = body.well_type is not None or body.section_in is not None
     if body.well_type is not None:
         if body.well_type not in WELL_TYPES:

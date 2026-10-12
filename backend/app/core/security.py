@@ -48,8 +48,21 @@ def is_guest(request: Request) -> bool:
     return getattr(request.state, "role", "admin") == "guest"
 
 
+def current_user_id(request: Request) -> int | None:
+    return getattr(request.state, "user_id", None)
+
+
+def guest_owns_file(f, user_id: int) -> bool:
+    """File milik guest: sumurnya milik guest, atau (impor gagal tanpa sumur) diunggah olehnya."""
+    if f.purpose != "monitoring":
+        return False
+    if f.well is not None:
+        return f.well.owner_id == user_id
+    return f.uploaded_by == user_id
+
+
 def _guest_scope(request: Request, db: Session) -> None:
-    """Guest hanya boleh rute di GUEST_ROUTES dan hanya sumur/file monitoring."""
+    """Guest hanya boleh rute di GUEST_ROUTES dan hanya sumur/file monitoring miliknya (K-47)."""
     from app.db.models import UploadedFile, Well
 
     route = request.scope.get("route")
@@ -58,11 +71,11 @@ def _guest_scope(request: Request, db: Session) -> None:
     pp = request.path_params
     if "well_id" in pp:
         w = db.get(Well, int(pp["well_id"]))
-        if w is None or w.purpose != "monitoring":
+        if w is None or w.purpose != "monitoring" or w.owner_id != request.state.user_id:
             raise HTTPException(404, "Well not found")
     if "file_id" in pp:
         f = db.get(UploadedFile, int(pp["file_id"]))
-        if f is None or f.purpose != "monitoring":
+        if f is None or not guest_owns_file(f, request.state.user_id):
             raise HTTPException(404, "File not found")
     if "kind" in pp and pp["kind"] != "monitoring":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not available for the guest account")
@@ -84,6 +97,7 @@ def require_admin(request: Request, db: Session = Depends(get_db)) -> str:
         request.session.clear()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
     request.state.role = user.role or "admin"
+    request.state.user_id = user.id
     if request.state.role == "guest":
         _guest_scope(request, db)
     return username

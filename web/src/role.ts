@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, UserItem } from "./api";
 
 export type Me = { username: string; role: "admin" | "guest" };
 
@@ -13,4 +13,13 @@ export function useIsGuest(): boolean {
     staleTime: Infinity,
   });
   return me.data?.role === "guest";
+}
+
+/** Accounts (admin only, K-47): used to choose / change the owner of a monitoring well. */
+export function useUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get<UserItem[]>("/api/users"),
+    enabled,
+  });
 }

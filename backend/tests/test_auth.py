@@ -112,14 +112,19 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
             )
         s.execute(delete(LoginAttempt))
         s.commit()
+        guest_id = s.scalar(select(AdminUser.id).where(AdminUser.username == "tamu-uji"))
 
     form = {"section_in": "8.5", "well_type": "J"}
     ids = {}
     for purpose in ("training", "monitoring"):
         p = fill("training", tmp_path / f"{purpose}.xlsx", name=f"GUEST-{purpose}")
+        # admin mengunggah sumur monitoring atas nama guest (K-47)
+        owner = {"owner_id": str(guest_id)} if purpose == "monitoring" else {}
         with p.open("rb") as fh:
             r = auth_client.post(
-                "/api/files", files={"file": (p.name, fh)}, data={**form, "purpose": purpose}
+                "/api/files",
+                files={"file": (p.name, fh)},
+                data={**form, "purpose": purpose, **owner},
             ).json()
         ids[purpose] = (r["well_id"], r["id"])
     tw, tf = ids["training"]
@@ -249,8 +254,12 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
 
     for wid in (tw, mw):
         auth_client.delete(f"/api/wells/{wid}")
-    # SQLite uji tidak menegakkan foreign key: hapus baris yatim agar ID sumur yang dipakai
-    # ulang oleh tes berikutnya tidak mewarisi data aktual / rencana sumur ini
+    _delete_orphans()
+
+
+def _delete_orphans() -> None:
+    """SQLite uji tidak menegakkan foreign key: hapus baris yatim agar ID sumur yang dipakai
+    ulang oleh tes berikutnya tidak mewarisi data aktual / rencana sumur yang dihapus."""
     from app.db.models import (
         ActualReading,
         PlanResult,
@@ -260,6 +269,7 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
         Well,
         WellQuality,
     )
+    from sqlalchemy import select
 
     with SessionLocal() as s:
         for model in (ActualReading, PlanResult, Survey, Prediction, WellQuality):
@@ -270,3 +280,125 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
             )
         )
         s.commit()
+
+
+def test_user_management_and_well_ownership(auth_client, tmp_path):
+    """Admin CRUD akun (K-47); guest hanya melihat sumur monitoring miliknya, admin melihat semua."""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    from tests.test_templates import fill
+
+    # validasi
+    assert (
+        auth_client.post(
+            "/api/users", json={"username": "u-a", "password": "pendek", "role": "guest"}
+        ).status_code
+        == 400
+    )
+    assert (
+        auth_client.post(
+            "/api/users", json={"username": "u-a", "password": "x" * 12, "role": "boss"}
+        ).status_code
+        == 400
+    )
+
+    users = {}
+    for name in ("pengguna-a", "pengguna-b"):
+        r = auth_client.post(
+            "/api/users", json={"username": name, "password": "rahasia-" + name, "role": "guest"}
+        )
+        assert r.status_code == 201, r.text
+        users[name] = r.json()["id"]
+    assert (
+        auth_client.post(
+            "/api/users", json={"username": "PENGGUNA-A", "password": "x" * 12}
+        ).status_code
+        == 409
+    )
+    listed = {u["username"]: u for u in auth_client.get("/api/users").json()}
+    assert listed["pengguna-a"]["role"] == "guest" and "password_hash" not in listed["pengguna-a"]
+
+    # admin tidak bisa menghapus / menurunkan dirinya sendiri (admin satu-satunya)
+    admin_id = listed["admin"]["id"]
+    assert auth_client.delete(f"/api/users/{admin_id}").status_code == 400
+    assert auth_client.patch(f"/api/users/{admin_id}", json={"role": "guest"}).status_code == 400
+
+    clients = {}
+    for name in users:
+        c = TestClient(app)
+        c.__enter__()
+        r = c.post("/api/auth/login", json={"username": name, "password": "rahasia-" + name})
+        assert r.status_code == 200, r.text
+        clients[name] = c
+    a, b = clients["pengguna-a"], clients["pengguna-b"]
+    try:
+        assert a.get("/api/users").status_code == 403
+
+        form = {"section_in": "8.5", "well_type": "J", "purpose": "monitoring"}
+        p = fill("training", tmp_path / "a.xlsx", name="OWN-A")
+        with p.open("rb") as fh:
+            ra = a.post("/api/files", files={"file": (p.name, fh)}, data=form).json()
+        assert ra["status"] in ("ok", "warning"), ra
+        wa, fa = ra["well_id"], ra["id"]
+        # guest tidak boleh memilih pemilik
+        with p.open("rb") as fh:
+            r = a.post(
+                "/api/files",
+                files={"file": (p.name, fh)},
+                data={**form, "owner_id": str(users["pengguna-b"])},
+            )
+        assert r.status_code == 400
+
+        # B tidak melihat sumur / file A
+        assert [w["id"] for w in a.get("/api/wells").json()] == [wa]
+        assert b.get("/api/wells").json() == []
+        assert b.get("/api/files").json() == []
+        assert b.get(f"/api/wells/{wa}/profile").status_code == 404
+        assert b.delete(f"/api/wells/{wa}").status_code == 404
+        assert b.get(f"/api/files/{fa}/download").status_code == 404
+        assert a.patch(f"/api/wells/{wa}", json={"owner_id": None}).status_code == 403
+
+        # B mengunggah file dengan nama sumur yang sama -> ditolak, sumur A tidak berubah
+        with p.open("rb") as fh:
+            rb = b.post("/api/files", files={"file": (p.name, fh)}, data=form).json()
+        assert rb["status"] == "failed" and rb["well_id"] is None
+        assert any("another user" in i["message"] for i in rb["issues"])
+        assert [f["id"] for f in b.get("/api/files").json()] == [rb["id"]]
+
+        # admin melihat semua, termasuk pemiliknya, dan bisa memindahkan pemilik
+        mine = {w["id"]: w for w in auth_client.get("/api/wells?purpose=monitoring").json()}
+        assert mine[wa]["owner"] == "pengguna-a"
+        r = auth_client.patch(f"/api/wells/{wa}", json={"owner_id": users["pengguna-b"]})
+        assert r.status_code == 200 and r.json()["owner"] == "pengguna-b"
+        assert a.get("/api/wells").json() == []
+        assert [w["id"] for w in b.get("/api/wells").json()] == [wa]
+
+        # ganti password -> password lama tidak berlaku
+        uid = users["pengguna-a"]
+        assert (
+            auth_client.patch(
+                f"/api/users/{uid}", json={"password": "password-baru-a1"}
+            ).status_code
+            == 200
+        )
+        r = a.post(
+            "/api/auth/login", json={"username": "pengguna-a", "password": "rahasia-pengguna-a"}
+        )
+        assert r.status_code == 401
+
+        # hapus akun -> sesi langsung tidak berlaku, sumurnya tetap ada tanpa pemilik
+        assert auth_client.delete(f"/api/users/{users['pengguna-b']}").status_code == 200
+        assert b.get("/api/wells").status_code == 401
+        assert auth_client.get(f"/api/wells/{wa}").json()["owner_id"] is None
+    finally:
+        for c in clients.values():
+            c.__exit__(None, None, None)
+        auth_client.delete(f"/api/wells/{wa}")
+        auth_client.delete(f"/api/users/{users['pengguna-a']}")
+        _delete_orphans()
+        with SessionLocal() as s:
+            from app.db.models import LoginAttempt
+
+            s.execute(delete(LoginAttempt))
+            s.commit()

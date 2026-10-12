@@ -37,6 +37,7 @@ class AdminUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     # admin = semua menu; guest = hanya Monitoring + Dashboard, tanpa kurva WellPlan (K-45)
     role: Mapped[str] = mapped_column(String(16), default="admin", server_default="admin")
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -73,6 +74,10 @@ class Well(Base):
     type_source: Mapped[str] = mapped_column(String(16), default="auto")
     status: Mapped[str] = mapped_column(String(32), default="new")
     purpose: Mapped[str] = mapped_column(String(16), default="training", index=True)
+    # pemilik sumur monitoring (K-47): akun guest hanya melihat sumur miliknya; admin melihat semua
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_user.id", ondelete="SET NULL"), index=True
+    )
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -95,6 +100,9 @@ class UploadedFile(Base):
     source: Mapped[str] = mapped_column(String(16), default="upload")  # upload | folder
     purpose: Mapped[str] = mapped_column(String(16), default="training")
     rel_path: Mapped[str | None] = mapped_column(String(512))  # jalur relatif di inbox
+    uploaded_by: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_user.id", ondelete="SET NULL"), index=True
+    )
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

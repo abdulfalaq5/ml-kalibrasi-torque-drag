@@ -19,6 +19,7 @@ from app.api import (
     models,
     quality,
     templates,
+    users,
     wells,
 )
 from app.core.config import get_settings
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
         limits.router,
         evaluations.router,
         templates.router,
+        users.router,
     ):
         app.include_router(r, dependencies=protected)
 
