@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import Logo from "../components/Logo";
 import { api } from "../api";
 
 export default function LoginPage({ onLogin }: { onLogin: () => void }) {
@@ -25,8 +26,10 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="login-wrap">
       <form className="card login" onSubmit={submit}>
-        <h1>Torque &amp; Drag ML Calibration</h1>
-        <p className="muted">Sign in with the admin account.</p>
+        <h1 className="brand">
+          <Logo size={30} /> Torque &amp; Drag ML Prediction
+        </h1>
+        <p className="muted">Sign in with your account.</p>
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />

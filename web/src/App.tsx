@@ -11,6 +11,7 @@ import QualityPage from "./pages/QualityPage";
 import EvaluationsPage from "./pages/EvaluationsPage";
 import HelpPage from "./pages/HelpPage";
 import UsersPage from "./pages/UsersPage";
+import Logo from "./components/Logo";
 
 export default function App() {
   const qc = useQueryClient();
@@ -44,7 +45,9 @@ export default function App() {
     return (
       <div className="app">
         <header className="topbar">
-          <div className="brand">Torque &amp; Drag ML Calibration</div>
+          <div className="brand">
+            <Logo /> Torque &amp; Drag ML Prediction
+          </div>
           <nav>
             <NavLink to="/monitoring">Monitoring</NavLink>
             <NavLink to="/dashboard">Dashboard</NavLink>
@@ -71,7 +74,9 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">Torque &amp; Drag ML Calibration</div>
+        <div className="brand">
+            <Logo /> Torque &amp; Drag ML Prediction
+          </div>
         <nav>
           <NavLink to="/training">Training Data</NavLink>
           <NavLink to="/monitoring">Monitoring</NavLink>

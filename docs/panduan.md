@@ -1,4 +1,4 @@
-# User Guide — Torque & Drag ML Calibration
+# User Guide — Torque & Drag ML Prediction
 
 Part A is for users (engineers), part B for the server operator.
 

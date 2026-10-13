@@ -72,7 +72,7 @@ def create_app() -> FastAPI:
         raise RuntimeError("In production SECRET_KEY must be random and at least 32 characters")
 
     app = FastAPI(
-        title="Torque & Drag ML Calibration",
+        title="Torque & Drag ML Prediction",
         lifespan=lifespan,
         docs_url=None if s.is_production else "/docs",
         redoc_url=None,
