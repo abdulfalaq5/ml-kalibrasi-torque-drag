@@ -96,7 +96,8 @@ def test_password_is_hashed(db):
 
 
 def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
-    """Akun guest (K-45): hanya rute Monitoring/Dashboard, hanya sumur monitoring, tanpa WellPlan."""
+    """Akun guest (K-45): hanya rute Monitoring/Dashboard dan sumur monitoring miliknya (K-47);
+    isi tampilannya sama dengan admin, termasuk WellPlan, Excel, dan PDF (K-48)."""
     from app.core.security import GUEST_ROUTES, hash_password
     from app.db.models import AdminUser, LoginAttempt
     from app.main import app
@@ -157,7 +158,7 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
         assert g.get(f"/api/files/{mf}/download").status_code == 200
         assert g.get("/api/templates/training.xlsx").status_code == 403
         assert g.get(f"/api/wells/{tw}/export.xlsx").status_code == 404
-        assert g.get(f"/api/wells/{mw}/report.pdf").status_code == 403
+        assert g.get(f"/api/wells/{tw}/report.pdf").status_code == 404
         assert g.get("/api/templates/monitoring.xlsx").status_code == 200
         p = fill("training", tmp_path / "g.xlsx", name="GUEST-try")
         with p.open("rb") as fh:
@@ -166,28 +167,29 @@ def test_guest_only_monitoring_and_dashboard(auth_client, tmp_path):
             )
         assert r.status_code == 403
 
-        # profil tanpa kurva WellPlan, batas, atau selisih terhadap WellPlan
+        # profil, Excel, dan PDF sama dengan yang dilihat admin (K-48)
         pr = g.get(f"/api/wells/{mw}/profile")
         assert pr.status_code == 200
-        for o in pr.json()["operations"].values():
-            assert o["wellplan"] == [] and o["limits"] == []
-            assert o["diff"]["wp_minus_actual"]["depth"] == []
-            assert o["diff"]["ml_minus_wp"]["depth"] == []
-            assert o["actual"]["depth"]  # aktual tetap ada
-            assert not o["metrics"] or o["metrics"]["wellplan"] is None
+        assert pr.json() == auth_client.get(f"/api/wells/{mw}/profile").json()
+        ops = pr.json()["operations"].values()
+        assert any(o["wellplan"] for o in ops) and all(o["actual"]["depth"] for o in ops)
 
-        # ekspor Excel versi guest: tanpa kurva WellPlan, metrik T&D, dan sheet multipoint
         import io
 
         import openpyxl
 
-        x = g.get(f"/api/wells/{mw}/export.xlsx")
-        assert x.status_code == 200, x.text
-        wb = openpyxl.load_workbook(io.BytesIO(x.content))
-        assert not any(" MW " in n for n in wb.sheetnames)
-        cells = {str(c.value) for ws in wb for row in ws.iter_rows() for c in row if c.value}
-        assert not any("MODELLED" in c or "T&D Model" in c or "ff=" in c for c in cells)
-        assert "ML PREDICTION" in cells
+        def sheets(c):
+            x = c.get(f"/api/wells/{mw}/export.xlsx")
+            assert x.status_code == 200, x.text
+            wb = openpyxl.load_workbook(io.BytesIO(x.content))
+            cells = {str(c.value) for ws in wb for row in ws.iter_rows() for c in row if c.value}
+            return wb.sheetnames, cells
+
+        names, cells = sheets(g)
+        assert (names, cells) == sheets(auth_client)
+        assert "ML PREDICTION" in cells and any("MODELLED" in c for c in cells)
+        pdf = g.get(f"/api/wells/{mw}/report.pdf")
+        assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
         fx = g.post(f"/api/wells/{mw}/forecast.xlsx", json={"distance_ft": 300})
         # rute terbuka untuk guest (di tes ini belum ada model aktif -> 400, bukan 403)
         assert fx.status_code in (200, 400), fx.text

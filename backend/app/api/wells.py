@@ -22,7 +22,6 @@ from app.db.session import get_db
 from app.services.evaluation import evaluate_well_predictions
 from app.services.export import export_well
 from app.services.forecast import export_forecast, forecast_well
-from app.services.guest_view import forecast_for_guest, profile_for_guest
 from app.services.importer import OK_STATUSES, import_file
 from app.services.operations import OPERATIONS, WELL_TYPES
 from app.services.pdf import well_pdf
@@ -276,8 +275,7 @@ def _forecast(db: Session, well_id: int, body: ForecastIn) -> dict:
 def forecast(well_id: int, body: ForecastIn, request: Request, db: Session = Depends(get_db)):
     """Prediction N ft ahead of the last actual depth, with cause-and-effect explanation."""
     if is_guest(request):
-        body.model_id = None  # guest selalu memakai model aktif
-        return forecast_for_guest(_forecast(db, well_id, body))
+        body.model_id = None  # user (guest) selalu memakai model aktif
     return _forecast(db, well_id, body)
 
 
@@ -285,9 +283,7 @@ def forecast(well_id: int, body: ForecastIn, request: Request, db: Session = Dep
 def forecast_xlsx(well_id: int, body: ForecastIn, request: Request, db: Session = Depends(get_db)):
     if is_guest(request):
         body.model_id = None
-        fc = forecast_for_guest(_forecast(db, well_id, body))
-    else:
-        fc = _forecast(db, well_id, body)
+    fc = _forecast(db, well_id, body)
     w = fc["well"]
     fname = (
         f"{w['name']}_{(w['section_in'] or 0):g}in_prediction_{body.distance_ft:g}ft.xlsx".replace(
@@ -334,13 +330,14 @@ def profile(
     db: Session = Depends(get_db),
 ):
     if is_guest(request):
-        return profile_for_guest(well_profile(db, _get(db, well_id), units, None, "raw"))
+        model_id = None  # tampilan sama dengan admin (K-48), tetapi selalu model aktif
     return well_profile(db, _get(db, well_id), units, _model(db, model_id), calibration)
 
 
 @router.get("/{well_id}/report.pdf")
 def report_pdf(
     well_id: int,
+    request: Request,
     units: str = Query("imperial", pattern="^(imperial|si)$"),
     target: str = Query("pick_up"),
     model_id: int | None = None,
@@ -349,6 +346,8 @@ def report_pdf(
 ):
     if target not in OPERATIONS:
         raise HTTPException(400, "Unknown target")
+    if is_guest(request):
+        model_id = None
     w = _get(db, well_id)
     data = well_pdf(db, w, units, target, _model(db, model_id), calibration)
     fname = f"summary_{w.name}_{(w.section_in or 0):g}in.pdf".replace(" ", "_")
@@ -384,9 +383,8 @@ def export(
     if target not in OPERATIONS:
         raise HTTPException(400, "Unknown target")
     w = _get(db, well_id)
-    guest = is_guest(request)
-    if guest:  # hanya aktual + ML, model aktif (K-45)
-        model_id, calibration = None, "raw"
+    if is_guest(request):  # tampilan sama dengan admin, model aktif (K-48)
+        model_id = None
     fc = None
     if fc_distance_ft:
         fc = _forecast(
@@ -403,11 +401,7 @@ def export(
                 calibration=calibration,
             ),
         )
-        if guest:
-            fc = forecast_for_guest(fc)
-    data = export_well(
-        db, w, units, target, _model(db, model_id), calibration, guest=guest, forecast=fc
-    )
+    data = export_well(db, w, units, target, _model(db, model_id), calibration, forecast=fc)
     fname = f"OUTPUT {w.name} {(w.section_in or 0):g}in Multiple T&D Road Map.xlsx"
     return Response(
         data,

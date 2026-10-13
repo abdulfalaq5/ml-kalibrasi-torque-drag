@@ -12,10 +12,8 @@ type Props = {
 };
 
 /** Forecast N ft ahead of the last actual depth, with cause and effect. */
-import { useIsGuest } from "../role";
 
 export default function ForecastPanel({ wellId, units, modelId, calibration, forecast, onForecast, hasActual }: Props) {
-  const guest = useIsGuest();
   const [distance, setDistance] = useState(300);
   const [direction, setDirection] = useState<"in" | "out">("in");
   const [step, setStep] = useState(30);
@@ -143,7 +141,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
         <b>To test the model on a well that already has actual readings</b>, enter an earlier <i>From depth</i>: the prediction
         then only uses data above that depth, and the column <i>Check against actual</i> compares it with the readings
         that follow. Predicts hookload and torque for the next N ft from the last actual depth with the active model: ML prediction,
-        uncertainty band (P10–P90){guest ? "" : " and the T&D Model curve per OHFF"}. The explanation lists what drives the change (local SHAP
+        uncertainty band (P10–P90) and the T&amp;D Model curve per OHFF. The explanation lists what drives the change (local SHAP
         contributions), plan changes (inclination, dogleg, interval type) and operating limits that would be reached. The
         prediction window is shaded in the charts above.
       </p>
@@ -165,7 +163,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
             <span className="muted">
               · last actual depth {forecast.last_actual_depth === null ? "–" : `${fmt(forecast.last_actual_depth, 0)} ${forecast.depth_unit}`} ·
               model #{forecast.model_id}
-              {!guest && <> · T&amp;D Model {forecast.calibration === "calibrated" ? "with DD Calibrate" : "as modelled"}</>}
+              {" "}· T&amp;D Model {forecast.calibration === "calibrated" ? "with DD Calibrate" : "as modelled"}
             </span>
           </p>
           <div className="table-wrap">
@@ -189,7 +187,7 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                       Check against actual
                     </th>
                   )}
-                  {!guest && <th>Main drivers (contribution to the change)</th>}
+                  <th>Main drivers (contribution to the change)</th>
                 </tr>
               </thead>
               <tbody>
@@ -257,7 +255,6 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                           )}
                         </td>
                       )}
-                      {!guest && (
                       <td className="small">
                         {o.explanation.drivers.slice(0, 3).map((d) => (
                           <span key={d.feature} className="nowrap">
@@ -266,7 +263,6 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
                           </span>
                         ))}
                       </td>
-                      )}
                     </tr>
                   );
                 })}
@@ -291,9 +287,9 @@ export default function ForecastPanel({ wellId, units, modelId, calibration, for
             Expected accuracy = share of actual points within the client tolerance (8 klbf hookload, 0.8 kft-lbf torque)
             when this model predicted the same distance on wells it never saw
             {forecast.bias_correction ? ", with local bias correction" : ", without bias correction"}.
-            {!guest && <> Contributions: {forecast.operations[ops[0]]?.explanation.method ?? "SHAP"} (the change of each feature's
+            {" "}Contributions: {forecast.operations[ops[0]]?.explanation.method ?? "SHAP"} (the change of each feature's
             contribution between the start and the end of the window; "T&amp;D Model" = the change of the T&amp;D Model curve
-            itself).</>}
+            itself).
           </p>
         </>
       )}

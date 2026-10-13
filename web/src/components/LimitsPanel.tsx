@@ -10,7 +10,8 @@ const DEFAULT_KIND: Record<Op, "max" | "min"> = {
   torque_on_bottom: "max",
 };
 
-export default function LimitsPanel({ profile }: { profile: Profile }) {
+/** readOnly: user account (K-48) sees the limits but cannot add / delete (they apply to other wells too). */
+export default function LimitsPanel({ profile, readOnly = false }: { profile: Profile; readOnly?: boolean }) {
   const qc = useQueryClient();
   const [op, setOp] = useState<Op>("pick_up");
   const [value, setValue] = useState("");
@@ -81,9 +82,11 @@ export default function LimitsPanel({ profile }: { profile: Profile }) {
                   <td className="num">{fmt(r.margin_ml)}</td>
                   <td className="small">{r.note ?? ""}</td>
                   <td>
-                    <button className="btn small ghost" onClick={() => confirm("Delete this limit?") && del.mutate(r.id)}>
-                      Delete
-                    </button>
+                    {!readOnly && (
+                      <button className="btn small ghost" onClick={() => confirm("Delete this limit?") && del.mutate(r.id)}>
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -93,6 +96,7 @@ export default function LimitsPanel({ profile }: { profile: Profile }) {
       ) : (
         <p className="muted small">No limits for this well/section yet.</p>
       )}
+      {!readOnly && (
       <form className="row gap wrap" onSubmit={submit} style={{ marginTop: 8 }}>
         <select value={op} onChange={(e) => setOp(e.target.value as Op)}>
           {OPS.map((o) => (
@@ -112,6 +116,7 @@ export default function LimitsPanel({ profile }: { profile: Profile }) {
           Add limit
         </button>
       </form>
+      )}
     </section>
   );
 }

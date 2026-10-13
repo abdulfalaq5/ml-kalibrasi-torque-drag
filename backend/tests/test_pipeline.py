@@ -265,6 +265,21 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
         vals = [str(c.value) for row in wbx[sh].iter_rows() for c in row if c.value]
         assert any(v.startswith("PREDICTION AHEAD") for v in vals), sh
         assert any("- Prediction P90" in v for v in vals), sh
+    # Summary Outputs: baris ML per kedalaman + baris Prediction ahead (K-49)
+    sm = wbx["Summary Outputs"]
+    assert [sm.cell(16, c).value for c in (16, 17)] == ["ML TORQ OFF", "ML TORQ ON"]
+    rows = [[sm.cell(r, c).value for c in range(2, 18)] for r in range(18, sm.max_row + 1)]
+    i_fc = next(i for i, r in enumerate(rows) if str(r[0]).startswith("PREDICTION AHEAD"))
+    ml_rows = [r for r in rows[:i_fc] if isinstance(r[0], int | float)]
+    assert len(ml_rows) > 10 and all(r[4] is not None for r in ml_rows[1:-1])  # ML PU
+    assert any(r[1] is None for r in ml_rows)  # kedalaman tanpa aktual tetap ada
+    fc_rows = [r for r in rows[i_fc + 1 :] if isinstance(r[0], int | float)]
+    pu_fc = fc["operations"]["pick_up"]
+    first = fc_rows[0]
+    assert first[0] == pytest.approx(pu_fc["depth"][0])
+    main = pu_fc["ml_corrected"] or pu_fc["ml"]
+    assert first[4] == pytest.approx(main[0], abs=1e-6)  # ML PU = prediction
+    assert first[1] is None and first[14] is not None  # aktual kosong, ML torsi terisi
     with zipfile.ZipFile(io.BytesIO(xe.content)) as z:
         charts = " ".join(z.read(n).decode() for n in z.namelist() if "charts/chart" in n)
     assert "4A3AA7" in charts.upper()

@@ -3,7 +3,9 @@
 
 Sheet (urutan dan letak sel mengikuti template):
   Summary Outputs                 judul + info sumur (C3..D10), tabel "ACTUAL VS Machine Learning"
-                                  (B16:O17 + data), tabel metrik Drag/Torque, dua gambar parity
+                                  (B16:O17 + data; tambahan P:Q ML torsi), baris = kedalaman aktual
+                                  + kedalaman kurva ML, lalu baris Prediction ahead (ungu) bila ada
+                                  (K-49), tabel metrik Drag/Torque, dua gambar parity
   Tripping Load Analysis - Graph  grafik A1:N44; MODELLED HOOKLOADS Q2.., ACTUAL HOOKLOADS AB2..,
                                   TRIPPING DATA AG2..; tambahan: ML PREDICTION AK2..
   Torque Analysis Off Btm         grafik A1:K46; MODELLED TORQUE L3.., Actual Torque R3..;
@@ -107,6 +109,10 @@ class _F:
         self.unit = wb.add_format({**b, "border": 1, "align": "center"})
         self.cell = wb.add_format({**b, "border": 1, "num_format": "#,##0.00"})
         self.cell0 = wb.add_format({**b, "border": 1, "num_format": "#,##0"})
+        fc = {"border": 1, "font_color": COLORS["forecast"], "bg_color": "#efedf8"}
+        self.fcell = wb.add_format({**b, **fc, "num_format": "#,##0.00"})
+        self.fcell0 = wb.add_format({**b, **fc, "num_format": "#,##0"})
+        self.fgroup = wb.add_format({**b, **fc, "bold": True, "align": "center"})
         self.group = wb.add_format(
             {**b, "bold": True, "align": "center", "border": 1, "bg_color": "#eaeef2"}
         )
@@ -179,7 +185,7 @@ def build_output_workbook(
     sec = f"{(well.section_in or 0):g}"
     head_title = f'{well.name}  {sec}"_HOLE'
 
-    _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq)
+    _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq, forecast)
     _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title, forecast)
     for op, name, act_label in (
         (TORQUE_OFF, "Torque Analysis Off Btm", "RT Torque Off Bottom Max"),
@@ -195,11 +201,11 @@ def build_output_workbook(
 # ---------------------------------------------------------------- Summary Outputs
 
 
-def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq):
+def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq, fc=None):
     ws = wb.add_worksheet("Summary Outputs")
     ws.hide_gridlines(2)
     ws.set_column("A:A", 3)
-    ws.set_column("B:O", 12.5)
+    ws.set_column("B:Q", 12.5)
     ws.set_column("B:B", 20)
     ws.set_column("H:H", 20)
     meta = well.meta or {}
@@ -248,17 +254,28 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq):
         ("ACTUAL TORQ ON", tq_lab),
         ("TQ-MLTQ Off", tq_lab),
         ("TQ-MLTQ On", tq_lab),
+        ("ML TORQ OFF", tq_lab),  # tambahan (template tanpa kolom ML torsi)
+        ("ML TORQ ON", tq_lab),
     ]
     for j, (h, u) in enumerate(head):
         ws.write(15, 1 + j, h, f.head)
         ws.write(16, 1 + j, u, f.unit)
     ws.set_row(15, 28)
     tol = 30 if du == "ft" else 10
-    grid = sorted({d for op in ops for d in ops[op]["actual"]["depth"]})
-    act = {
-        op: _nearest(ops[op]["actual"]["depth"], ops[op]["actual"]["value"], grid, tol)
+    # baris: kedalaman aktual + kedalaman kurva ML (prediksi ML juga di kedalaman tanpa aktual)
+    act_grid = sorted({d for op in ops for d in ops[op]["actual"]["depth"]})
+    act_at = {
+        op: dict(
+            zip(
+                act_grid,
+                _nearest(ops[op]["actual"]["depth"], ops[op]["actual"]["value"], act_grid, tol),
+                strict=True,
+            )
+        )
         for op in ops
     }
+    grid = sorted(set(act_grid) | {d for op in ops for d in ops[op]["ml"]["depth"]})
+    act = {op: [act_at[op].get(g) for g in grid] for op in ops}
     ml = {op: _interp(ops[op]["ml"]["depth"], ops[op]["ml"]["value"], grid) for op in ops}
     for op in TORQUE_OPS:
         act[op], ml[op] = tq(act[op]), tq(ml[op])
@@ -281,6 +298,8 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq):
         act[TORQUE_ON],
         d(act[TORQUE_OFF], ml[TORQUE_OFF]),
         d(act[TORQUE_ON], ml[TORQUE_ON]),
+        ml[TORQUE_OFF],
+        ml[TORQUE_ON],
     ]
     n = max(len(grid), 10)  # template: minimal 10 baris tabel
     for i in range(n):
@@ -288,9 +307,11 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq):
             _write(
                 ws, 17 + i, 1 + j, c[i] if i < len(grid) else None, f.cell0 if j == 0 else f.cell
             )
-    r0 = 17 + n + 2
-    if not grid:
-        ws.write(17, 1, "No actual data for this well yet.", f.note)
+    if not act_grid:
+        ws.write(
+            13, 1, "No actual data for this well yet; the table shows the ML prediction.", f.note
+        )
+    r0 = 17 + n + _summary_forecast(ws, f, fc, 17 + n, len(cols), tq) + 2
 
     # metrik (SI, sesuai template: kN; torsi kN.m) untuk sumur ini
     rows_d, rows_t, par = _metrics(prof, well)
@@ -323,6 +344,39 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq):
             ws.insert_image(
                 rn + 2, c0, f"{key}.png", {"image_data": png, "x_scale": 0.9, "y_scale": 0.9}
             )
+
+
+def _summary_forecast(ws, f, fc, r, ncols, tq) -> int:
+    """Baris Prediction ahead (seperti di dashboard, terkoreksi bias) di bawah tabel ringkasan.
+
+    Kolom aktual dan selisih kosong; ML PU/SO/ROT dan ML TORQ OFF/ON berisi nilai prediction.
+    Hasil: jumlah baris yang ditulis.
+    """
+    fops = {op: o for op, o in ((fc or {}).get("operations") or {}).items() if len(o["depth"]) >= 2}
+    if not fops:
+        return 0
+    col = {PICK_UP: 5, SLACK_OFF: 6, ROTATING: 7, TORQUE_OFF: 15, TORQUE_ON: 16}
+    vals: dict[float, dict[int, float | None]] = {}
+    for op, o in fops.items():
+        main, _, _ = _fc_values(o, tq if op in TORQUE_OPS else (lambda v: v))
+        for dep, v in zip(o["depth"], main, strict=True):
+            vals.setdefault(dep, {})[col[op]] = v
+    ws.merge_range(
+        r,
+        1,
+        r,
+        ncols,
+        ("TRIP OUT PREDICTION " if fc.get("direction") == "out" else "PREDICTION AHEAD ")
+        + f"{fc['start_depth']:,.0f} → {fc['end_depth']:,.0f} {fc['depth_unit']}"
+        + (" (bias-corrected)" if fc.get("bias_correction") else ""),
+        f.fgroup,
+    )
+    for i, (dep, row) in enumerate(vals.items()):  # urutan arah gerak bit (trip out: ke atas)
+        for j in range(ncols):
+            c = 1 + j
+            v = dep if j == 0 else row.get(c)
+            _write(ws, r + 1 + i, c, v, f.fcell0 if j == 0 else f.fcell)
+    return 1 + len(vals)
 
 
 def _to_si(xs, u):
