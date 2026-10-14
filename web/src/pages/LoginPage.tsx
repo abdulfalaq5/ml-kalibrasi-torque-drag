@@ -27,7 +27,10 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     <div className="login-wrap">
       <form className="card login" onSubmit={submit}>
         <h1 className="brand">
-          <Logo size={30} /> Torque &amp; Drag ML Prediction
+          <Logo size={30} /> <span className="brand-text">
+              <span className="brand-name">Paningal T&amp;D</span>
+              <span className="brand-tag">ahead looking Machine Learning for T&amp;D Prediction</span>
+            </span>
         </h1>
         <p className="muted">Sign in with your account.</p>
         <label>

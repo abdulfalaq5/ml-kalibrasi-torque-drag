@@ -248,8 +248,8 @@ def well_pdf(
         rightMargin=1.4 * cm,
         topMargin=1.3 * cm,
         bottomMargin=1.3 * cm,
-        title=f"Prediction Output Torque & Drag ML - {well.name}",
-        author="Torque & Drag ML Prediction",
+        title=f"Paningal T&D Prediction Output - {well.name}",
+        author="Paningal T&D",
     )
     m = prof["model"] or {}
     q = prof["quality"]
@@ -393,7 +393,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         topMargin=1.3 * cm,
         bottomMargin=1.3 * cm,
         title=f"Model #{model.id}",
-        author="Torque & Drag ML Prediction",
+        author="Paningal T&D",
     )
     els = [
         Paragraph(f"Calibration model summary #{model.id}", st["h1"]),

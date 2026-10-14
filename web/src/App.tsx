@@ -46,7 +46,10 @@ export default function App() {
       <div className="app">
         <header className="topbar">
           <div className="brand">
-            <Logo /> Torque &amp; Drag ML Prediction
+            <Logo /> <span className="brand-text">
+              <span className="brand-name">Paningal T&amp;D</span>
+              <span className="brand-tag">ahead looking Machine Learning for T&amp;D Prediction</span>
+            </span>
           </div>
           <nav>
             <NavLink to="/monitoring">Monitoring</NavLink>
@@ -75,7 +78,10 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-            <Logo /> Torque &amp; Drag ML Prediction
+            <Logo /> <span className="brand-text">
+              <span className="brand-name">Paningal T&amp;D</span>
+              <span className="brand-tag">ahead looking Machine Learning for T&amp;D Prediction</span>
+            </span>
           </div>
         <nav>
           <NavLink to="/training">Training Data</NavLink>

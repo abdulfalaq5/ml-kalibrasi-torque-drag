@@ -1,4 +1,4 @@
-# User Guide — Torque & Drag ML Prediction
+# User Guide — Paningal T&D (*ahead looking Machine Learning for T&D Prediction*)
 
 Part A is for users (engineers), part B for the server operator.
 
