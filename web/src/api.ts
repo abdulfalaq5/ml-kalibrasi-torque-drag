@@ -257,7 +257,7 @@ export type DiffSeries = { depth: number[]; abs: number[]; pct: number[] };
 export type OpProfile = {
   label: string;
   unit: string;
-  wellplan: { ff: number | null; name: string; depth: number[]; value: number[] }[];
+  wellplan: { ff: number | null; name: string; interpolated?: boolean; depth: number[]; value: number[] }[];
   wellplan_baseline_ff: number | null;
   calibration_offset: number | null;
   ml: Series & { lo: number[]; hi: number[] };
@@ -331,7 +331,7 @@ export type ForecastOp = {
   p90: (number | null)[];
   ml_corrected: (number | null)[] | null;
   bias: number | null;
-  wellplan: { ff: number | null; name: string; value: (number | null)[] }[];
+  wellplan: { ff: number | null; name: string; interpolated?: boolean; value: (number | null)[] }[];
   change: number;
   tolerance: string;
   backtest: { horizon_ft: number; method: string; within: number; p90: number; td_within: number | null } | null;

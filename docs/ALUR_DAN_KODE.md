@@ -687,5 +687,4 @@ flowchart LR
 | `Summary Outputs` (tabel Actual vs ML, metrik, gambar parity) | `_summary()`, `_metrics()`, `_parity_png()` |
 | `Tripping Load Analysis - Graph` | `_tripping()`, `_trip_data()` |
 | `Torque Analysis Off Btm` / `On Bottom` | `_torque()` |
-| `ROT/SO/PU MW <mud weight>` (BHA, wellbore, FF casing dari meta) | `_multipoint()`; meta `bha`, `wellbore`, `csg_ff` dari `parsers/wellplan_report.py`; data lama: `python -m app.cli refresh-meta` |
 

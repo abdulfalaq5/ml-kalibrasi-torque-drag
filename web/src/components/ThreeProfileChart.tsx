@@ -195,7 +195,7 @@ export default function ThreeProfileChart({
             x: s.value,
             y: s.depth,
             name: s.name,
-            line: { color: ohffColor(s.ff), width: 1.75 },
+            line: { color: ohffColor(s.ff), width: 1.75, dash: s.interpolated ? "dash" : "solid" },
             hovertemplate: `%{x:,.1f} ${o.unit}<extra>${s.name}</extra>`,
           });
         }

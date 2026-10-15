@@ -330,6 +330,7 @@ export default function DashboardPage() {
                     <span className="sw" style={{ background: c }} /> {ff}&nbsp;{" "}
                   </span>
                 ))}
+                {opts.showFF && <>(dashed = interpolated between the OHFFs in the file) </>}
                 · <span className="sw ml" /> ML prediction{opts.showBand ? " (dashed = P10–P90 band)" : ""} ·{" "}
                 <span className="dot act" /> Actual (points) · <span className="sw limit" /> operating limit (dotted)
                 {p.calibration.mode === "calibrated" && <> · T&amp;D Model includes the DD Calibrate offsets</>}

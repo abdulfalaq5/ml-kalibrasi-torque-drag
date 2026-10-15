@@ -127,7 +127,8 @@ def _fig_png(fig) -> io.BytesIO:
 def _op_panel(ax, prof: dict, op: str) -> None:
     o = prof["operations"][op]
     for sr in o["wellplan"]:
-        ax.plot(sr["value"], sr["depth"], "-", color=ohff_color(sr["ff"]), lw=1.3, label=sr["name"])
+        ls = "--" if sr.get("interpolated") else "-"  # OHFF hasil interpolasi (K-50)
+        ax.plot(sr["value"], sr["depth"], ls, color=ohff_color(sr["ff"]), lw=1.3, label=sr["name"])
     if o["ml"]["depth"]:
         ax.plot(
             o["ml"]["value"],
@@ -222,7 +223,8 @@ def _profile_charts(prof: dict, target: str) -> io.BytesIO:
     fig.text(
         0.01,
         0.005,
-        "One colour per OHFF in every chart (lighter = lower OHFF). ML band = P10–P90 (dashed). "
+        "One colour per OHFF in every chart (lighter = lower OHFF); dashed blue = OHFF interpolated "
+        "between the file OHFFs. ML band = P10–P90 (dashed). "
         "Operating limits dotted. Difference = A - B: right (+) = higher.",
         fontsize=6.5,
     )

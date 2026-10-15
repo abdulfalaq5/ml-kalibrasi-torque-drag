@@ -58,7 +58,9 @@ def predict_well(db: Session, well: Well, model: MLModel | None = None) -> Predi
     warns = coverage_warnings(bundle, w.section, w.well_type)
     if survey.empty and "survey" in bundle["features"]["groups"]:
         warns.append(
-            "No survey: inclination/dogleg features use the training median (fill in the Survey sheet for a better prediction)"
+            "No well path (survey) data in this file: the prediction assumes an average well path, "
+            "so it may be less accurate where the hole bends or is steeply inclined. "
+            "Upload the file again with the Survey sheet filled in for a more accurate prediction."
         )
     lo, hi = bundle["depth_range_m"]
     if grid.max() > hi * 1.1 or grid.min() < lo * 0.9:

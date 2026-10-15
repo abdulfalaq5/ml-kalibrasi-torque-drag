@@ -10,14 +10,14 @@ Sheet (urutan dan letak sel mengikuti template):
                                   TRIPPING DATA AG2..; tambahan: ML PREDICTION AK2..
   Torque Analysis Off Btm         grafik A1:K46; MODELLED TORQUE L3.., Actual Torque R3..;
   Torque Analysis On Bottom       tambahan: ML PREDICTION U3..
-  ROT/SO/PU MW <mud weight>       format "Multipoint Torque and Drag Outputs" WellPlan (model mentah)
 
 Perbedaan yang disengaja dari template (lihat docs/keputusan.md K-42):
   - warna kurva model mengikuti satu warna per OHFF (permintaan client #5), aktual = titik;
   - kolom/garis ML ditambahkan (template tidak punya seri ML);
   - nilai FF mengikuti file (template contoh punya 0,2–0,5);
   - satuan torsi ringkasan ditulis benar (Kft.lbf), template menulis "klbf";
-  - file .xlsx (bukan .xls).
+  - file .xlsx (bukan .xls);
+  - sheet ROT/SO/PU MW (Multipoint Torque and Drag Outputs) tidak diekspor (K-51).
 """
 
 import io
@@ -30,8 +30,7 @@ import xlsxwriter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ActualReading, MLModel, Survey, Well
-from app.services import dataset as dsm
+from app.db.models import ActualReading, MLModel, Well
 from app.services import units
 from app.services.export import COLORS, MARKER_EDGE, ohff_color
 from app.services.operations import (
@@ -131,6 +130,15 @@ class _F:
         self.n0 = wb.add_format({**b, "num_format": "0"})
         self.bold = wb.add_format({**b, "bold": True})
         self.note = wb.add_format({**b, "italic": True, "font_color": "#52514e", "font_size": 9})
+        # tabel metrik Summary Outputs, diperbesar
+        m = {**b, "font_size": 11, "border": 1, "valign": "vcenter"}
+        self.mtitle = wb.add_format({**b, "bold": True, "font_size": 12})
+        self.mhead = wb.add_format(
+            {**m, "bold": True, "align": "center", "text_wrap": True, "bg_color": "#eaeef2"}
+        )
+        self.mname = wb.add_format({**m, "bold": True, "text_wrap": True})
+        self.mcell = wb.add_format({**m, "align": "center", "num_format": "#,##0.00"})
+        self.mr2 = wb.add_format({**m, "align": "center", "num_format": "0.0000"})
 
 
 def _write(ws, r, c, v, fmt=None):
@@ -159,17 +167,15 @@ def build_output_workbook(
     guest: bool = False,
     forecast: dict | None = None,
 ) -> bytes:
-    """guest=True: hanya aktual + ML (tanpa kurva WellPlan, metrik T&D, sheet multipoint; K-45)."""
+    """guest=True: hanya aktual + ML (tanpa kurva WellPlan dan metrik T&D; K-45)."""
     prof = well_profile(db, well, unit_system, model, calibration)
     if guest:
         from app.services.guest_view import profile_for_guest
 
         prof = profile_for_guest(prof)
-    disp = units.DISPLAY_UNITS[unit_system]
     imperial = unit_system == "imperial"
     du = prof["depth_unit"]
     du_cap = "Ft" if imperial else "m"
-    tq_u = "kft-lbf" if imperial else "kn-m"  # template memakai Kft.lbf
     tq_lab = "Kft.lbf" if imperial else "kN.m"
     hk_lab = "klbf" if imperial else "kN"
     ops = prof["operations"]
@@ -192,8 +198,6 @@ def build_output_workbook(
         (TORQUE_ON, "Torque Analysis On Bottom", "RT Torque ON Bottom Max"),
     ):
         _torque(wb, f, well, ops[op], op, name, act_label, du_cap, tq_lab, tq, head_title, forecast)
-    if not guest:
-        _multipoint(wb, f, db, well, unit_system, disp, du, hk_lab, tq_lab, tq_u)
     wb.close()
     return buf.getvalue()
 
@@ -315,18 +319,23 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq, fc=None
 
     # metrik (SI, sesuai template: kN; torsi kN.m) untuk sumur ini
     rows_d, rows_t, par = _metrics(prof, well)
-    ws.write(r0, 1, "Drag Prediction Performance Metric", f.text)
-    ws.write(r0, 7, "Torque Prediciton Performance Metric", f.text)
+    ws.set_row(r0, 22)
+    ws.write(r0, 1, "Drag Prediction Performance Metric", f.mtitle)
+    ws.write(r0, 7, "Torque Prediciton Performance Metric", f.mtitle)
+    ws.set_row(r0 + 1, 32)
     for j, h in enumerate(["Model", "R2", "RMSE (kN)", "MAE (kN)", "MAPE (%)"]):
-        ws.write(r0 + 1, 1 + j, h, f.head)
+        ws.write(r0 + 1, 1 + j, h, f.mhead)
     for j, h in enumerate(["Model", "R2", "RMSE (kN.m)", "MAE (kN.m)", "MAPE (%)"]):
-        ws.write(r0 + 1, 7 + j, h, f.head)
-    for i in range(max(4, len(rows_d), len(rows_t))):
+        ws.write(r0 + 1, 7 + j, h, f.mhead)
+    n_rows = max(3, len(rows_d), len(rows_t))
+    for i in range(n_rows):
+        ws.set_row(r0 + 2 + i, 32)
         for c0, rows in ((1, rows_d), (7, rows_t)):
             row = rows[i] if i < len(rows) else [None] * 5
             for j, v in enumerate(row):
-                _write(ws, r0 + 2 + i, c0 + j, v, f.cell if j else f.head)
-    rn = r0 + 2 + max(4, len(rows_d), len(rows_t))
+                fmt = f.mname if j == 0 else f.mr2 if j == 1 else f.mcell
+                _write(ws, r0 + 2 + i, c0 + j, v, fmt)
+    rn = r0 + 2 + n_rows
     ws.write(
         rn,
         1,
@@ -334,16 +343,14 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq, fc=None
         "Unseen-well validation for training wells.",
         f.note,
     )
-    # gambar parity
-    for c0, key, title, color in (
-        (1, "drag", "Drag", "#1f9e2c"),
-        (7, "torque", "Torque", "#2a78d6"),
-    ):
-        png = _parity_png(par[key], title, color)
+    # gambar parity (besar, berdampingan); warna + bentuk dot per operasi dengan legenda
+    x_off = 0
+    for key, title in (("drag", "Drag"), ("torque", "Torque")):
+        png = _parity_png(par[key], title)
         if png is not None:
-            ws.insert_image(
-                rn + 2, c0, f"{key}.png", {"image_data": png, "x_scale": 0.9, "y_scale": 0.9}
-            )
+            opts = {"image_data": png, "x_scale": PARITY_SCALE, "y_scale": PARITY_SCALE}
+            ws.insert_image(rn + 2, 1, f"{key}.png", {**opts, "x_offset": x_off})
+            x_off += int(PARITY_PX[0] * 96 / PARITY_DPI * PARITY_SCALE) + 24
 
 
 def _summary_forecast(ws, f, fc, r, ncols, tq) -> int:
@@ -392,6 +399,7 @@ def _metrics(prof, well):
     offs = offsets_si(well)
     groups = {"drag": HOOKLOAD_OPS, "torque": TORQUE_OPS}
     acc = {g: {"wp": ([], []), "cal": ([], []), "ml": ([], [])} for g in groups}
+    by_op = {op: ([], []) for gops in groups.values() for op in gops}  # titik parity ML per operasi
     for g, gops in groups.items():
         for op in gops:
             o = ops[op]
@@ -419,6 +427,9 @@ def _metrics(prof, well):
                     if yy is not None and pp is not None:
                         acc[g][k][0].append(yy)
                         acc[g][k][1].append(pp)
+                        if k == "ml":
+                            by_op[op][0].append(yy)
+                            by_op[op][1].append(pp)
     model = prof["model"]
     names = {
         "wp": "T&D Model (OHFF 0.3)",
@@ -441,35 +452,94 @@ def _metrics(prof, well):
                 [names[k], r2, float(np.sqrt(np.mean(e**2))), float(np.mean(np.abs(e))), mape]
             )
         out[g] = rows
-    par = {g: (np.array(acc[g]["ml"][0]), np.array(acc[g]["ml"][1])) for g in groups}
+    par = {
+        g: [
+            (OP_SHORT[op], *(np.array(a, float) for a in by_op[op]))
+            for op in gops
+            if len(by_op[op][0])
+        ]
+        for g, gops in groups.items()
+    }
     return out["drag"], out["torque"], par
 
 
-def _parity_png(data, title, color):
-    y, p = data
-    if len(y) < 2:
+# dot parity per operasi: warna + bentuk berbeda (bentuk sama dengan dashboard: ● PU/off, ▲ SO/on, ■ ROT)
+PARITY_STYLE = {
+    "PU": ("#1f9e2c", "o"),
+    "SO": ("#eb6834", "^"),
+    "ROT": ("#7a3fb0", "s"),
+    "Torque Off Bottom": ("#2a78d6", "o"),
+    "Torque On Bottom": ("#c2410c", "^"),
+}
+PARITY_LABEL = {
+    "PU": "PU (pick up)",
+    "SO": "SO (slack off)",
+    "ROT": "ROT (rotating weight)",
+}
+PARITY_PX = (1200, 1050)  # ukuran PNG (8 x 7 inci, 150 dpi)
+PARITY_DPI = 150
+# xlsxwriter menskala gambar 96/dpi -> lebar tampil 768 px per grafik, dua grafik muat di B:Q
+PARITY_SCALE = 1.0
+
+
+def _r2(y, p) -> float:
+    ss = float(np.sum((y - y.mean()) ** 2))
+    return 1 - float(np.sum((p - y) ** 2)) / ss if ss > 0 and len(y) > 1 else float("nan")
+
+
+def _parity_png(groups, title):
+    """groups: [(nama operasi, aktual, ML)] dalam SI. Satu warna/bentuk per operasi + legenda."""
+    groups = [g for g in groups if len(g[1])]
+    if sum(len(g[1]) for g in groups) < 2:
         return None
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    ss = float(np.sum((y - y.mean()) ** 2))
-    r2 = 1 - float(np.sum((p - y) ** 2)) / ss if ss > 0 else float("nan")
+    y_all = np.concatenate([g[1] for g in groups])
+    p_all = np.concatenate([g[2] for g in groups])
     unit = "kN" if title == "Drag" else "kN.m"
-    fig, ax = plt.subplots(figsize=(6, 5))
-    ax.scatter(y, p, s=14, alpha=0.6, color=color, edgecolors="none", label=f"ML {title}")
-    lo, hi = float(min(y.min(), p.min())), float(max(y.max(), p.max()))
-    ax.plot([lo, hi], [lo, hi], "--", color="#e34948", lw=1.5, label="Perfect Prediction")
-    ax.set_title(f"ML {title} Prediction\nR² = {r2:.4f}", fontsize=11, fontweight="bold")
-    ax.set_xlabel(f"Actual {title} ({unit})")
-    ax.set_ylabel(f"Predicted {title} ({unit})")
+    fig, ax = plt.subplots(figsize=(PARITY_PX[0] / PARITY_DPI, PARITY_PX[1] / PARITY_DPI))
+    for name, y, p in groups:
+        color, marker = PARITY_STYLE.get(name, ("#52514e", "o"))
+        r2 = _r2(y, p)
+        r2_txt = f", R² = {r2:.3f}" if np.isfinite(r2) else ""
+        ax.scatter(
+            y,
+            p,
+            s=26,
+            alpha=0.75,
+            color=color,
+            marker=marker,
+            edgecolors="white",
+            linewidths=0.4,
+            label=f"ML {PARITY_LABEL.get(name, name)}: n = {len(y)}{r2_txt}",
+        )
+    lo, hi = float(min(y_all.min(), p_all.min())), float(max(y_all.max(), p_all.max()))
+    ax.plot(
+        [lo, hi], [lo, hi], "--", color="#e34948", lw=1.6, label="Perfect prediction (ML = actual)"
+    )
+    ax.set_title(
+        f"ML {title} Prediction: Actual vs ML\nR² (all points) = {_r2(y_all, p_all):.4f}",
+        fontsize=13,
+        fontweight="bold",
+    )
+    ax.set_xlabel(f"Actual {title} ({unit})", fontsize=11)
+    ax.set_ylabel(f"Predicted {title} ({unit})", fontsize=11)
+    ax.tick_params(labelsize=10)
     ax.grid(color="#e7e6e2", lw=0.6)
-    ax.legend(loc="upper left", fontsize=8)
-    fig.text(0.01, 0.005, f"Figure: {title} Prediction - Actual vs ML (R²)", fontsize=8)
-    fig.tight_layout()
+    ax.legend(loc="upper left", fontsize=9.5, framealpha=0.95)
+    fig.text(
+        0.01,
+        0.005,
+        f"Figure: {title} prediction - each dot = one actual reading of this well; "
+        "closer to the red line = better.",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     out = io.BytesIO()
-    fig.savefig(out, format="png", dpi=150)
+    fig.savefig(out, format="png", dpi=PARITY_DPI)
     plt.close(fig)
     out.seek(0)
     return out
@@ -595,18 +665,35 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title, fc=None):
     pu, so, rot = ops[PICK_UP], ops[SLACK_OFF], ops[ROTATING]
     ffs_pu = sorted(s["ff"] for s in pu["wellplan"] if s["ff"] is not None)
     ffs_so = sorted((s["ff"] for s in so["wellplan"] if s["ff"] is not None), reverse=True)
+    interp = {
+        (op, s["ff"])
+        for op, o in (("pu", pu), ("so", so))
+        for s in o["wellplan"]
+        if s.get("interpolated")
+    }
+    ix = lambda op, ff: " (interp.)" if (op, ff) in interp else ""  # noqa: E731  K-50
     grid = sorted({d for o in (pu, so, rot) for s in o["wellplan"] for d in s["depth"]})
     # MODELLED HOOKLOADS: Bit Depth | SO ff (turun) | PU ff (naik) | RT Hook Load Off Bottom
     cols = [("Bit Depth", du, grid, None)]
     for ff in ffs_so:
         s = next(s for s in so["wellplan"] if s["ff"] == ff)
         cols.append(
-            (f"SO Hook Load ff={ff:g}", hk_lab, _interp(s["depth"], s["value"], grid), ("so", ff))
+            (
+                f"SO Hook Load ff={ff:g}{ix('so', ff)}",
+                hk_lab,
+                _interp(s["depth"], s["value"], grid),
+                ("so", ff),
+            )
         )
     for ff in ffs_pu:
         s = next(s for s in pu["wellplan"] if s["ff"] == ff)
         cols.append(
-            (f"PU Hook Load ff={ff:g}", hk_lab, _interp(s["depth"], s["value"], grid), ("pu", ff))
+            (
+                f"PU Hook Load ff={ff:g}{ix('pu', ff)}",
+                hk_lab,
+                _interp(s["depth"], s["value"], grid),
+                ("pu", ff),
+            )
         )
     if rot["wellplan"]:
         s = rot["wellplan"][0]
@@ -717,9 +804,11 @@ def _tripping(wb, f, db, well, prof, du, du_cap, hk_lab, head_title, fc=None):
         )
 
     for ff in ffs_pu:
-        line(pos[("pu", ff)], n_model, c0, pos[("pu", ff)], ohff_color(ff))
+        dash = "dash" if ("pu", ff) in interp else "solid"
+        line(pos[("pu", ff)], n_model, c0, pos[("pu", ff)], ohff_color(ff), dash=dash)
     for ff in ffs_so:
-        line(pos[("so", ff)], n_model, c0, pos[("so", ff)], ohff_color(ff))
+        dash = "dash" if ("so", ff) in interp else "solid"
+        line(pos[("so", ff)], n_model, c0, pos[("so", ff)], ohff_color(ff), dash=dash)
     rk = next((k for k in pos if k[0] == "rot"), None)
     if rk:
         line(pos[rk], n_model, c0, pos[rk], ohff_color(BASELINE_FF), dash="dash")
@@ -788,7 +877,7 @@ def _curve_note(prof) -> str:
         if mode == "calibrated"
         else "Modelled curves: WellPlan T&D model as modelled. "
     ) + (
-        "One colour per OHFF; actual = points; ML prediction = orange; "
+        "One colour per OHFF (dashed = interpolated between file OHFFs); actual = points; ML prediction = orange; "
         "prediction ahead = thick purple line (dashed = P10–P90)."
     )
 
@@ -831,6 +920,7 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
     for s in series:
         ff = s["ff"] if s["ff"] is not None else base_ff
         label = f"Surface Torque ff={ff:g}" if ff is not None else "Surface Torque"
+        label += " (interp.)" if s.get("interpolated") else ""  # K-50
         cols.append((label, tq_lab, tq(_interp(s["depth"], s["value"], grid))))
     c0 = _col("L")
     if len(cols) == 1:  # tanpa kurva WellPlan (ekspor guest)
@@ -884,6 +974,7 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
                     "line": {
                         "color": ohff_color(s["ff"] if s["ff"] is not None else base_ff),
                         "width": 1.5,
+                        "dash_type": "dash" if s.get("interpolated") else "solid",
                     },
                     "marker": {"type": "none"},
                 }
@@ -923,202 +1014,3 @@ def _torque(wb, f, well, o, op, sheet, act_label, du_cap, tq_lab, tq, head_title
     ws.insert_chart("A1", ch, {"x_scale": 3.0, "y_scale": 5.9})
     ws.print_area("A1:K88")
     ws.fit_to_pages(1, 1)
-
-
-# ---------------------------------------------------------------- PU/SO/ROT MW
-
-
-def _multipoint(wb, f, db, well, unit_system, disp, du, hk_lab, tq_lab, tq_u):
-    meta = well.meta or {}
-    imperial = unit_system == "imperial"
-    mw = meta.get("mud_weight_ppg")
-    mw_txt = "NA" if mw is None else (f"{mw:g}" if imperial else f"{mw * 119.826:.0f}")
-    plan = dsm.load_plan(db, [well.id])  # model mentah (tanpa Calibrate)
-    csg = meta.get("csg_ff") or {}
-    hk_u = disp["force"]
-    n_survey = len(db.scalars(select(Survey.id).where(Survey.well_id == well.id)).all())
-    for op, mode, suffix in (
-        (ROTATING, "ROTATING OFF BOTTOM ANALYSIS", "  "),
-        (SLACK_OFF, "TRIPPING LOADS ANALYSIS", " Trip in"),
-        (PICK_UP, "TRIPPING LOADS ANALYSIS", " Trip out"),
-    ):
-        ws = wb.add_worksheet(f"{OP_SHORT[op]} MW {mw_txt}"[:31])
-        ws.set_column("A:A", 26)
-        ws.set_column("B:K", 13)
-        ws.fit_to_pages(1, 0)
-        ws.write("D5", "Multipoint Torque and Drag Outputs", f.title)
-        hdr = [
-            ("Client:", meta.get("client") or ""),
-            ("Field:", meta.get("field") or ""),
-            ("Rig:", meta.get("rig") or ""),
-            ("Well:", well.name),
-            ("Bore Hole:", f'{(well.section_in or 0):g}" section'),
-            ("Location:", ""),
-            ("Engineer:", ""),
-            ("Date:", date.today().strftime("%B %d, %Y")),
-        ]
-        for i, (k, v) in enumerate(hdr):
-            ws.write(7 + i, 1, k, f.bold)
-            ws.write(7 + i, 3, v, f.text)
-        curves = dsm.plan_curves(plan, well.id, op)
-        tq_curves = dsm.plan_curves(plan, well.id, TORQUE_OFF) if op == ROTATING else {}
-        ffs = sorted({k for k in (*curves, *tq_curves) if k is not None}) or [None]
-        all_d = sorted({d for c in (*curves.values(), *tq_curves.values()) for d in c[0]})
-        grid = np.array(all_d)
-        step = float(np.median(np.diff(grid))) if len(grid) > 1 else None
-        L = lambda m: units.from_si(m, du)  # noqa: E731
-        ws.write("A18", "BHA & WELLBORE DATA", f.bold)
-        bha = meta.get("bha") or []
-        bha_txt = (
-            f"{meta.get('bha_components', len(bha))} components, {meta.get('bha_length_ft', 0):g} ft, "
-            f"{meta.get('bha_weight_klbf', 0):g} klbf"
-            if meta.get("bha_components")
-            else "-"
-        )
-        rows = [
-            ("BHA Data:", bha_txt),
-            ("Survey Data:", f"{n_survey} survey stations" if n_survey else "-"),
-            ("Wellbore Data:", f'{meta.get("hole_size_in", well.section_in or 0):g}" open hole'),
-        ]
-        for i, (k, v) in enumerate(rows):
-            ws.write(18 + i, 0, k, f.text)
-            ws.write(18 + i, 3, v, f.text)
-        ws.write("A23", "DRILLING PARAMETERS", f.bold)
-        bw = meta.get("block_weight_klbf")
-        params = [
-            ("Operation Mode:", mode),
-            (
-                f"Mud Weight ({'ppg' if imperial else 'kg/m3'}):",
-                None if mw is None else (mw if imperial else mw * 119.826),
-            ),
-            (f"Downhole WoB ({hk_lab}):", None),
-            (f"Downhole ToB ({tq_lab}):", None),
-            (
-                f"Block Weight ({hk_lab}):",
-                None if bw is None else units.from_si(units.to_si(bw, "klbf"), hk_u),
-            ),
-            (f"Bit Measured Depth ({du}):", L(grid.max()) if len(grid) else None),
-            (f"Start Bit Depth ({du}):", L(grid.min()) if len(grid) else None),
-            (f"End Bit Depth ({du}):", L(grid.max()) if len(grid) else None),
-            (f"Bit Depth Increment ({du}):", L(step) if step else None),
-        ]
-        for i, (k, v) in enumerate(params):
-            ws.write(23 + i, 0, k, f.text)
-            _write(ws, 23 + i, 3, v, f.n2 if isinstance(v, float) else f.text)
-        r = 33
-        ws.write(r, 0, "BHA DESCRIPTION", f.bold)
-        bh = [
-            "Component Name",
-            "Steel Grade",
-            "Length",
-            "Cum Length",
-            "ID",
-            "OD",
-            "Max OD",
-            "Bend Angle",
-            "Sub Comp To Bottom",
-            "Sensor To Bit",
-            "Lin Weight",
-        ]
-        bu = ["", "", du, du, "in", "in", "in", "deg", du, du, "ppf"]
-        for j, (h, u) in enumerate(zip(bh, bu, strict=True)):
-            ws.write(r + 1, j, h, f.head)
-            ws.write(r + 2, j, u, f.unit)
-        cum = 0.0
-        for i, c in enumerate(bha):
-            ln = c.get("length_ft")
-            cum += ln or 0
-            vals = [
-                c.get("name"),
-                None,
-                ln,
-                cum,
-                None,
-                c.get("od_in"),
-                c.get("max_od_in"),
-                None,
-                None,
-                None,
-                c.get("lin_weight_ppf"),
-            ]
-            if not imperial:
-                vals[2] = None if ln is None else ln * units.FT_TO_M
-                vals[3] = cum * units.FT_TO_M
-            for j, v in enumerate(vals):
-                _write(ws, r + 3 + i, j, v, f.cell if j else f.head)
-        r = r + 3 + max(len(bha), 1) + 1
-        ws.write(r, 0, "WELLBORE DESCRIPTION", f.bold)
-        wh = ["Section Name", "Length", "Cum Length", "Diameter", "           Friction Factor"]
-        for j, h in enumerate(wh):
-            ws.write(r + 1, j, h, f.head)
-        for j, u in enumerate([None, du, du, "in"]):
-            if u:
-                ws.write(r + 2, j, u, f.unit)
-        for k in range(len(ffs)):
-            ws.write(r + 2, 4 + k, f"#{k + 1} {suffix.strip()}".strip(), f.unit)
-        wbore = meta.get("wellbore") or []
-        for i, sct in enumerate(wbore):
-            conv = 1.0 if imperial else units.FT_TO_M
-            vals = [
-                sct.get("name"),
-                None if sct.get("length_ft") is None else sct["length_ft"] * conv,
-                None if sct.get("cum_length_ft") is None else sct["cum_length_ft"] * conv,
-                sct.get("diameter_in"),
-            ]
-            for j, v in enumerate(vals):
-                _write(ws, r + 3 + i, j, v, f.cell if j else f.head)
-            for k, ff in enumerate(ffs):
-                fv = (csg.get(f"{ff:g}") if ff is not None else None) if sct.get("cased") else ff
-                _write(ws, r + 3 + i, 4 + k, fv, f.cell)
-        r = r + 3 + max(len(wbore), 1) + 1
-        # tabel data: Bit Depth | per FF: Surface Torque, Hook Load
-        ws.write(r, 0, "Bit Depth", f.head)
-        ws.write(r + 2, 0, du, f.unit)
-        hook = {}
-        for k, ff in enumerate(ffs):
-            c = 1 + 2 * k
-            cs = csg.get(f"{ff:g}") if ff is not None else None
-            title = (
-                (f"CSG {cs:.2f} " if cs is not None else "")
-                + (f"OPH {ff:.2f}" if ff is not None else "Base")
-                + suffix
-            )
-            ws.merge_range(r, c, r, c + 1, title.rstrip() if op != ROTATING else title, f.head)
-            ws.write(r + 1, c, "Surface Torque", f.head)
-            ws.write(r + 1, c + 1, "Hook Load", f.head)
-            ws.write(r + 2, c, tq_lab, f.unit)
-            ws.write(r + 2, c + 1, hk_lab, f.unit)
-            hc = curves.get(ff) or curves.get(None)
-            hook[k] = (
-                None
-                if hc is None
-                else [units.from_si(v, hk_u) for v in np.interp(grid, *hc)]
-                if len(grid)
-                else []
-            )
-            if hc is not None and len(grid):
-                lo, hi = hc[0].min(), hc[0].max()
-                hook[k] = [
-                    None if (g < lo - 1e-6 or g > hi + 1e-6) else x
-                    for g, x in zip(grid, hook[k], strict=True)
-                ]
-            tc = tq_curves.get(ff)
-            tq_vals = None
-            if tc is not None and len(grid):
-                lo, hi = tc[0].min(), tc[0].max()
-                tq_vals = [
-                    None if (g < lo - 1e-6 or g > hi + 1e-6) else units.from_si(x, tq_u)
-                    for g, x in zip(grid, np.interp(grid, *tc), strict=True)
-                ]
-            for i, g in enumerate(grid):
-                if k == 0:
-                    _write(ws, r + 3 + i, 0, L(g), f.n0)
-                _write(ws, r + 3 + i, c, tq_vals[i] if tq_vals else None, f.n2)
-                _write(ws, r + 3 + i, c + 1, hook[k][i] if hook[k] else None, f.n2)
-        ws.write(
-            r + 4 + len(grid),
-            0,
-            "WellPlan T&D model as modelled (no DD Calibrate). Surface torque while tripping is not in the "
-            "source files and is left empty.",
-            f.note,
-        )

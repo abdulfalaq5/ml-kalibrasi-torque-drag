@@ -23,6 +23,7 @@ from app.services.operations import BASELINE_FF, HOOKLOAD_OPS, OPERATIONS
 from app.services.units import FT_TO_M
 
 FF_COLS = {0.3: "wp_ff03", 0.5: "wp_ff05"}
+OHFF_GRID = (0.1, 0.2, 0.3, 0.4, 0.5)  # kurva OHFF yang ditampilkan (K-50)
 BASE_NUMERIC = ["depth_m", "wp_ff03", "wp_ff05", "wp_slope", "wp_rot"]
 BASE_CATEGORICAL = ["section", "well_type", "plan_format"]
 # Grup fitur tambahan: dipertahankan hanya bila terbukti membantu (uji manfaat di training)
@@ -151,6 +152,36 @@ def plan_curves(plan: pd.DataFrame, well_id: int, op: str) -> dict[float | None,
         g = g.groupby("depth_m", as_index=False)["value_si"].mean().sort_values("depth_m")
         out[None if ff == -1 else float(ff)] = (g.depth_m.to_numpy(), g.value_si.to_numpy())
     return out
+
+
+def fill_ohff(curves: dict) -> tuple[dict, set[float]]:
+    """Lengkapi kurva ke OHFF_GRID (K-50) untuk tampilan: OHFF yang tidak ada di file tetapi
+    di antara dua OHFF file -> interpolasi linear antar-OHFF (rentang kedalaman yang sama-sama
+    ada). Di luar rentang OHFF file tidak dibuat (tanpa ekstrapolasi). Kunci None diabaikan.
+
+    Hasil: (kurva terurut menurut OHFF, himpunan OHFF hasil interpolasi).
+    """
+    ffs = sorted(k for k in curves if k is not None)
+    if len(ffs) < 2:
+        return dict(curves), set()
+    out, added = dict(curves), set()
+    for t in OHFF_GRID:
+        if any(abs(t - f) < 1e-6 for f in ffs) or not ffs[0] < t < ffs[-1]:
+            continue
+        lo = max(f for f in ffs if f < t)
+        hi = min(f for f in ffs if f > t)
+        (dl, vl), (dh, vh) = curves[lo], curves[hi]
+        if not len(dl) or not len(dh):
+            continue
+        keep = (dl >= dh.min() - 1e-6) & (dl <= dh.max() + 1e-6)
+        if keep.sum() < 2:
+            continue
+        d = dl[keep]
+        w = (t - lo) / (hi - lo)
+        out[t] = (d, vl[keep] + w * (np.interp(d, dh, vh) - vl[keep]))
+        added.add(t)
+    ordered = sorted(out.items(), key=lambda kv: (kv[0] is None, kv[0] or 0))
+    return dict(ordered), added
 
 
 def _interp(d, v, depths):

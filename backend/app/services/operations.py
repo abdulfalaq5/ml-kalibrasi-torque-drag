@@ -41,7 +41,7 @@ SERIES_PREFIX = {
 SINGLE_CURVE_OPS = {ROTATING}
 
 
-def series_name(op: str, ff: float | None) -> str:
+def series_name(op: str, ff: float | None, interpolated: bool = False) -> str:
     if op in SINGLE_CURVE_OPS or ff is None:
         return SERIES_PREFIX[op]
-    return f"{SERIES_PREFIX[op]} - OHFF : {ff:g}"
+    return f"{SERIES_PREFIX[op]} - OHFF : {ff:g}" + (" (interp.)" if interpolated else "")

@@ -6,6 +6,8 @@ Selisih terhadap Aktual hanya dihitung pada kedalaman yang punya data aktual.
 Kurva WellPlan "calibrated" = WellPlan + offset Calibrate DD (sama dengan kolom
 "Graph reference" di Excel client); default bila file punya offset Calibrate.
 ROT (rotating weight) ditampilkan satu kurva saja (OHFF baseline).
+OHFF 0.1–0.5 yang tidak ada di file tetapi di dalam rentang OHFF file diisi interpolasi
+(K-50, `interpolated`); di luar rentang tidak digambar.
 """
 
 import numpy as np
@@ -116,6 +118,7 @@ def well_profile(
     for op in OPERATIONS:
         off = offsets.get(op, 0.0)
         curves = {ff: (d, v + off) for ff, (d, v) in dsm.plan_curves(plan, well.id, op).items()}
+        curves, interp_ffs = dsm.fill_ohff(curves)  # OHFF 0.1–0.5 di dalam rentang file (K-50)
         # kurva baseline: OHFF 0.3, atau satu-satunya kurva (laporan WellPlan), atau kurva pertama
         base_key = next((k for k in (BASELINE_FF, None) if k in curves), next(iter(curves), None))
         base = curves.get(base_key)
@@ -127,7 +130,8 @@ def well_profile(
             wp_series.append(
                 {
                     "ff": ff,
-                    "name": series_name(op, ff),
+                    "name": series_name(op, ff, ff in interp_ffs),
+                    "interpolated": ff in interp_ffs,
                     "depth": _r(conv_depth(d), 2),
                     "value": _r(conv(v, op)),
                 }

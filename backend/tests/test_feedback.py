@@ -136,7 +136,12 @@ def test_profile_calibrated_curves_and_series_names(db, cal_well):
     cal = well_profile(db, cal_well, "imperial")  # default: calibrated bila ada offset
     assert cal["calibration"] == {"available": True, "mode": "calibrated"}
     pu_raw, pu_cal = raw["operations"]["pick_up"], cal["operations"]["pick_up"]
-    assert [s["name"] for s in pu_cal["wellplan"]] == ["PU - OHFF : 0.3", "PU - OHFF : 0.5"]
+    assert [s["name"] for s in pu_cal["wellplan"]] == [
+        "PU - OHFF : 0.3",
+        "PU - OHFF : 0.4 (interp.)",  # K-50: di antara OHFF file, tanpa ekstrapolasi ke 0.1/0.2
+        "PU - OHFF : 0.5",
+    ]
+    assert [s["interpolated"] for s in pu_cal["wellplan"]] == [False, True, False]
     for a, b in zip(pu_raw["wellplan"][0]["value"], pu_cal["wellplan"][0]["value"], strict=True):
         assert b - a == pytest.approx(10.0, abs=1e-3)
     so = cal["operations"]["slack_off"]["wellplan"]
@@ -147,7 +152,7 @@ def test_profile_calibrated_curves_and_series_names(db, cal_well):
     rot = cal["operations"]["rotating_weight"]["wellplan"]
     assert [s["name"] for s in rot] == ["ROT"]  # satu kurva, tanpa OHFF
     ton = cal["operations"]["torque_on_bottom"]
-    assert ton["wellplan"][1]["name"] == "Torque On Bottom - OHFF : 0.5"
+    assert ton["wellplan"][-1]["name"] == "Torque On Bottom - OHFF : 0.5"
     assert ton["calibration_offset"] == pytest.approx(1000.0)
 
 

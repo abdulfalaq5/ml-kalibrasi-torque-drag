@@ -172,9 +172,6 @@ reach the limit, and the minimum margin.
     HOOKLOADS, TRIPPING DATA, plus ML PREDICTION (with P10/P90) and the drag chart.
   - `Torque Analysis Off Btm` / `On Bottom`: MODELLED TORQUE per OHFF, actual torque, ML prediction
     and chart (Kft.lbf).
-  - `ROT / SO / PU MW <mud weight>`: WellPlan "Multipoint Torque and Drag Outputs" (header, BHA &
-    wellbore data, drilling parameters, BHA and wellbore description, per-OHFF table), model as
-    modelled. Surface torque while tripping is not in the source files and stays empty.
 - **PDF**: data quality, model & dataset versions, metrics, operating limits, six chart panels.
 - **Prediction (.xlsx)**, **model report (.xlsx / PDF)**, **data quality report (.xlsx)**.
 

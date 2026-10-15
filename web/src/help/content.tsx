@@ -312,7 +312,7 @@ export const TOPICS: Topic[] = [
         <Steps>
           <Step n={1} title="Export Excel (top of the dashboard)">
             The client's format "OUTPUT … Multiple T&amp;D Road Map": Summary Outputs (actual vs ML table, performance metric),
-            drag and torque graphs, PU/SO/ROT MW sheets.
+            drag and torque graphs.
           </Step>
           <Step n={2} title="PDF">A printable summary with the charts.</Step>
           <Step n={3} title="⬇ Prediction (.xlsx)">The 300 ft prediction with the check and the cause-and-effect sentences.</Step>
@@ -1094,7 +1094,7 @@ export const TOPICS: Topic[] = [
           ["Monitoring prediction", "Monitoring → upload", "Summary table + Excel + PDF"],
           ["Dashboard", "Dashboard", "Charts, band, operating limits, flagged intervals"],
           ["Prediction N ft (.xlsx)", "Dashboard → Prediction ahead", "Prediction per depth, P10–P90, T&D model per OHFF, cause and effect"],
-          ["Prediction Output (.xlsx) / PDF", "Dashboard → Export Excel / PDF", "Client format: Summary Outputs, Tripping Load & Torque graphs, PU/SO/ROT MW sheets"],
+          ["Prediction Output (.xlsx) / PDF", "Dashboard → Export Excel / PDF", "Client format: Summary Outputs, Tripping Load & Torque graphs"],
           ["Evaluation", "Evaluations", "Prediction vs actual after drilling"],
         ]}
       />

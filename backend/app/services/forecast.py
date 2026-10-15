@@ -301,7 +301,7 @@ def forecast_well(
             )
 
         # kurva WellPlan per OHFF di jendela forecast
-        curves = dsm.plan_curves(plan, well.id, op)
+        curves, interp_ffs = dsm.fill_ohff(dsm.plan_curves(plan, well.id, op))  # K-50
         off = offsets.get(op, 0.0)
         wp_series = []
         keys = sorted(curves, key=lambda k: (k is None, k or 0))
@@ -314,7 +314,14 @@ def forecast_well(
                 continue
             d, v = curves[k]
             vals = np.interp(f.depth_m, d, v) + off
-            wp_series.append({"ff": k, "name": series_name(op, k), "value": conv(vals, op)})
+            wp_series.append(
+                {
+                    "ff": k,
+                    "name": series_name(op, k, k in interp_ffs),
+                    "interpolated": k in interp_ffs,
+                    "value": conv(vals, op),
+                }
+            )
 
         # penjelasan: kontribusi lokal antara awal dan akhir jendela
         cm = _model_for(entry["model"], section, w.well_type)
@@ -652,7 +659,10 @@ def export_forecast(fc: dict) -> bytes:
             styles.append(("ML bias-corrected", "#4a3aa7", "solid", 1.75))
         if o.get("alert"):
             styles.append((cols[len(styles) + 1], COLORS["limit"], "dash", 2.0))
-        styles += [(s["name"], ohff_color(s["ff"]), "solid", 1.25) for s in o["wellplan"]]
+        styles += [
+            (s["name"], ohff_color(s["ff"]), "dash" if s.get("interpolated") else "solid", 1.25)
+            for s in o["wellplan"]
+        ]
         for j, (lab, color, dash, width) in enumerate(styles, start=1):
             ch.add_series(
                 {
