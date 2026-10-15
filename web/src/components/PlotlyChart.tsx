@@ -52,7 +52,9 @@ export default function PlotlyChart({ data, layout, config, onHover, onRelayout,
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    Plotly.react(el, data, layout, config).then(placeGuide);
+    // salinan: Plotly (autosize) menghapus layout.height dari objek yang diberikan; tanpa salinan
+    // tinggi div di bawah ikut hilang pada render berikutnya dan grafik kolaps ke 0 px
+    Plotly.react(el, data, { ...layout }, config).then(placeGuide);
   }, [data, layout, config]);
 
   useEffect(placeGuide, [guideY]);
@@ -77,7 +79,8 @@ export default function PlotlyChart({ data, layout, config, onHover, onRelayout,
 
   return (
     <div className="plot-host">
-      <div ref={ref} style={{ width: "100%" }} />
+      {/* tinggi tetap: autosize Plotly mengukur div ini saat menggambar ulang (mis. klik legenda) */}
+      <div ref={ref} style={{ width: "100%", height: typeof layout.height === "number" ? layout.height : undefined }} />
       <div ref={guideRef} className="plot-guide" aria-hidden="true" />
     </div>
   );

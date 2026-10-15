@@ -1,5 +1,7 @@
 import { ReactNode } from "react";
-import { OHFF_COLOR } from "../components/chartTheme";
+import { OP_COLOR } from "../components/chartTheme";
+
+const OPS = ["pick_up", "slack_off", "rotating_weight", "torque_on_bottom"] as const;
 import { Flow, Go, Step, Steps, Table, Tip, Ui } from "./ui";
 
 export type Topic = {
@@ -357,17 +359,19 @@ export const TOPICS: Topic[] = [
       <>
         <Tip>
           Depth goes <b>down</b> the chart (deeper = lower), values go <b>right</b> (heavier / more torque = further right). A
-          prediction is good when the <b>green points sit on its line</b>. The client's pass mark: within 8 klbf (hookload) and
+          prediction is good when the <b>points sit on the thick line of the same colour</b>. The client's pass mark: within 8 klbf (hookload) and
           0.8 kft-lbf (torque).
         </Tip>
         <h3>Colours</h3>
         <Table
           head={["Colour", "What it is"]}
           rows={[
-            [<><Swatch c={OHFF_COLOR["0.1"]} /> <Swatch c={OHFF_COLOR["0.5"]} /> Blue lines</>, "T&D model (WellPlan), one line per OHFF: lighter = lower friction factor, darker = higher. Same colour for the same OHFF in every chart."],
-            [<><Swatch c="#eb6834" /> Orange line</>, "ML prediction for the whole well (PU - ML, SO - ML, ROT - ML)."],
-            [<><Swatch c="#eb6834" /> Orange dashed lines</>, "Only when 'Uncertainty band (P10–P90)' is ticked: 80% of the actual readings are expected between the two dashed lines (design target). The real share is in Models → report, column 'Inside P10–P90 band': CV ≈ 80% by construction, blind = the test on unseen wells."],
-            [<><span style={{ color: "#0e9f6e" }}>● ▲ ■</span> Green points</>, "Actual readings from the rig: ● pick up / torque off bottom, ▲ slack off / torque on bottom, ■ rotating weight."],
+            [<>{OPS.map((op) => <Swatch key={op} c={OP_COLOR[op].main} />)} One colour per operation</>, "Pick up blue, slack off green, rotating weight amber; torque off bottom blue, torque on bottom brick red. Everything of one operation (T&D model, ML, actual) has that colour, and the legend groups it under the operation name."],
+            ["Thin lines (lighter → darker)", "T&D model (WellPlan), one line per OHFF: lighter = lower friction factor, darker = higher. Dashed = OHFF interpolated between the OHFFs in the file."],
+            ["Thick line", "ML prediction for the whole well (PU - ML, SO - ML, ROT - ML)."],
+            ["Dotted lines either side of the thick line", "Only when 'Uncertainty band (P10–P90)' is ticked: 80% of the actual readings are expected between the two dotted lines (design target). The real share is in Models → report, column 'Inside P10–P90 band': CV ≈ 80% by construction, blind = the test on unseen wells."],
+            ["● ▲ ■ points", "Actual readings from the rig, in the operation's colour: ● pick up / torque off bottom, ▲ slack off / torque on bottom, ■ rotating weight."],
+            ["Clicking the legend", "Click an item to hide it, click again to show it; double click an item to show only that item."],
             [<><Swatch c="#4a3aa7" /> Thick purple line</>, "THE FORECAST N ft ahead (bias-corrected). The value at its end is written next to the ◆, e.g. 'PU 254 klbf @ 8,900 ft'."],
             ["Faded purple strip around the purple line", "Prediction range P10–P90: where the reading will most likely (target 80%) fall. How well the 80% holds: Models → report, column 'Inside P10–P90 band (CV / blind)'."],
             ["Very light purple shading across the chart, between two dashed purple lines", "The prediction window (from 'Prediction start' to 'Prediction end'). It only marks the area; it is not a value."],
@@ -709,19 +713,14 @@ export const TOPICS: Topic[] = [
           </Step>
           <Step n={3} title="Read the Hookload and Torque panels">
             Y axis <b>Depth (ft)</b>. Curve names follow the client's Excel: <b>PU - OHFF : 0.3</b>, <b>SO - OHFF : 0.5</b>,{" "}
-            <b>ROT</b> (one curve), <b>Torque On Bottom - OHFF : 0.3</b>, ML <b>PU - ML</b>, actual <b>PU Actual</b>. One fixed colour per OHFF in every chart:{" "}
-            {Object.entries(OHFF_COLOR).map(([ff, c]) => (
-              <span key={ff} className="nowrap">
-                <Swatch c={c} /> {ff}{" "}
-              </span>
-            ))}
-            . ML prediction <span style={{ color: "#eb6834" }}>orange</span>, uncertainty band (P10–P90) orange{" "}
-            <b>dashed</b>, actual readings <span style={{ color: "#0e9f6e" }}>green</span> points, operating limits red{" "}
+            <b>ROT</b> (one curve), <b>Torque On Bottom - OHFF : 0.3</b>, ML <b>PU - ML</b>, actual <b>PU Actual</b>. One colour per operation (pick up blue, slack off green, rotating weight amber, torque off
+            bottom blue, torque on bottom brick red): thin lines = T&amp;D model per OHFF (lighter = lower OHFF), thick line =
+            ML prediction, dotted = uncertainty band (P10–P90), points = actual readings; operating limits red{" "}
             <b>dotted</b>.
           </Step>
           <Step n={4} title="Checkboxes">
             <Ui>All OHFF curves</Ui> (on by default) shows every OHFF; off = only OHFF 0.3. <Ui>Uncertainty band (P10–P90)</Ui>{" "}
-            (off by default) adds the two dashed bounds.
+            (off by default) adds the two dotted bounds.
           </Step>
           <Step n={5} title="Difference (Δ) panel">
             Δ = A − B. <b>Right (+) = A is higher</b>, left (−) = lower. Choose the target and <Ui>Absolute</Ui> /{" "}

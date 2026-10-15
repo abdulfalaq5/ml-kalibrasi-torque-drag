@@ -19,7 +19,7 @@ export const COLOR = {
   surface: "#fcfcfb",
 };
 
-// One fixed colour per OHFF value in every chart (ordinal blue ramp, light = low OHFF; validated).
+// One fixed colour per OHFF value (ordinal blue ramp, light = low OHFF); Excel/PDF and help. Dashboard: OP_COLOR.
 export const OHFF_COLOR: Record<string, string> = {
   "0.1": "#86b6ef",
   "0.2": "#5598e7",
@@ -32,6 +32,31 @@ export function ohffColor(ff: number | null): string {
   const keys = Object.keys(OHFF_COLOR).map(Number);
   const k = keys.reduce((a, b) => (Math.abs(b - ff) < Math.abs(a - ff) ? b : a));
   return OHFF_COLOR[k.toFixed(1)];
+}
+
+// Dashboard (K-52): one colour family per operation, so PU / SO / ROT / torque lines are told apart.
+// WellPlan = ramp light -> dark for OHFF 0.1 -> 0.5 (thin), ML = "main" (thick), actual = "main" points.
+export const OP_COLOR: Record<string, { label: string; main: string; ramp: string[] }> = {
+  pick_up: { label: "Pick up (PU)", main: "#1f5fbf", ramp: ["#a9cdf5", "#78aeee", "#4a8fe2", "#2a6fc4", "#174f96"] },
+  slack_off: { label: "Slack off (SO)", main: "#0e7a4f", ramp: ["#a6dfc4", "#6fc9a0", "#3aae7c", "#1d8a5c", "#0f6641"] },
+  rotating_weight: { label: "Rotating weight (ROT)", main: "#b86e00", ramp: ["#f5d39b", "#efb85c", "#e09a1f", "#c27f06", "#935f00"] },
+  torque_off_bottom: {
+    label: "Torque off bottom",
+    main: "#1f5fbf",
+    ramp: ["#a9cdf5", "#78aeee", "#4a8fe2", "#2a6fc4", "#174f96"],
+  },
+  torque_on_bottom: {
+    label: "Torque on bottom",
+    main: "#a83f1c",
+    ramp: ["#f2b8a2", "#e88d6c", "#d8653f", "#b44a26", "#863415"],
+  },
+};
+/** WellPlan line colour of an operation at an OHFF (single curve -> middle shade). */
+export function opWpColor(op: string, ff: number | null): string {
+  const ramp = OP_COLOR[op]?.ramp ?? Object.values(OHFF_COLOR);
+  if (ff === null) return ramp[2];
+  const i = Math.min(4, Math.max(0, Math.round(ff * 10) - 1));
+  return ramp[i];
 }
 
 export const DASH: Record<string, "solid" | "dash" | "dot"> = {

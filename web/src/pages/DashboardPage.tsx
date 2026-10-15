@@ -11,7 +11,7 @@ import ThreeProfileChart, {
   HOOKLOAD_OPS,
   TORQUE_OPS,
 } from "../components/ThreeProfileChart";
-import { DIFF_KEYS, DIFF_LABEL, DiffKey, OHFF_COLOR } from "../components/chartTheme";
+import { DIFF_KEYS, DIFF_LABEL, DiffKey, OP_COLOR } from "../components/chartTheme";
 import { useIsGuest } from "../role";
 
 const pctTxt = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v * 100)}%`);
@@ -324,15 +324,16 @@ export default function DashboardPage() {
             </div>
             <div className="small legend-note">
               <div>
-                <b>T&amp;D Model (one colour per OHFF):</b>{" "}
-                {Object.entries(OHFF_COLOR).map(([ff, c]) => (
-                  <span key={ff} className="nowrap">
-                    <span className="sw" style={{ background: c }} /> {ff}&nbsp;{" "}
+                <b>One colour per operation:</b>{" "}
+                {(["pick_up", "slack_off", "rotating_weight", "torque_off_bottom", "torque_on_bottom"] as const).map((op) => (
+                  <span key={op} className="nowrap">
+                    <span className="sw" style={{ background: OP_COLOR[op].main, height: 4 }} /> {OP_COLOR[op].label}&nbsp;{" "}
                   </span>
                 ))}
-                {opts.showFF && <>(dashed = interpolated between the OHFFs in the file) </>}
-                · <span className="sw ml" /> ML prediction{opts.showBand ? " (dashed = P10–P90 band)" : ""} ·{" "}
-                <span className="dot act" /> Actual (points) · <span className="sw limit" /> operating limit (dotted)
+                · in each colour: <b>thin lines</b> = T&amp;D Model per OHFF (lighter = lower OHFF
+                {opts.showFF ? ", dashed = interpolated between the OHFFs in the file" : ""}), <b>thick line</b> = ML prediction
+                {opts.showBand ? " (dotted = P10–P90 band)" : ""}, <b>points</b> = Actual · <span className="sw limit" /> operating
+                limit (dotted) · click a legend item to hide or show it
                 {p.calibration.mode === "calibrated" && <> · T&amp;D Model includes the DD Calibrate offsets</>}
                 {forecast && (
                   <>

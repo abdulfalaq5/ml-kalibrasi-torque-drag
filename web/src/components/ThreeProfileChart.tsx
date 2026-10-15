@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type * as Plotly from "plotly.js";
 import PlotlyChart from "./PlotlyChart";
 import { Forecast, Op, OP_LABEL, Profile, SERIES_PREFIX } from "../api";
-import { COLOR, DIFF_COLOR, DIFF_KEYS, DIFF_LABEL, DiffKey, ohffColor, SYMBOL } from "./chartTheme";
+import { COLOR, DIFF_COLOR, DIFF_KEYS, DIFF_LABEL, DiffKey, OP_COLOR, opWpColor, SYMBOL } from "./chartTheme";
 
 export const HOOKLOAD_OPS: Op[] = ["pick_up", "slack_off", "rotating_weight"];
 export const TORQUE_OPS: Op[] = ["torque_off_bottom", "torque_on_bottom"];
@@ -185,6 +185,9 @@ export default function ThreeProfileChart({
         if (!options.ops[op]) continue;
         const o = profile.operations[op];
         const p = SERIES_PREFIX[op];
+        const oc = OP_COLOR[op];
+        // legend grouped per operation (group title); a click hides only that item (legend.groupclick)
+        const grp = { legendgroup: op, legendgrouptitle: { text: oc.label, font: { color: oc.main, size: 12 } } };
         for (const s of o.wellplan) {
           const isBase = s.ff === o.wellplan_baseline_ff || o.wellplan.length === 1;
           if (!isBase && !options.showFF) continue;
@@ -195,28 +198,24 @@ export default function ThreeProfileChart({
             x: s.value,
             y: s.depth,
             name: s.name,
-            line: { color: ohffColor(s.ff), width: 1.75, dash: s.interpolated ? "dash" : "solid" },
+            ...grp,
+            line: { color: opWpColor(op, s.ff), width: 1.5, dash: s.interpolated ? "dash" : "solid" },
             hovertemplate: `%{x:,.1f} ${o.unit}<extra>${s.name}</extra>`,
           });
         }
-        if (o.ml.depth.length && options.showBand && o.ml.lo?.length) {
-          // uncertainty band P10–P90: two dashed bound lines
-          for (const [k, xs] of [
-            ["P10", o.ml.lo],
-            ["P90", o.ml.hi],
-          ] as const) {
-            out.push({
-              type: "scatter",
-              mode: "lines",
-              x: xs,
-              y: o.ml.depth,
-              name: `${p} - ML P10–P90`,
-              legendgroup: `band-${op}`,
-              showlegend: k === "P10",
-              line: { color: COLOR.ml, width: 1, dash: "dash" },
-              hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} - ML ${k}</extra>`,
-            });
-          }
+        if (o.ml.depth.length && options.showBand && o.ml.lo?.length && o.ml.hi?.length) {
+          // uncertainty band P10–P90: both dashed bound lines in ONE trace (gap between), one legend item
+          out.push({
+            type: "scatter",
+            mode: "lines",
+            x: [...o.ml.lo, null, ...o.ml.hi],
+            y: [...o.ml.depth, null, ...o.ml.depth],
+            connectgaps: false,
+            name: `${p} - ML P10–P90`,
+            ...grp,
+            line: { color: oc.main, width: 1, dash: "dot" },
+            hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} - ML P10/P90</extra>`,
+          });
         }
         if (o.ml.depth.length) {
           out.push({
@@ -225,7 +224,8 @@ export default function ThreeProfileChart({
             x: o.ml.value,
             y: o.ml.depth,
             name: `${p} - ML`,
-            line: { color: COLOR.ml, width: 2.5 },
+            ...grp,
+            line: { color: oc.main, width: 4 },
             hovertemplate: `%{x:,.1f} ${o.unit}<extra>${p} - ML</extra>`,
           });
         }
@@ -249,6 +249,7 @@ export default function ThreeProfileChart({
               y: fo.depth,
               name: `${p} ${lab} (${fo.alert.kind === "overpull" ? "+" : "−"}${fo.alert.offset})`,
               legendgroup: `fc-${op}`,
+              legendgrouptitle: { text: `${p} prediction`, font: { color: COLOR.forecast, size: 12 } },
               line: { color: COLOR.limit, width: 2.5, dash: "dash" },
               hovertemplate: `%{x:,.1f} ${o.unit} at %{y:,.0f} ${du}<extra>${p} ${lab}</extra>`,
             });
@@ -283,6 +284,7 @@ export default function ThreeProfileChart({
             y: fo.depth,
             name,
             legendgroup: `fc-${op}`,
+            legendgrouptitle: { text: `${p} prediction`, font: { color: COLOR.forecast, size: 12 } },
             line: { color: COLOR.forecast, width: 4 },
             marker: {
               // small dot at every computed depth, bigger at the start and the end
@@ -310,8 +312,9 @@ export default function ThreeProfileChart({
             x: o.actual.value,
             y: o.actual.depth,
             name: `${p} Actual`,
+            ...grp,
             marker: {
-              color: COLOR.actual,
+              color: oc.main,
               size: 13,
               symbol: SYMBOL[op] as "circle",
               line: { color: COLOR.markerEdge, width: 1.5 },
@@ -513,7 +516,14 @@ export default function ThreeProfileChart({
       // UI revision: per-panel X zoom survives hover/flag changes
       uirevision: `${key}-${zoomRev}-${options.diffTarget}-${options.diffMode}`,
       showlegend: !narrow,
-      legend: { orientation: "v", x: 1.02, y: 1, font: { size: 11, color: COLOR.textMuted } },
+      legend: {
+        orientation: "v",
+        x: 1.02,
+        y: 1,
+        font: { size: 11, color: COLOR.textMuted },
+        groupclick: "toggleitem",
+        tracegroupgap: 12,
+      },
       shapes: [...zone, ...shapes, ...limitShapes] as Plotly.Shape[],
       annotations: [...zoneNote, ...limitNotes] as Plotly.Annotations[],
       xaxis: {
