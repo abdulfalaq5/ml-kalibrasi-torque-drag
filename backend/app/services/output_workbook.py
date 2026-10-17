@@ -317,15 +317,15 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq, fc=None
         )
     r0 = 17 + n + _summary_forecast(ws, f, fc, 17 + n, len(cols), tq) + 2
 
-    # metrik (SI, sesuai template: kN; torsi kN.m) untuk sumur ini
-    rows_d, rows_t, par = _metrics(prof, well)
+    # metrik dalam satuan tampilan (imperial: klbf; torsi Kft.lbf) untuk sumur ini
+    rows_d, rows_t, par = _metrics(prof, well, tq)
     ws.set_row(r0, 22)
     ws.write(r0, 1, "Drag Prediction Performance Metric", f.mtitle)
     ws.write(r0, 7, "Torque Prediciton Performance Metric", f.mtitle)
     ws.set_row(r0 + 1, 32)
-    for j, h in enumerate(["Model", "R2", "RMSE (kN)", "MAE (kN)", "MAPE (%)"]):
+    for j, h in enumerate(["Model", "R2", f"RMSE ({hk_lab})", f"MAE ({hk_lab})", "MAPE (%)"]):
         ws.write(r0 + 1, 1 + j, h, f.mhead)
-    for j, h in enumerate(["Model", "R2", "RMSE (kN.m)", "MAE (kN.m)", "MAPE (%)"]):
+    for j, h in enumerate(["Model", "R2", f"RMSE ({tq_lab})", f"MAE ({tq_lab})", "MAPE (%)"]):
         ws.write(r0 + 1, 7 + j, h, f.mhead)
     n_rows = max(3, len(rows_d), len(rows_t))
     for i in range(n_rows):
@@ -346,7 +346,7 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq, fc=None
     # gambar parity (besar, berdampingan); warna + bentuk dot per operasi dengan legenda
     x_off = 0
     for key, title in (("drag", "Drag"), ("torque", "Torque")):
-        png = _parity_png(par[key], title)
+        png = _parity_png(par[key], title, hk_lab if key == "drag" else tq_lab)
         if png is not None:
             opts = {"image_data": png, "x_scale": PARITY_SCALE, "y_scale": PARITY_SCALE}
             ws.insert_image(rn + 2, 1, f"{key}.png", {**opts, "x_offset": x_off})
@@ -386,17 +386,14 @@ def _summary_forecast(ws, f, fc, r, ncols, tq) -> int:
     return 1 + len(vals)
 
 
-def _to_si(xs, u):
-    return [None if x is None else units.to_si(x, u) for x in xs]
-
-
-def _metrics(prof, well):
-    """Baris metrik T&D model, T&D + Calibrate, ML untuk sumur ini (SI)."""
+def _metrics(prof, well, tq=lambda v: list(v)):
+    """Baris metrik T&D model, T&D + Calibrate, ML untuk sumur ini, dalam satuan tampilan
+    (hookload apa adanya; torsi lewat tq, imperial ft-lbf -> Kft.lbf)."""
     from app.services.calibration import offsets_si
 
     ops = prof["operations"]
     disp_u = units.DISPLAY_UNITS[prof["unit_system"]]
-    offs = offsets_si(well)
+    offs = offsets_si(well)  # SI -> dikonversi ke satuan tampilan per operasi
     groups = {"drag": HOOKLOAD_OPS, "torque": TORQUE_OPS}
     acc = {g: {"wp": ([], []), "cal": ([], []), "ml": ([], [])} for g in groups}
     by_op = {op: ([], []) for gops in groups.values() for op in gops}  # titik parity ML per operasi
@@ -404,6 +401,7 @@ def _metrics(prof, well):
         for op in gops:
             o = ops[op]
             u = disp_u["force" if g == "drag" else "torque"]
+            sc = tq if g == "torque" else (lambda v: list(v))
             ad, av = o["actual"]["depth"], o["actual"]["value"]
             if not ad:
                 continue
@@ -411,17 +409,14 @@ def _metrics(prof, well):
                 (s for s in o["wellplan"] if s["ff"] == o["wellplan_baseline_ff"]),
                 o["wellplan"][0] if o["wellplan"] else None,
             )
-            y = _to_si(av, u)
-            wp = _to_si(_interp(base["depth"], base["value"], ad), u) if base else [None] * len(ad)
+            y = sc(av)
+            wp = sc(_interp(base["depth"], base["value"], ad)) if base else [None] * len(ad)
             # profil sudah memuat offset bila mode calibrated: kurangi agar "T&D Model" = mentah
-            off_disp = offs.get(op, 0.0) if prof["calibration"]["mode"] == "calibrated" else 0.0
+            off = sc([units.from_si(offs[op], u)])[0] if op in offs else 0.0
+            off_disp = off if prof["calibration"]["mode"] == "calibrated" else 0.0
             raw = [None if x is None else x - off_disp for x in wp]
-            cal = (
-                [None if x is None else x + offs[op] for x in raw]
-                if op in offs
-                else [None] * len(raw)
-            )
-            ml = _to_si(_interp(o["ml"]["depth"], o["ml"]["value"], ad), u)
+            cal = [None if x is None else x + off for x in raw] if op in offs else [None] * len(raw)
+            ml = sc(_interp(o["ml"]["depth"], o["ml"]["value"], ad))
             for k, p in (("wp", raw), ("cal", cal), ("ml", ml)):
                 for yy, pp in zip(y, p, strict=True):
                     if yy is not None and pp is not None:
@@ -487,8 +482,8 @@ def _r2(y, p) -> float:
     return 1 - float(np.sum((p - y) ** 2)) / ss if ss > 0 and len(y) > 1 else float("nan")
 
 
-def _parity_png(groups, title):
-    """groups: [(nama operasi, aktual, ML)] dalam SI. Satu warna/bentuk per operasi + legenda."""
+def _parity_png(groups, title, unit):
+    """groups: [(nama operasi, aktual, ML)] dalam satuan tampilan. Satu warna/bentuk per operasi + legenda."""
     groups = [g for g in groups if len(g[1])]
     if sum(len(g[1]) for g in groups) < 2:
         return None
@@ -499,7 +494,6 @@ def _parity_png(groups, title):
 
     y_all = np.concatenate([g[1] for g in groups])
     p_all = np.concatenate([g[2] for g in groups])
-    unit = "kN" if title == "Drag" else "kN.m"
     fig, ax = plt.subplots(figsize=(PARITY_PX[0] / PARITY_DPI, PARITY_PX[1] / PARITY_DPI))
     for name, y, p in groups:
         color, marker = PARITY_STYLE.get(name, ("#52514e", "o"))
