@@ -11,7 +11,9 @@ import hashlib
 import logging
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -35,6 +37,7 @@ log = logging.getLogger(__name__)
 
 ALLOWED_EXT = {".xlsx", ".xlsm"}
 OK_STATUSES = ("ok", "warning")
+LOCAL_TZ = ZoneInfo("Asia/Jakarta")  # stempel nama sumur monitoring (K-54)
 META_KEYS = (
     "field",
     "client",
@@ -119,10 +122,10 @@ def import_file(
     miliknya. reassign_owner: admin memilih pemilik secara eksplisit, sumur lama ikut dipindahkan."""
     if purpose not in PURPOSES:
         raise ValueError(f"Unknown purpose '{purpose}'")
-    existing = find_by_checksum(db, checksum, purpose)
-    if existing is not None and not (
-        owner_only and (existing.well is None or existing.well.owner_id != owner_id)
-    ):
+    monitoring = purpose == "monitoring"
+    # monitoring (K-54): file identik tetap diproses ulang -> sumur baru berstempel tanggal-waktu
+    existing = None if monitoring else find_by_checksum(db, checksum, purpose)
+    if existing is not None:
         return existing
 
     uf = UploadedFile(
@@ -172,12 +175,21 @@ def import_file(
         )
     if not pw.has_errors and section is None:
         pw.error("Section (hole size) not found; select the Section before uploading")
-    if not pw.has_errors and owner_only:
+    if not pw.has_errors and monitoring:
+        # K-54: nama sama milik user lain, atau file identik dari user yang sama -> sumur baru
+        # dengan stempel tanggal-waktu (tidak ditolak); file baru dari pemilik = versi berikutnya
         other = _find_well(db, name, section, purpose)
-        if other is not None and other.owner_id != owner_id:
-            pw.error(
-                f'Well {name} {section:g}" is already registered by another user; '
-                "use a different well name"
+        if other is not None and (
+            # guest (owner_only) tidak pernah menambah ke sumur user lain; admin boleh memindahkan
+            (other.owner_id != owner_id and (owner_only or not reassign_owner))
+            or _has_checksum(db, other, checksum)
+        ):
+            original = name
+            name = _stamped_name(db, name, section, purpose)
+            pw.warn(
+                f'Well {original} {section:g}" already exists'
+                + (" for another user" if other.owner_id != owner_id else " with this same file")
+                + f"; saved as a new well '{name}'"
             )
 
     if pw.has_errors:
@@ -221,6 +233,29 @@ def _name_from_filename(filename: str) -> str:
     if m:
         return m.group(1)
     return re.split(r"[_\s]+", stem)[0] or stem
+
+
+def _has_checksum(db: Session, well: Well, checksum: str) -> bool:
+    return (
+        db.scalar(
+            select(UploadedFile.id).where(
+                UploadedFile.well_id == well.id,
+                UploadedFile.checksum == checksum,
+                UploadedFile.status.in_(OK_STATUSES),
+            )
+        )
+        is not None
+    )
+
+
+def _stamped_name(db: Session, name: str, section: float | None, purpose: str) -> str:
+    """Nama sumur unik: nama + tanggal-waktu unggah (WIB), nomor urut bila masih bentrok."""
+    stamp = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    base = f"{name[: 128 - len(stamp) - 6]} {stamp}"
+    cand, k = base, 2
+    while _find_well(db, cand, section, purpose) is not None:
+        cand, k = f"{base} ({k})", k + 1
+    return cand
 
 
 def _find_well(db: Session, name: str, section: float | None, purpose: str) -> Well | None:

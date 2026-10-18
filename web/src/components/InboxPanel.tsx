@@ -1,8 +1,18 @@
 import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, InboxStatus, SCAN_STATUS_LABEL, ScanRun, statusTone } from "../api";
+import { api, FileItem, InboxStatus, QStatus, SCAN_STATUS_LABEL, ScanRun, statusTone } from "../api";
 import QualityBadge from "./QualityBadge";
 
+type FileRow = { file: string; well: string | null; section: number | null; status: string; message: string; version?: number; source: string };
+type WellRow = { well: string; section: number; type: string; quality: QStatus; reasons: string[]; source: string };
+
+// status file unggahan satu per satu -> label hasil scan
+const UPLOAD_STATUS: Record<string, string> = {
+  ok: "accepted",
+  warning: "accepted with warnings",
+  failed: "rejected",
+  replaced: "replaced",
+};
 
 export default function InboxPanel() {
   const qc = useQueryClient();
@@ -36,6 +46,38 @@ export default function InboxPanel() {
   }, [doneKey, qc]);
   const s = status.data;
   const d = detail.data;
+  // gabungan: hasil scan folder terakhir + file training yang diunggah satu per satu
+  const files = useQuery({
+    queryKey: ["files", "training"],
+    queryFn: () => api.get<FileItem[]>("/api/files?purpose=training"),
+  });
+  const uploads = (files.data ?? []).filter((f) => f.source === "upload" && f.status in UPLOAD_STATUS);
+  const fileRows: FileRow[] = [
+    ...uploads.map((f) => ({
+      file: f.filename,
+      well: f.well_name,
+      section: f.section_in,
+      status: UPLOAD_STATUS[f.status],
+      message: f.issues.map((i) => i.message).join("; "),
+      source: "Upload",
+    })),
+    ...(d?.files ?? []).map((f) => ({ ...f, source: "Folder scan" })),
+  ];
+  const wellRows: WellRow[] = (d?.wells ?? []).map((w) => ({ ...w, source: "Folder scan" }));
+  for (const f of uploads) {
+    if (!["ok", "warning"].includes(f.status) || !f.well_name || f.section_in == null) continue;
+    const row: WellRow = {
+      well: f.well_name,
+      section: f.section_in,
+      type: f.well_type ?? "–",
+      quality: f.quality?.status ?? "X",
+      reasons: f.quality?.issues ?? [],
+      source: "Upload",
+    };
+    const i = wellRows.findIndex((w) => w.well === row.well && w.section === row.section);
+    if (i < 0) wellRows.unshift(row);
+    else wellRows[i] = { ...row, source: "Folder scan + upload" };
+  }
 
   return (
     <section className="card">
@@ -76,14 +118,18 @@ export default function InboxPanel() {
           {latest.error && <div className="bad-text">{latest.error}</div>}
         </div>
       )}
-      {d?.files && (
+      {fileRows.length > 0 && (
         <>
+          <p className="small muted" style={{ margin: "10px 0 0" }}>
+            The lists combine the last folder scan with the training files uploaded one by one (<i>Upload training data</i>{" "}
+            below); see the <b>Source</b> column. Uploads: {uploads.length} file{uploads.length === 1 ? "" : "s"}.
+          </p>
           <div className="seg" style={{ marginTop: 10 }}>
             <button className={show === "well" ? "on" : ""} onClick={() => setShow("well")}>
-              By well section ({d.wells?.length ?? 0})
+              By well section ({wellRows.length})
             </button>
             <button className={show === "file" ? "on" : ""} onClick={() => setShow("file")}>
-              By file ({d.files.length})
+              By file ({fileRows.length})
             </button>
           </div>
           <div className="table-wrap" style={{ maxHeight: 420, overflow: "auto", marginTop: 8 }}>
@@ -95,11 +141,12 @@ export default function InboxPanel() {
                     <th>Section</th>
                     <th>Type</th>
                     <th>Status</th>
+                    <th>Source</th>
                     <th>Reasons</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(d.wells ?? []).map((w, i) => (
+                  {wellRows.map((w, i) => (
                     <tr key={i}>
                       <td>{w.well}</td>
                       <td>{w.section}"</td>
@@ -107,6 +154,7 @@ export default function InboxPanel() {
                       <td>
                         <QualityBadge s={w.quality} long />
                       </td>
+                      <td className="small">{w.source}</td>
                       <td className="small">{w.reasons.join("; ") || "–"}</td>
                     </tr>
                   ))}
@@ -118,18 +166,20 @@ export default function InboxPanel() {
                   <tr>
                     <th>File</th>
                     <th>Result</th>
+                    <th>Source</th>
                     <th>Well</th>
                     <th>Note</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {d.files.map((f, i) => (
+                  {fileRows.map((f, i) => (
                     <Fragment key={i}>
                       <tr>
                         <td className="small">{f.file}</td>
                         <td>
                           <span className={`badge ${statusTone(f.status)}`}>{SCAN_STATUS_LABEL[f.status] ?? f.status}</span>
                         </td>
+                        <td className="small">{f.source}</td>
                         <td className="small">
                           {f.well ?? "–"} {f.section ? `${f.section}"` : ""} {f.version && f.version > 1 ? `(version ${f.version})` : ""}
                         </td>

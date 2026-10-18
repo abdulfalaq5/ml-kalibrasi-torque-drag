@@ -407,6 +407,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
               <tr>
                 <th>File</th>
                 <th>Format</th>
+                <th>Source</th>
                 <th>Well</th>
                 <th>Section</th>
                 <th>Type</th>
@@ -421,6 +422,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
                   <tr className="clickable" onClick={() => setOpenFile(openFile === f.id ? null : f.id)}>
                     <td>{f.filename}</td>
                     <td className="small">{f.kind ?? "–"}</td>
+                    <td className="small">{f.source === "folder" ? "Folder scan" : "Upload"}</td>
                     <td>{f.well_name ?? "–"}</td>
                     <td>{f.section_in ? `${f.section_in}"` : "–"}</td>
                     <td>{f.well_type ?? "–"}</td>
@@ -432,7 +434,7 @@ export default function WellsPage({ purpose }: { purpose: Purpose }) {
                   </tr>
                   {openFile === f.id && (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         {f.issues.length ? <IssueList issues={f.issues} /> : <span className="muted">No issues.</span>}
                         <div className="small muted">
                           Survey points {f.summary.survey_points ?? 0} · WellPlan {f.summary.plan_points ?? 0} · actual{" "}

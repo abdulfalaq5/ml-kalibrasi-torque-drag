@@ -64,6 +64,7 @@ export const SCAN_STATUS_LABEL: Record<string, string> = {
   duplicate: "Duplicate",
   skipped: "Skipped",
   rejected: "Rejected",
+  replaced: "Replaced (newer version)",
   running: "Running",
   done: "Done",
   failed: "Failed",
@@ -88,6 +89,8 @@ export type FileItem = {
   section_in: number | null;
   well_type: string | null;
   created_at: string;
+  source?: "upload" | "folder";
+  quality?: { status: QStatus; score: number | null; issues: string[] } | null;
   issues: Issue[];
   summary: { kinds?: string[]; plan_points?: number; actual_points?: number; survey_points?: number };
 };

@@ -361,12 +361,24 @@ def test_user_management_and_well_ownership(auth_client, tmp_path):
         assert b.get(f"/api/files/{fa}/download").status_code == 404
         assert a.patch(f"/api/wells/{wa}", json={"owner_id": None}).status_code == 403
 
-        # B mengunggah file dengan nama sumur yang sama -> ditolak, sumur A tidak berubah
+        # K-54: B mengunggah file dengan nama sumur yang sama -> diterima sebagai sumur baru milik B
+        # dengan stempel tanggal-waktu; sumur A tidak berubah
         with p.open("rb") as fh:
             rb = b.post("/api/files", files={"file": (p.name, fh)}, data=form).json()
-        assert rb["status"] == "failed" and rb["well_id"] is None
+        assert rb["status"] == "warning" and rb["well_id"] not in (None, wa), rb
         assert any("another user" in i["message"] for i in rb["issues"])
+        wb_ = b.get("/api/wells").json()
+        assert [w["id"] for w in wb_] == [rb["well_id"]]
+        assert re.fullmatch(r"OWN-A \d{4}-\d\d-\d\d \d\d:\d\d:\d\d", wb_[0]["name"])
+        assert [w["id"] for w in a.get("/api/wells").json()] == [wa]
         assert [f["id"] for f in b.get("/api/files").json()] == [rb["id"]]
+        # A mengunggah ulang file yang sama -> tetap diproses, sumur baru berstempel
+        with p.open("rb") as fh:
+            ra2 = a.post("/api/files", files={"file": (p.name, fh)}, data=form).json()
+        assert ra2["id"] != fa and ra2["well_id"] not in (None, wa, rb["well_id"]), ra2
+        assert any("same file" in i["message"] for i in ra2["issues"])
+        assert auth_client.delete(f"/api/wells/{ra2['well_id']}").status_code == 200
+        assert auth_client.delete(f"/api/wells/{rb['well_id']}").status_code == 200
 
         # admin melihat semua, termasuk pemiliknya, dan bisa memindahkan pemilik
         mine = {w["id"]: w for w in auth_client.get("/api/wells?purpose=monitoring").json()}

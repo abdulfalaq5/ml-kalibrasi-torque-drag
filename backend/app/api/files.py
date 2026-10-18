@@ -39,6 +39,7 @@ def file_out(f: UploadedFile, db: Session | None = None) -> dict:
         "id": f.id,
         "filename": f.filename,
         "kind": f.kind,
+        "source": f.source,  # upload | folder
         "status": f.status,
         "well_id": f.well_id,
         "well_name": f.well.name if f.well else None,

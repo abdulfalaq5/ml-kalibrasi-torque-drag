@@ -503,7 +503,8 @@ export const TOPICS: Topic[] = [
           </Step>
           <Step n={4} title="Read the result">
             Tab <Ui>By well section</Ui>: data quality A/B/C + reasons. Tab <Ui>By file</Ui>: accepted / accepted with warnings /
-            duplicate / skipped / rejected + reason.
+            duplicate / skipped / rejected + reason. Both tabs combine the last folder scan with the training files uploaded one by one (column{" "}
+            <b>Source</b>: Folder scan / Upload).
           </Step>
         </Steps>
         <Tip>
@@ -824,7 +825,7 @@ export const TOPICS: Topic[] = [
       <>
         <Steps>
           <Step n={1} title="Dashboard → Export Excel">
-            Sheets as the client's "OUTPUT … Multiple T&D Road Map" file: <b>Summary Outputs</b> (Actual vs Machine Learning table, drag/torque performance metrics, parity charts), <b>Tripping Load Analysis - Graph</b> (modelled hookloads per OHFF, actual hookloads, tripping data, ML prediction + chart), <b>Torque Analysis Off Btm</b> and <b>On Bottom</b> (modelled torque per OHFF, actual torque, ML + chart), and <b>ROT / SO / PU MW &lt;mud weight&gt;</b> (WellPlan multipoint outputs: header, BHA &amp; wellbore data, drilling parameters, per-OHFF table).
+            Sheets as the client's "OUTPUT … Multiple T&D Road Map" file: <b>Summary Outputs</b> (Actual vs Machine Learning table, drag/torque performance metrics and parity charts in klbf / Kft.lbf), <b>Tripping Load Analysis - Graph</b> (modelled hookloads per OHFF, actual hookloads, tripping data, ML prediction + chart), <b>Torque Analysis Off Btm</b> and <b>On Bottom</b> (modelled torque per OHFF, actual torque, ML + chart).
           </Step>
           <Step n={2} title="Dashboard → PDF">
             Summary: data quality, model & dataset versions, metrics, operating limits, six chart panels.
@@ -1044,7 +1045,7 @@ export const TOPICS: Topic[] = [
           ]}
         />
         <p className="small muted">
-          Or <b>Failed</b> (rejected, with the reason). An identical file is not imported again (duplicate).
+          Or <b>Failed</b> (rejected, with the reason). Training: an identical file is not imported again (duplicate). Monitoring: a file whose well name already belongs to another user, or the same file uploaded again, is saved as a new well with the upload date and time added to its name (e.g. <i>BDSI-61 2026-10-18 14:05:12</i>).
         </p>
         <h3>Well section</h3>
         <Flow
