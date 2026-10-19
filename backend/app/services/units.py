@@ -123,6 +123,11 @@ def from_si(value: float, unit: str) -> float:
     return value / _UNITS[unit][1]
 
 
+def to_report(value: float | None, dim: str) -> float | None:
+    """SI -> satuan lapangan laporan model (REPORT_UNITS); None tetap None."""
+    return None if value is None else from_si(value, REPORT_UNITS[dim])
+
+
 def is_known(unit: str | None) -> bool:
     return unit is not None and unit in _UNITS
 
@@ -140,3 +145,7 @@ UNIT_LABELS = {
     "ft-lbf": "ft-lbf",
     "kn-m": "kN·m",
 }
+
+
+# Satuan lapangan untuk laporan model (Excel/PDF hasil training): kedalaman ft, hookload klbf, torsi kft-lbf
+REPORT_UNITS = {"length": "ft", "force": "klbf", "torque": "kft-lbf"}

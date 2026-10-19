@@ -14,7 +14,8 @@ import xlsxwriter
 from sqlalchemy.orm import Session
 
 from app.db.models import Dataset, MLModel, Well
-from app.services.operations import OP_LABELS
+from app.services import units
+from app.services.operations import OP_DIMENSION, OP_LABELS
 
 # warna sama dengan dashboard (web/src/components/chartTheme.ts)
 COLORS = {"ml": "#eb6834", "actual": "#0e9f6e", "limit": "#e34948", "forecast": "#4a3aa7"}
@@ -55,6 +56,21 @@ class _Fmt:
         self.bad = wb.add_format({"bg_color": "#fde7e7"})
         self.ok = wb.add_format({"bg_color": "#e3f4ea"})
         self.wrap = wb.add_format({"text_wrap": True, "valign": "top"})
+
+
+def report_value(op: str, x):
+    """Nilai SI (kN / kN.m) -> satuan lapangan laporan (klbf / kft-lbf) sesuai operasi."""
+    return units.to_report(x, OP_DIMENSION[op]) if op in OP_DIMENSION else x
+
+
+def report_ft(x):
+    return units.to_report(x, "length")
+
+
+def op_with_unit(op: str) -> str:
+    """Label operasi beserta satuannya, mis. 'Pick up (klbf)'."""
+    u = units.REPORT_UNITS.get(OP_DIMENSION.get(op, ""), "")
+    return f"{OP_LABELS.get(op, op)} ({u})" if u else OP_LABELS.get(op, op)
 
 
 def _write_row(ws, r: int, values: list, fmt=None, numfmt=None) -> None:
@@ -205,7 +221,8 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
         0,
         f"Dataset v{ds.get('version')} (hash {str(ds.get('hash', ''))[:12]}), "
         f"{ds.get('wells_train')} training wells, {ds.get('wells_blind')} blind test wells. "
-        "Cross-validation grouped by well (GroupKFold 5). RMSE in SI (kN, kN·m).",
+        "Cross-validation grouped by well (GroupKFold 5). "
+        "RMSE in klbf (hookload) and kft-lbf (torque), depth in ft.",
     )
     ws.write(
         2,
@@ -244,19 +261,19 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
             ws,
             i,
             [
-                OP_LABELS.get(op, op),
+                op_with_unit(op),
                 d.get("chosen_label", d["chosen"]),
                 d["overall"]["n_wells"],
-                wp["rmse"],
-                ml["rmse"],
+                report_value(op, wp["rmse"]),
+                report_value(op, ml["rmse"]),
                 imp,
                 d["overall"].get("ml_better_frac"),
                 wp["mape"],
                 ml["mape"],
                 wp["r2"],
                 ml["r2"],
-                (b.get("wellplan") or {}).get("rmse"),
-                (b.get("ml") or {}).get("rmse"),
+                report_value(op, (b.get("wellplan") or {}).get("rmse")),
+                report_value(op, (b.get("ml") or {}).get("rmse")),
             ],
             numfmt=f.num3,
         )
@@ -290,11 +307,12 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
         0,
         0,
         "Prediction N ft ahead from every actual depth (unseen wells): share of actual points in the "
-        "window within tolerance (8 klbf / 0.8 kft-lbf), and the 90th percentile error (SI). "
+        "window within tolerance (8 klbf / 0.8 kft-lbf), and the 90th percentile error "
+        "(klbf / kft-lbf). "
         "'+ bias' = local bias correction from the last <= 10 actual points within 1,000 ft.",
     )
     for j, h in enumerate(
-        ["Operation", "Horizon (ft)", "Method", "Within tolerance", "P90 error (SI)", "Points"]
+        ["Operation", "Horizon (ft)", "Method", "Within tolerance", "P90 error", "Points"]
     ):
         ws.write(2, j, h, f.head)
     i = 3
@@ -304,7 +322,7 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                 _write_row(
                     ws,
                     i,
-                    [OP_LABELS.get(op, op), int(h), meth, None, v["p90_si"], v["n"]],
+                    [op_with_unit(op), int(h), meth, None, report_value(op, v["p90_si"]), v["n"]],
                     numfmt=f.num3,
                 )
                 ws.write(i, 3, v["within"], f.pct)
@@ -333,7 +351,14 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
             _write_row(
                 ws,
                 i,
-                [OP_LABELS.get(op, op), name, s["rmse"], s["mape"], s["r2"], name == d["chosen"]],
+                [
+                    op_with_unit(op),
+                    name,
+                    report_value(op, s["rmse"]),
+                    s["mape"],
+                    s["r2"],
+                    name == d["chosen"],
+                ],
                 numfmt=f.num3,
             )
             i += 1
@@ -358,11 +383,11 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                 ws,
                 i,
                 [
-                    OP_LABELS.get(op, op),
+                    op_with_unit(op),
                     s["combo"],
                     s["n_wells"],
-                    s["rmse_single"],
-                    s.get("rmse_combo"),
+                    report_value(op, s["rmse_single"]),
+                    report_value(op, s.get("rmse_combo")),
                     s["used"],
                 ],
                 numfmt=f.num3,
@@ -401,13 +426,13 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                     ws,
                     i,
                     [
-                        OP_LABELS.get(op, op),
+                        op_with_unit(op),
                         g.get("section", ""),
                         g.get("well_type", ""),
                         g["n_wells"],
                         ml["n"],
-                        wp["rmse"],
-                        ml["rmse"],
+                        report_value(op, wp["rmse"]),
+                        report_value(op, ml["rmse"]),
                         wp["mape"],
                         ml["mape"],
                         wp["r2"],
@@ -423,7 +448,7 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
 
     ws = wb.add_worksheet("By depth")
     for j, h in enumerate(
-        ["Operation", "From (m)", "To (m)", "Points", "RMSE T&D Model", "RMSE ML", "ML closer"]
+        ["Operation", "From (ft)", "To (ft)", "Points", "RMSE T&D Model", "RMSE ML", "ML closer"]
     ):
         ws.write(0, j, h, f.head)
     i = 1
@@ -433,12 +458,12 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                 ws,
                 i,
                 [
-                    OP_LABELS.get(op, op),
-                    g["depth_from_m"],
-                    g["depth_to_m"],
+                    op_with_unit(op),
+                    report_ft(g["depth_from_m"]),
+                    report_ft(g["depth_to_m"]),
                     g["ml"]["n"],
-                    g["wellplan"]["rmse"],
-                    g["ml"]["rmse"],
+                    report_value(op, g["wellplan"]["rmse"]),
+                    report_value(op, g["ml"]["rmse"]),
                     g["ml_better_frac"],
                 ],
                 numfmt=f.num3,
@@ -470,13 +495,13 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                 ws,
                 i,
                 [
-                    OP_LABELS.get(op, op),
+                    op_with_unit(op),
                     g["well_name"],
                     g["section"],
                     g["well_type"],
                     ml["n"],
-                    wp["rmse"],
-                    ml["rmse"],
+                    report_value(op, wp["rmse"]),
+                    report_value(op, ml["rmse"]),
                     wp["mape"],
                     ml["mape"],
                 ],
@@ -490,7 +515,7 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
 
     ws = wb.add_worksheet("Worst points")
     for j, h in enumerate(
-        ["Operation", "Well", "Section", "Depth (m)", "Actual", "WellPlan", "ML"]
+        ["Operation", "Well", "Section", "Depth (ft)", "Actual", "WellPlan", "ML"]
     ):
         ws.write(0, j, h, f.head)
     i = 1
@@ -500,13 +525,13 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                 ws,
                 i,
                 [
-                    OP_LABELS.get(op, op),
+                    op_with_unit(op),
                     p["well_name"],
                     p["section"],
-                    p["depth_m"],
-                    p["actual"],
-                    p["wellplan"],
-                    p["ml"],
+                    report_ft(p["depth_m"]),
+                    report_value(op, p["actual"]),
+                    report_value(op, p["wellplan"]),
+                    report_value(op, p["ml"]),
                 ],
                 numfmt=f.num,
             )
@@ -522,7 +547,12 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
             _write_row(
                 ws,
                 i,
-                [OP_LABELS.get(op, op), p["label"], p["rmse_ml"], p["rmse_wp"]],
+                [
+                    op_with_unit(op),
+                    p["label"],
+                    report_value(op, p["rmse_ml"]),
+                    report_value(op, p["rmse_wp"]),
+                ],
                 numfmt=f.num3,
             )
             i += 1
@@ -539,10 +569,10 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                 ws,
                 i,
                 [
-                    OP_LABELS.get(op, op),
+                    op_with_unit(op),
                     ex.get("method", ""),
                     p["feature"],
-                    p["importance"],
+                    report_value(op, p["importance"]),
                     "+" if p["direction"] > 0.1 else ("-" if p["direction"] < -0.1 else ""),
                     ex.get("note", ""),
                 ],
@@ -570,12 +600,12 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                 ws,
                 i,
                 [
-                    OP_LABELS.get(op, op),
+                    op_with_unit(op),
                     "ALL",
                     "",
                     d["ml"]["n"],
-                    d["wellplan"]["rmse"],
-                    d["ml"]["rmse"],
+                    report_value(op, d["wellplan"]["rmse"]),
+                    report_value(op, d["ml"]["rmse"]),
                 ],
                 f.bold,
                 f.num3,
@@ -586,12 +616,12 @@ def export_model_report(model: MLModel, dataset: Dataset | None = None) -> bytes
                     ws,
                     i,
                     [
-                        OP_LABELS.get(op, op),
+                        op_with_unit(op),
                         g["well_name"],
                         g["section"],
                         g["ml"]["n"],
-                        g["wellplan"]["rmse"],
-                        g["ml"]["rmse"],
+                        report_value(op, g["wellplan"]["rmse"]),
+                        report_value(op, g["ml"]["rmse"]),
                     ],
                     numfmt=f.num3,
                 )

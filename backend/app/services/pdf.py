@@ -28,7 +28,7 @@ from reportlab.platypus import (  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.db.models import Dataset, MLModel, Well  # noqa: E402
-from app.services.export import ohff_color  # noqa: E402
+from app.services.export import ohff_color, op_with_unit, report_value  # noqa: E402
 from app.services.operations import OP_LABELS, OPERATIONS, SERIES_PREFIX  # noqa: E402
 from app.services.profile import well_profile  # noqa: E402
 
@@ -428,11 +428,11 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         imp = (wp["rmse"] - ml["rmse"]) / wp["rmse"] * 100 if wp["rmse"] else None
         rows.append(
             [
-                OP_LABELS.get(op, op),
+                op_with_unit(op),
                 d.get("chosen_label", d["chosen"]),
                 str(d["overall"]["n_wells"]),
-                _n(wp["rmse"]),
-                _n(ml["rmse"]),
+                _n(report_value(op, wp["rmse"])),
+                _n(report_value(op, ml["rmse"])),
                 _n(imp, 1) + "%",
                 _n((d["overall"].get("ml_better_frac") or 0) * 100, 0) + "%",
                 _n(ml["r2"]),
@@ -443,7 +443,7 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
     els.append(_table(rows, st))
     els.append(
         Paragraph(
-            "RMSE in SI (kN for hookload, kN·m for torque). 'ML closer' = share of points "
+            "RMSE in klbf for hookload, kft-lbf for torque. 'ML closer' = share of points "
             "where the ML prediction is closer to actual than WellPlan. 'Within tol.' = share of points "
             "with |error| < 8 klbf (hookload) or < 0.8 kft-lbf (torque). "
             "'In P10–P90' = share of points inside the ML uncertainty band (target 80%).",
@@ -466,10 +466,10 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         for op, d in model.blind_result["operations"].items():
             rows.append(
                 [
-                    OP_LABELS.get(op, op),
+                    op_with_unit(op),
                     str(d["ml"]["n"]),
-                    _n(d["wellplan"]["rmse"]),
-                    _n(d["ml"]["rmse"]),
+                    _n(report_value(op, d["wellplan"]["rmse"])),
+                    _n(report_value(op, d["ml"]["rmse"])),
                     _n((d.get("ml_better_frac") or 0) * 100, 0) + "%",
                     _pct_pair(d.get("within")),
                     _pct1(d.get("band_coverage")),
@@ -517,10 +517,25 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         for ax, (op, d) in zip(axes, ops.items(), strict=True):
             lc = d.get("learning_curve", [])
             x = range(len(lc))
-            ax.plot(x, [p["rmse_ml"] for p in lc], "o-", color=C_ML, lw=1.5, ms=3, label="ML")
-            ax.plot(x, [p["rmse_wp"] for p in lc], "--", color=C_WP, lw=1.2, label="WellPlan")
+            ax.plot(
+                x,
+                [report_value(op, p["rmse_ml"]) for p in lc],
+                "o-",
+                color=C_ML,
+                lw=1.5,
+                ms=3,
+                label="ML",
+            )
+            ax.plot(
+                x,
+                [report_value(op, p["rmse_wp"]) for p in lc],
+                "--",
+                color=C_WP,
+                lw=1.2,
+                label="WellPlan",
+            )
             ax.set_xticks(list(x), [p["label"] for p in lc], fontsize=7)
-            ax.set_title(OP_LABELS.get(op, op), fontsize=8)
+            ax.set_title(op_with_unit(op), fontsize=8)
             ax.tick_params(labelsize=7)
             ax.grid(color="#e7e6e2", lw=0.6)
         axes[0].set_ylabel("RMSE", fontsize=7)
@@ -540,8 +555,9 @@ def model_pdf(db: Session, model: MLModel) -> bytes:
         axes = axes if len(ops) > 1 else [axes]
         for ax, (op, d) in zip(axes, ops.items(), strict=True):
             feats = d.get("explain", {}).get("features", [])[:6][::-1]
-            ax.barh([f["feature"] for f in feats], [f["importance"] for f in feats], color=C_WP)
-            ax.set_title(OP_LABELS.get(op, op), fontsize=8)
+            imp = [report_value(op, f["importance"]) for f in feats]
+            ax.barh([f["feature"] for f in feats], imp, color=C_WP)
+            ax.set_title(op_with_unit(op), fontsize=8)
             ax.tick_params(labelsize=6.5)
         fig.suptitle("Feature importance (mean |SHAP|)", fontsize=9)
         fig.tight_layout()
