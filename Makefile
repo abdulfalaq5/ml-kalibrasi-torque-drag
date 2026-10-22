@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate backup test lint sample sample-docker password dev-api dev-web audit folders inbox-training inbox-sample practice-files
+.PHONY: up down logs migrate backup test lint sample sample-docker password dev-api dev-web audit folders inbox-training inbox-sample practice-files migrasi-ekspor migrasi-impor
 
 # Folder impor massal (harus bisa ditulis uid 1000 = user di dalam container)
 folders:
@@ -38,6 +38,14 @@ sample-docker: folders
 practice-files: folders
 	docker compose run --rm --no-deps -v "$$PWD/scripts:/scripts:ro" -v "$$PWD/data:/out" \
 		--user "$$(id -u):$$(id -g)" app python /scripts/make_sample_data.py --practice --out /out/practice
+
+# Pindah server: lihat docs/migrasi_server.md. Ekspor di server lama -> folder migrasi/
+migrasi-ekspor:
+	bash scripts/migrasi_ekspor.sh
+
+# Di server baru, setelah seluruh folder proyek (termasuk .env dan migrasi/) dipindah
+migrasi-impor:
+	bash scripts/migrasi_impor.sh
 
 password:
 	docker compose exec app python -m app.cli set-admin-password

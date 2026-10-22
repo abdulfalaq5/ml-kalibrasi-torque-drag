@@ -4,6 +4,7 @@ data/
 uploads/
 models/
 backups/
+migrasi/
 *.xlsm
 *.xlsx
 !backend/tests/fixtures/*.xlsx

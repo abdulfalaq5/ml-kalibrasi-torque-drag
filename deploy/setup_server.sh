@@ -52,6 +52,9 @@ if [ ! -f .env ]; then
   sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" .env
   sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$(openssl rand -hex 32)|" .env
   echo "Isi ADMIN_USERNAME/ADMIN_PASSWORD di .env, lalu jalankan: docker compose up -d --build"
+elif [ -f migrasi/db.dump ]; then
+  # pindah server: isi database + volume dari server lama, bukan database kosong
+  sudo bash scripts/migrasi_impor.sh
 else
   sudo docker compose up -d --build
 fi
