@@ -26,6 +26,14 @@ a { color: var(--accent); }
 .nowrap { white-space: nowrap; }
 .center { display: grid; place-items: center; height: 100vh; }
 
+/* footer di semua halaman: menempel di bawah bila isi halaman pendek */
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+.app > main { flex: 1; }
+.footer {
+  padding: 12px 20px; text-align: center; font-size: 12px; color: var(--text-2);
+  background: var(--surface-1); border-top: 1px solid var(--border);
+}
+
 .topbar {
   display: flex; align-items: center; gap: 24px; padding: 10px 20px;
   background: var(--surface-1); border-bottom: 1px solid var(--border);
@@ -111,7 +119,8 @@ td.cell-warn { background: var(--warn-bg); color: var(--warn-ink); font-weight: 
 .issues li.error { color: var(--bad-ink); }
 .issues li.warning { color: var(--warn-ink); }
 
-.login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login-wrap { min-height: 100vh; display: grid; grid-template-rows: 1fr auto; place-items: center; padding: 16px 16px 0; }
+.login-wrap .footer { border-top: 0; background: transparent; }
 .pw-field { position: relative; display: flex; }
 .pw-field input { flex: 1; padding-right: 40px; }
 .pw-toggle {

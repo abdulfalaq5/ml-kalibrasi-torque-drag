@@ -12,6 +12,7 @@ import EvaluationsPage from "./pages/EvaluationsPage";
 import HelpPage from "./pages/HelpPage";
 import UsersPage from "./pages/UsersPage";
 import Logo from "./components/Logo";
+import Footer from "./components/Footer";
 
 export default function App() {
   const qc = useQueryClient();
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/monitoring" replace />} />
           </Routes>
         </main>
+        <Footer />
       </div>
     );
   }
@@ -122,6 +124,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/training" replace />} />
         </Routes>
       </main>
+      <Footer />
     </div>
   );
 }

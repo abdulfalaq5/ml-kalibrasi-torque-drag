@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import Logo from "../components/Logo";
+import Footer from "../components/Footer";
 import { api } from "../api";
 
 export default function LoginPage({ onLogin }: { onLogin: () => void }) {
@@ -64,6 +65,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
           {busy ? "Checking…" : "Sign in"}
         </button>
       </form>
+      <Footer />
     </div>
   );
 }
