@@ -311,6 +311,12 @@ def _summary(wb, f, db, well, prof, unit_system, du, hk_lab, tq_lab, tq, fc=None
             _write(
                 ws, 17 + i, 1 + j, c[i] if i < len(grid) else None, f.cell0 if j == 0 else f.cell
             )
+    # baris tanpa Actual PU disembunyikan (data tetap ada, bisa di-unhide); baris prediction
+    # (ungu) di bawah tabel tidak. Sumur tanpa aktual PU sama sekali: semua baris ML tetap tampil.
+    if any(v is not None for v in act[PICK_UP]):
+        for i in range(n):
+            if i >= len(grid) or act[PICK_UP][i] is None:
+                ws.set_row(17 + i, None, None, {"hidden": True})
     if not act_grid:
         ws.write(
             13, 1, "No actual data for this well yet; the table shows the ML prediction.", f.note

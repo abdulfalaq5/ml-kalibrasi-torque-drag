@@ -270,6 +270,12 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     ml_rows = [r for r in rows[:i_fc] if isinstance(r[0], int | float)]
     assert len(ml_rows) > 10 and all(r[4] is not None for r in ml_rows[1:-1])  # ML PU
     assert any(r[1] is None for r in ml_rows)  # kedalaman tanpa aktual tetap ada
+    # baris tanpa Actual PU disembunyikan bila sumur punya aktual PU; baris prediction tidak
+    if any(r[1] is not None for r in ml_rows):
+        for i, r in enumerate(rows[:i_fc]):
+            if isinstance(r[0], int | float):
+                assert sm.row_dimensions[18 + i].hidden == (r[1] is None)
+    assert not any(sm.row_dimensions[18 + i].hidden for i in range(i_fc, len(rows)))
     fc_rows = [r for r in rows[i_fc + 1 :] if isinstance(r[0], int | float)]
     pu_fc = fc["operations"]["pick_up"]
     first = fc_rows[0]
@@ -294,6 +300,18 @@ def test_full_pipeline(auth_client, db, inbox, tmp_dir):
     c = ck["operations"]["pick_up"]["actual_check"]
     assert ck["bias_correction"] is True and c and c["n"] >= 1 and 0 <= c["ml_within"] <= 1
     assert any("before the last actual" in x for x in ck["warnings"])
+    # Summary Outputs sumur beraktual: baris tanpa Actual PU tersembunyi, sisanya tampil
+    st = openpyxl.load_workbook(
+        io.BytesIO(auth_client.get(f"/api/wells/{tw.id}/export.xlsx").content)
+    )["Summary Outputs"]
+    tbl = [
+        r
+        for r in range(18, st.max_row + 1)
+        if isinstance(st.cell(r, 2).value, int | float) and st.cell(r, 6).value is not None
+    ]
+    shown = [r for r in tbl if not st.row_dimensions[r].hidden]
+    assert shown and all(st.cell(r, 3).value is not None for r in shown)
+    assert all(st.cell(r, 3).value is None for r in tbl if st.row_dimensions[r].hidden)
     xf = auth_client.post(f"/api/wells/{w_new.id}/forecast.xlsx", json={"distance_ft": 300})
     assert {"Summary", "PU", "Explanation"} <= set(
         openpyxl.load_workbook(io.BytesIO(xf.content)).sheetnames
