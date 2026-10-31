@@ -1,4 +1,8 @@
+// Footer disembunyikan sementara; ubah ke true untuk menampilkan lagi.
+const SHOW_FOOTER = false;
+
 export default function Footer() {
+  if (!SHOW_FOOTER) return null;
   return (
     <footer className="footer">
       <div>Initiated by Bambang Setiawan</div>
